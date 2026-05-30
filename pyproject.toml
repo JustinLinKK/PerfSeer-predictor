@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "perfseer"
+version = "0.1.0"
+description = "Reproduction of PerfSeer (arXiv:2502.01206) SeerNet performance predictor"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "torch_geometric",
+    "networkx",
+    "numpy",
+    "scikit-learn",
+    "tqdm",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"

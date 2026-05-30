@@ -1,0 +1,18 @@
+# PerfSeer reproduction - CPU-only dependencies.
+# Install CPU torch first (no CUDA), then PyG wheels matching the torch version.
+#
+# Recommended install order (run on the remote, CPU-only host):
+#   uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   uv pip install torch_geometric
+#   uv pip install -r requirements.txt
+#
+# torch_geometric pulls its optional C++/CUDA extensions (torch-scatter,
+# torch-sparse) only if explicitly installed; the pure-python fallback works
+# on CPU, so we do NOT pin those extensions here.
+
+torch>=2.0          # CPU build; install via the cpu index-url shown above
+torch_geometric>=2.4
+networkx>=3.0
+numpy>=1.24
+scikit-learn>=1.2   # optional helper (split utilities / metrics cross-check)
+tqdm>=4.65
