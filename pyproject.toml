@@ -14,10 +14,16 @@ dependencies = [
     "numpy",
     "scikit-learn",
     "tqdm",
+    "pyyaml",
+    "matplotlib",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
 [tool.setuptools.package-dir]
-"" = "src"
+perfseer = "src/perfseer"
+perfseer_optimized = "src/perfseer-optimized"
+
+[tool.setuptools]
+packages = ["perfseer", "perfseer_optimized"]
+
+[tool.setuptools.package-data]
+perfseer_optimized = ["configs/*.yaml"]

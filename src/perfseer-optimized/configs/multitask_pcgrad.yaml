@@ -1,0 +1,63 @@
+run:
+  run_id: multitask_pcgrad
+  out_dir: runs/optimized
+  results_path: runs/results.jsonl
+  notes: Multi-output scheduler candidate with PCGrad and time-weighted loss.
+seed: 42
+data:
+  root: dataset
+  limit: 0
+  num_workers: 0
+features:
+  use_operator_type_onehot: true
+  topology: true
+  critical_path: true
+  edge_topology: true
+  include_destination_tensor: true
+  time_target_mode: raw
+model:
+  name: seernet_multi
+  hidden: 256
+  num_blocks: 2
+  head_hidden: 256
+  metric_heads: separate
+  activation: relu
+  dropout: 0.05
+  encoder_norm: layernorm
+  block_norm: prenorm
+  residual: gated
+  residual_gate_init: 0.1
+  use_synmm: true
+  global_agg: synmm_plus
+  attention_pool: false
+  use_gnpb: true
+  include_u_in_edge_update: true
+  mlp_z_num_linear_layers: 3
+train:
+  metric: all
+  epochs: 500
+  batch_size: 128
+  lr: 0.001
+  optimizer: adamw
+  weight_decay: 0.00001
+  patience: 30
+  scheduler_patience: 5
+  min_lr: 0.000001
+  loss: huber_logstd
+  huber_delta: 1.0
+  grad_clip_norm: 1.0
+  ema_decay: 0.0
+  device: auto
+multi_task:
+  enabled: true
+  loss_reduction: pcgrad
+  loss_weights:
+    train_util: 1.0
+    train_mem: 0.75
+    train_time: 1.5
+    infer_util: 1.0
+    infer_mem: 0.75
+    infer_time: 1.5
+calibration:
+  enabled: true
+  method: linear

@@ -1,0 +1,52 @@
+run:
+  run_id: reg_layernorm_adamw
+  out_dir: runs/optimized
+  results_path: runs/results.jsonl
+  notes: Low-risk regularized single-metric candidate.
+seed: 42
+data:
+  root: dataset
+  limit: 0
+  num_workers: 0
+features:
+  use_operator_type_onehot: true
+  topology: false
+  critical_path: false
+  edge_topology: false
+  include_destination_tensor: false
+  time_target_mode: raw
+model:
+  name: seernet
+  hidden: 256
+  num_blocks: 1
+  activation: relu
+  dropout: 0.05
+  encoder_norm: layernorm
+  block_norm: none
+  residual: direct
+  use_synmm: true
+  global_agg: synmm
+  attention_pool: false
+  use_gnpb: true
+  include_u_in_edge_update: true
+  mlp_z_num_linear_layers: 3
+train:
+  metric: all
+  epochs: 500
+  batch_size: 128
+  lr: 0.001
+  optimizer: adamw
+  weight_decay: 0.00001
+  patience: 30
+  scheduler_patience: 5
+  min_lr: 0.000001
+  loss: huber_logstd
+  huber_delta: 1.0
+  grad_clip_norm: 1.0
+  ema_decay: 0.0
+  device: auto
+multi_task:
+  enabled: false
+calibration:
+  enabled: true
+  method: linear
