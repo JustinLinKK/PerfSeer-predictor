@@ -10,6 +10,18 @@ The first step of this repository is a reimplementation of the PerfSeer/SeerNet 
 
 After reproducing the baseline predictor, the next step is optimization for practical CPU inference. The optimized workflow is intended for scheduler-style use cases where predictions need to be accurate enough to guide GPU job placement while remaining lightweight enough to run on CPU.
 
+## What Is Optimized
+
+The baseline package in `src/perfseer/` preserves the reproduction setup: six independent single-output SeerNet models, one SeerBlock, Adam training, standardized log-space MSE, and the original handcrafted graph features.
+
+The optimized package in `src/perfseer-optimized/` keeps that baseline available, then adds configurable improvements for accuracy, robustness, and CPU deployment:
+
+- Training improvements: YAML configs, AdamW, weight decay, Huber/log-cosh losses, gradient clipping, optional EMA, richer checkpoint metadata, and a result ledger.
+- Architecture variants: LayerNorm encoders, pre/post-normalized SeerBlocks, gated residual updates, two-block models, `SynMMPlus`, optional attention pooling, and paper/code ambiguity flags for ablation.
+- Feature variants: optional topology, critical-path, edge-topology, destination tensor, operator one-hot, and raw versus batch-scaled time target modes.
+- Deployment variants: `SeerNetMulti` with six output heads, optional PCGrad, metric loss weighting, teacher-student distillation, validation-only calibration, and CPU latency benchmarking.
+- Evaluation tooling: metadata-based test reconstruction, per-metric MAPE/RMSPE/5%Acc/10%Acc, prediction export, error bucket reports, worst-case prediction tables, and CPU p50/p95 timing.
+
 ## Repository Layout
 
 - `src/perfseer/`: baseline PerfSeer/SeerNet reproduction.
