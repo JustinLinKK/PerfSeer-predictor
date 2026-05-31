@@ -219,3 +219,6 @@ __marimo__/
 
 # dataset folder
 dataset/
+
+# pdf files
+*.pdfruns/
