@@ -16,6 +16,10 @@ dependencies = [
     "tqdm",
     "pyyaml",
     "matplotlib",
+    "onnx",
+    "onnxscript",
+    "onnxruntime",
+    "openvino",
 ]
 
 [tool.setuptools.package-dir]
@@ -26,4 +30,4 @@ perfseer_optimized = "src/perfseer-optimized"
 packages = ["perfseer", "perfseer_optimized"]
 
 [tool.setuptools.package-data]
-perfseer_optimized = ["configs/*.yaml"]
+perfseer_optimized = ["configs/*.yaml", "configs/**/*.yaml"]

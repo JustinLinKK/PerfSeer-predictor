@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 import numpy as np
 import torch
+import yaml
 from torch_geometric.loader import DataLoader
 
 from perfseer.data import list_pairs
@@ -298,6 +299,7 @@ def benchmark_models(models: list[torch.nn.Module], loader, device, num_graphs: 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate optimized PerfSeer checkpoints.")
+    p.add_argument("--eval-profile", help="optional YAML profile under configs/eval_profiles")
     p.add_argument("--ckpt", nargs="*", help="explicit checkpoint file(s)")
     p.add_argument("--ckpt-dir", dest="ckpt_dir", help="checkpoint directory")
     p.add_argument("--data-root", dest="data_root")
@@ -316,8 +318,29 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
+def apply_eval_profile(args: argparse.Namespace) -> argparse.Namespace:
+    if not args.eval_profile:
+        return args
+    with open(args.eval_profile, "r") as fh:
+        profile = yaml.safe_load(fh) or {}
+    if "batch_size" in profile:
+        args.batch_size = int(profile["batch_size"])
+    if "device" in profile:
+        args.device = str(profile["device"])
+    if "bench_cpu" in profile:
+        args.bench_cpu = bool(profile["bench_cpu"])
+    if "num_bench_graphs" in profile:
+        args.num_bench_graphs = int(profile["num_bench_graphs"])
+    if "cpu_threads" in profile:
+        args.cpu_threads = int(profile["cpu_threads"] or 0)
+    if "cpu_interop_threads" in profile:
+        args.cpu_interop_threads = int(profile["cpu_interop_threads"] or 0)
+    args._eval_profile_data = profile
+    return args
+
+
 def main(argv: Optional[list[str]] = None) -> None:
-    args = parse_args(argv)
+    args = apply_eval_profile(parse_args(argv))
     if args.bench_cpu:
         configure_cpu_threads(args.cpu_threads, args.cpu_interop_threads)
     if args.bench_cpu and args.device == "auto":
@@ -357,14 +380,28 @@ def main(argv: Optional[list[str]] = None) -> None:
     run_id = first.get("metadata", {}).get("run_id", Path(out_dir).name)
     result_row = {
         "event": "eval_complete",
+        "track": getattr(args, "_eval_profile_data", {}).get("track", "accuracy"),
         "run_id": run_id,
         "ckpt_paths": paths,
+        "runtime_backend": getattr(args, "_eval_profile_data", {}).get("runtime_backend", "pytorch"),
+        "runtime_backend_actual": "pytorch",
+        "device": str(device),
+        "cpu_threads": args.cpu_threads,
+        "cpu_interop_threads": args.cpu_interop_threads,
+        "batch_size": args.batch_size,
+        "num_bench_graphs": args.num_bench_graphs if args.bench_cpu else 0,
         "data_root": data_root,
         "num_test_graphs": len(ds),
         "params": int(sum(count_parameters(model) for model in models)),
+        "model_params": int(sum(count_parameters(model) for model in models)),
         "mean_mape": float(np.mean(mapes)) if mapes else float("nan"),
         "metrics": {TARGET_NAMES[idx]: rows[idx] for idx in rows},
         "cpu_forward": bench,
+        "latency_forward_ms_mean": bench["mean_ms"] if bench else float("nan"),
+        "latency_forward_ms_p50": bench["p50_ms"] if bench else float("nan"),
+        "latency_forward_ms_p95": bench["p95_ms"] if bench else float("nan"),
+        "graphs_per_sec": (1000.0 / bench["mean_ms"]) if bench and bench["mean_ms"] > 0 else float("nan"),
+        "eval_profile": getattr(args, "_eval_profile_data", None),
     }
     append_jsonl(args.results_path, result_row)
 

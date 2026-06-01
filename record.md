@@ -7,7 +7,10 @@
 - Host alias `Justin-Linux` -> hostname `Justin-WS`
 - CPU: AMD Ryzen 9 9950X3D, 32 threads
 - RAM: 45 GiB; Disk: 785 GiB free on `/`
-- **No NVIDIA GPU** (`nvidia-smi` not found, no `/dev/nvidia*`, no VGA NVIDIA in `lspci`). CPU-only training.
+- GPU training is available. The `perfseer` conda environment reports one CUDA device:
+  `NVIDIA GeForce RTX 5090`.
+- Use GPU for model training when available. Use CPU for inference latency tests and
+  scheduler-deployment benchmarks.
 - Python 3.12.3 (system); `uv` 0.11.17 installed to `~/.local/bin/uv`
 - Project path: `~/PerfSeer-predictor` (git repo `git@github.com:JustinLinKK/PerfSeer-predictor.git`, was empty except LICENSE/.gitignore/README)
 - venv: `~/PerfSeer-predictor/.venv` (created via `uv venv --system-site-packages`)
@@ -81,7 +84,7 @@ fields = `time|average_sm_util|average_memory_util|average_memory_usuage|peak_sm
 
 - `python -m perfseer.train --metric all --epochs 500 --patience 30 --out runs/full --data-root dataset`
 - 6 independent single-metric models; split 2:1:1 (seed 42); batch 128; Adam lr 1e-3;
-  ReduceLROnPlateau halve/patience5/min1e-6; early stop patience 30 epochs; MSE in std-log space; CPU
+  ReduceLROnPlateau halve/patience5/min1e-6; early stop patience 30 epochs; MSE in std-log space; GPU training when available
 - Remote Justin-WS, nohup PID 47138, log `logs/train_full.log`
 
 ### Smoke test (pre-run, 200 train graphs / 2 epochs, metric 0)
@@ -92,4 +95,3 @@ fields = `time|average_sm_util|average_memory_util|average_memory_usuage|peak_sm
 ### Result
 
 - (pending)
-

@@ -1,0 +1,51 @@
+run:
+  run_id: accuracy_baseline
+  out_dir: runs/optimized
+  results_path: runs/results.jsonl
+  notes: Accuracy track baseline-compatible reproduction.
+seed: 42
+data:
+  root: dataset
+  limit: 0
+  num_workers: 0
+features:
+  use_operator_type_onehot: true
+  topology: false
+  critical_path: false
+  edge_topology: false
+  include_destination_tensor: false
+  time_target_mode: raw
+model:
+  name: seernet
+  hidden: 256
+  num_blocks: 1
+  activation: relu
+  dropout: 0.0
+  encoder_norm: none
+  block_norm: none
+  residual: direct
+  use_synmm: true
+  global_agg: synmm
+  attention_pool: false
+  use_gnpb: true
+  include_u_in_edge_update: true
+  mlp_z_num_linear_layers: 3
+  softmax_agg_mode: learned_score
+train:
+  metric: all
+  epochs: 500
+  batch_size: 128
+  lr: 0.001
+  optimizer: adam
+  weight_decay: 0.0
+  patience: 30
+  scheduler_patience: 5
+  min_lr: 0.000001
+  loss: mse_logstd
+  grad_clip_norm: 0.0
+  ema_decay: 0.0
+  device: auto
+multi_task:
+  enabled: false
+calibration:
+  enabled: false

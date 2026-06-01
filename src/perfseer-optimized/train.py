@@ -146,6 +146,13 @@ def git_commit() -> str | None:
         return None
 
 
+def safe_torch_load(path: str, device: torch.device):
+    try:
+        return torch.load(path, map_location=device, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location=device)
+
+
 def json_default(obj):
     if isinstance(obj, np.ndarray):
         return obj.tolist()
@@ -483,7 +490,7 @@ def train_one_metric(
         json.dump({"best_epoch": best_epoch, "best_val": best_val, "best_source": best_source, "history": history}, fh, indent=2)
 
     if cfg.get("calibration", {}).get("enabled"):
-        ckpt = torch.load(ckpt_path, map_location=device)
+        ckpt = safe_torch_load(ckpt_path, device)
         model.load_state_dict(ckpt["model_state_dict"])
         pred_std, true_std = collect_std_predictions(model, val_loader, device, metric_idx=metric_idx)
         cal = fit_linear_calibration(pred_std, true_std).to_dict()
@@ -499,7 +506,7 @@ def load_teacher_models(path: str | None, device: torch.device) -> list[torch.nn
     ckpts = sorted(Path(path).glob("seernet_metric*.pt"))
     teachers: list[torch.nn.Module] = []
     for ckpt_path in ckpts:
-        ckpt = torch.load(ckpt_path, map_location=device)
+        ckpt = safe_torch_load(ckpt_path, device)
         model_cfg = SeerNetConfig.from_dict(ckpt["model_config"])
         model = SeerNet(model_cfg).to(device)
         model.load_state_dict(ckpt["model_state_dict"])
@@ -628,7 +635,7 @@ def train_multi(
     with open(curve_path, "w") as fh:
         json.dump({"best_epoch": best_epoch, "best_val": best_val, "history": history}, fh, indent=2)
     if cfg.get("calibration", {}).get("enabled"):
-        ckpt = torch.load(ckpt_path, map_location=device)
+        ckpt = safe_torch_load(ckpt_path, device)
         model.load_state_dict(ckpt["model_state_dict"])
         pred_std, true_std = collect_std_predictions(model, val_loader, device, metric_idx=None)
         ckpt["calibration"] = fit_linear_calibration(pred_std, true_std).to_dict()

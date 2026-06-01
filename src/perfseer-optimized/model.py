@@ -8,7 +8,37 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from torch_geometric.utils import scatter, softmax
+
+
+def _expand_index(index: torch.Tensor, src: torch.Tensor) -> torch.Tensor:
+    return index.view(-1, 1).expand(-1, src.size(-1))
+
+
+def _scatter_sum(src: torch.Tensor, index: torch.Tensor, dim_size: int) -> torch.Tensor:
+    out = src.new_zeros((dim_size, src.size(-1)))
+    return out.scatter_add(0, _expand_index(index, src), src)
+
+
+def _scatter_mean(src: torch.Tensor, index: torch.Tensor, dim_size: int) -> torch.Tensor:
+    out = _scatter_sum(src, index, dim_size)
+    count = src.new_zeros((dim_size, 1))
+    ones = src.new_ones((src.size(0), 1))
+    count = count.scatter_add(0, index.view(-1, 1), ones)
+    return out / count.clamp_min(1.0)
+
+
+def _scatter_max(src: torch.Tensor, index: torch.Tensor, dim_size: int) -> torch.Tensor:
+    out = torch.full((dim_size, src.size(-1)), -float("inf"), dtype=src.dtype, device=src.device)
+    out = torch.scatter_reduce(out, 0, _expand_index(index, src), src, reduce="amax", include_self=True)
+    return torch.where(torch.isinf(out), torch.zeros_like(out), out)
+
+
+def _segment_softmax(src: torch.Tensor, index: torch.Tensor, dim_size: int) -> torch.Tensor:
+    max_per_graph = _scatter_max(src, index, dim_size)
+    shifted = src - max_per_graph[index]
+    exp = shifted.exp()
+    denom = _scatter_sum(exp, index, dim_size)
+    return exp / denom[index].clamp_min(1e-16)
 
 
 @dataclass
@@ -94,8 +124,8 @@ class SynMM(nn.Module):
         self.lin = nn.Linear(2 * dim, out_dim)
 
     def forward(self, v: torch.Tensor, batch: torch.Tensor, size: int) -> torch.Tensor:
-        v_max = scatter(v, batch, dim=0, dim_size=size, reduce="max")
-        v_mean = scatter(v, batch, dim=0, dim_size=size, reduce="mean")
+        v_max = _scatter_max(v, batch, size)
+        v_mean = _scatter_mean(v, batch, size)
         return self.lin(torch.cat([v_max, v_mean], dim=-1))
 
 
@@ -106,10 +136,10 @@ class SynMMPlus(nn.Module):
         self.lin = nn.Linear(4 * dim, out_dim)
 
     def forward(self, v: torch.Tensor, batch: torch.Tensor, size: int) -> torch.Tensor:
-        v_max = scatter(v, batch, dim=0, dim_size=size, reduce="max")
-        v_mean = scatter(v, batch, dim=0, dim_size=size, reduce="mean")
-        v_sum = scatter(v, batch, dim=0, dim_size=size, reduce="sum")
-        sq_mean = scatter(v * v, batch, dim=0, dim_size=size, reduce="mean")
+        v_max = _scatter_max(v, batch, size)
+        v_mean = _scatter_mean(v, batch, size)
+        v_sum = _scatter_sum(v, batch, size)
+        sq_mean = _scatter_mean(v * v, batch, size)
         v_std = torch.sqrt(torch.clamp(sq_mean - v_mean * v_mean, min=0.0) + 1e-12)
         return self.lin(torch.cat([v_max, v_mean, v_sum, v_std], dim=-1))
 
@@ -124,10 +154,10 @@ class AttentionGraphPool(nn.Module):
 
     def forward(self, v: torch.Tensor, batch: torch.Tensor, size: int) -> torch.Tensor:
         logits = self.score(torch.tanh(self.pre(v)))
-        alpha = softmax(logits, batch, num_nodes=size)
-        weighted = scatter(v * alpha, batch, dim=0, dim_size=size, reduce="sum")
-        v_mean = scatter(v, batch, dim=0, dim_size=size, reduce="mean")
-        v_max = scatter(v, batch, dim=0, dim_size=size, reduce="max")
+        alpha = _segment_softmax(logits, batch, size)
+        weighted = _scatter_sum(v * alpha, batch, size)
+        v_mean = _scatter_mean(v, batch, size)
+        v_max = _scatter_max(v, batch, size)
         return self.out(torch.cat([weighted, v_mean, v_max], dim=-1))
 
 
@@ -142,8 +172,8 @@ class SoftmaxNodeAgg(nn.Module):
             logits = v.mean(dim=-1, keepdim=True)
         else:
             logits = self.score(v)
-        alpha = softmax(logits, batch, num_nodes=size)
-        return scatter(v * alpha, batch, dim=0, dim_size=size, reduce="sum")
+        alpha = _segment_softmax(logits, batch, size)
+        return _scatter_sum(v * alpha, batch, size)
 
 
 class ResidualGate(nn.Module):
@@ -219,22 +249,18 @@ class SeerBlock(nn.Module):
         src, dst = edge_index[0], edge_index[1]
         v_in_stream, e_in_stream, u_in_stream, z_in_stream = self._maybe_prenorm(v, e, u, z)
 
-        if e_in_stream.size(0) == 0:
-            e_new = e_in_stream
-            ebar = v_in_stream.new_zeros(v_in_stream.shape)
-        else:
-            parts = [e_in_stream, v_in_stream[src], v_in_stream[dst]]
-            if self.include_u_in_edge_update:
-                parts.append(u_in_stream[batch[src]])
-            e_new = self.mlp_e(torch.cat(parts, dim=-1))
-            ebar = scatter(e_new, dst, dim=0, dim_size=v.size(0), reduce="mean")
+        parts = [e_in_stream, v_in_stream[src], v_in_stream[dst]]
+        if self.include_u_in_edge_update:
+            parts.append(u_in_stream[batch[src]])
+        e_new = self.mlp_e(torch.cat(parts, dim=-1))
+        ebar = _scatter_mean(e_new, dst, v.size(0))
 
         u_node = u_in_stream[batch]
         v_new = self.mlp_v(torch.cat([ebar, v_in_stream + z_in_stream, u_node], dim=-1))
 
         if self.use_gnpb:
             zbar = self.agg_z(v_new, batch, size)
-            z_graph = scatter(z_in_stream, batch, dim=0, dim_size=size, reduce="mean")
+            z_graph = _scatter_mean(z_in_stream, batch, size)
             z_new_graph = self.mlp_z(zbar + z_graph)
             z_new = z_new_graph[batch]
         else:
@@ -242,7 +268,7 @@ class SeerBlock(nn.Module):
             z_new = z_in_stream.new_zeros(z_in_stream.shape)
 
         if isinstance(self.agg_u, nn.Linear):
-            vbar_u = self.agg_u(scatter(v_new, batch, dim=0, dim_size=size, reduce="mean"))
+            vbar_u = self.agg_u(_scatter_mean(v_new, batch, size))
         else:
             vbar_u = self.agg_u(v_new, batch, size)
         u_new = self.mlp_u(torch.cat([vbar_u, z_new_graph, u_in_stream], dim=-1))
@@ -300,7 +326,11 @@ class SeerTrunk(nn.Module):
         batch = getattr(data, "batch", None)
         if batch is None:
             batch = x.new_zeros(x.size(0), dtype=torch.long)
-        size = int(getattr(data, "num_graphs", int(batch.max().item()) + 1 if batch.numel() else 1))
+        num_graphs = getattr(data, "num_graphs", None)
+        if num_graphs is None:
+            size = int(batch.max().item()) + 1 if batch.numel() else 1
+        else:
+            size = int(num_graphs)
 
         v = self.node_enc(x)
         e = self.edge_enc(edge_attr)
