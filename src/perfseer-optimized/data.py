@@ -527,6 +527,42 @@ def build_pyg_data(
     return data
 
 
+def build_pyg_inference_data(
+    g: nx.DiGraph,
+    norm_stats: Optional[dict[str, np.ndarray]] = None,
+    feature_config: FeatureConfig | None = None,
+) -> Data:
+    """Convert a feature-bearing compute graph into predictor input tensors.
+
+    This mirrors ``build_pyg_data`` for online inference, but intentionally does
+    not attach ``y`` or ``y_raw`` labels.
+    """
+
+    cfg = feature_config or FeatureConfig()
+    layout = feature_layout(cfg)
+    x_raw, edge_idx, e_raw, u_raw, _batch_size = _extract_raw(g, cfg)
+
+    if norm_stats is not None:
+        x = (x_raw - norm_stats["node_mean"]) / norm_stats["node_std"]
+        e = (e_raw - norm_stats["edge_mean"]) / norm_stats["edge_std"]
+        u = (u_raw - norm_stats["global_mean"]) / norm_stats["global_std"]
+    else:
+        x, e, u = x_raw, e_raw, u_raw
+
+    x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+    e = np.nan_to_num(e, nan=0.0, posinf=0.0, neginf=0.0)
+    u = np.nan_to_num(u, nan=0.0, posinf=0.0, neginf=0.0)
+
+    data = PerfSeerOptimizedData(
+        x=torch.from_numpy(x.astype(np.float32)),
+        edge_index=torch.from_numpy(edge_idx.astype(np.int64)),
+        edge_attr=torch.from_numpy(e.astype(np.float32)),
+        u=torch.from_numpy(u.astype(np.float32)).view(1, layout.global_dim),
+    )
+    data.num_nodes = int(x_raw.shape[0])
+    return data
+
+
 def _num_procs() -> int:
     env = os.environ.get("PERFSEER_NUM_PROC")
     if env:
