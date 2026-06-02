@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import html
 import json
 import math
 from pathlib import Path
@@ -274,6 +275,575 @@ def plot_size_latency(rows: list[dict[str, Any]], out_dir: Path, title: str) -> 
     plt.close(fig)
 
 
+def pareto_flags(points: list[dict[str, Any]]) -> list[bool]:
+    flags = []
+    for idx, point in enumerate(points):
+        dominated = False
+        for other_idx, other in enumerate(points):
+            if idx == other_idx:
+                continue
+            smaller_or_equal = other["size_mb"] <= point["size_mb"]
+            faster_or_equal = other["graphs_per_sec"] >= point["graphs_per_sec"]
+            more_accurate_or_equal = other["mean_mape"] <= point["mean_mape"]
+            strictly_better = (
+                other["size_mb"] < point["size_mb"]
+                or other["graphs_per_sec"] > point["graphs_per_sec"]
+                or other["mean_mape"] < point["mean_mape"]
+            )
+            if smaller_or_equal and faster_or_equal and more_accurate_or_equal and strictly_better:
+                dominated = True
+                break
+        flags.append(not dominated)
+    return flags
+
+
+def plot_interactive_tradeoff(rows: list[dict[str, Any]], out_dir: Path, title: str) -> None:
+    candidates = [
+        row
+        for row in rows
+        if row.get("event") == "eval_deploy_complete"
+        and math.isfinite(as_float(row.get("artifact_size_mb")))
+        and as_float(row.get("artifact_size_mb")) > 0
+        and math.isfinite(as_float(row.get("graphs_per_sec")))
+        and as_float(row.get("graphs_per_sec")) > 0
+        and math.isfinite(as_float(row.get("mean_mape")))
+    ]
+    if not candidates:
+        return
+
+    points: list[dict[str, Any]] = []
+    for row in sorted(candidates, key=lambda r: (str(r.get("run_id", "")), backend(r))):
+        run_id = str(row.get("run_id", ""))
+        b = backend(row)
+        points.append(
+            {
+                "run_id": run_id,
+                "backend": b,
+                "label": f"{run_id} / {b}",
+                "track": str(row.get("track", "cpu_deploy")),
+                "size_mb": as_float(row.get("artifact_size_mb")),
+                "graphs_per_sec": as_float(row.get("graphs_per_sec")),
+                "p50_ms": as_float(row.get("latency_forward_ms_p50")),
+                "p95_ms": as_float(row.get("latency_forward_ms_p95")),
+                "mean_mape": as_float(row.get("mean_mape")),
+                "model_params": int(as_float(row.get("model_params", row.get("params", 0))) or 0),
+            }
+        )
+
+    for point, is_pareto in zip(points, pareto_flags(points)):
+        point["pareto"] = is_pareto
+
+    payload = json.dumps(points, ensure_ascii=False, allow_nan=False)
+    safe_title = html.escape(title)
+    html_doc = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{safe_title} CPU Trade-Off 3D</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f7f8f5;
+      --ink: #172027;
+      --muted: #62717a;
+      --line: #cfd7d9;
+      --panel: rgba(255, 255, 255, 0.88);
+      --accent: #2f6f73;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    .shell {{
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 100vh;
+    }}
+    header {{
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 14px 18px 10px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(247, 248, 245, 0.94);
+    }}
+    h1 {{
+      flex: 1;
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+      line-height: 1.2;
+    }}
+    .toolbar {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
+    button, select {{
+      min-height: 34px;
+      border: 1px solid #b7c1c5;
+      border-radius: 6px;
+      background: #ffffff;
+      color: var(--ink);
+      font: inherit;
+      font-size: 13px;
+    }}
+    button {{
+      width: 38px;
+      display: inline-grid;
+      place-items: center;
+      cursor: pointer;
+    }}
+    select {{ padding: 0 28px 0 10px; }}
+    main {{
+      position: relative;
+      min-height: 0;
+    }}
+    canvas {{
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      touch-action: none;
+    }}
+    canvas.dragging {{ cursor: grabbing; }}
+    .legend {{
+      position: absolute;
+      left: 16px;
+      top: 16px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      max-width: min(920px, calc(100vw - 32px));
+      padding: 8px;
+      border: 1px solid rgba(186, 197, 200, 0.9);
+      border-radius: 8px;
+      background: var(--panel);
+      backdrop-filter: blur(6px);
+    }}
+    .legend label {{
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 0 7px;
+      border: 1px solid #d7dedf;
+      border-radius: 6px;
+      background: #fff;
+      font-size: 12px;
+      white-space: nowrap;
+      cursor: pointer;
+    }}
+    .legend input {{ margin: 0; }}
+    .swatch {{
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      border: 1px solid rgba(0, 0, 0, 0.18);
+    }}
+    .readout {{
+      position: absolute;
+      right: 16px;
+      bottom: 16px;
+      width: min(440px, calc(100vw - 32px));
+      padding: 12px 14px;
+      border: 1px solid rgba(186, 197, 200, 0.9);
+      border-radius: 8px;
+      background: var(--panel);
+      backdrop-filter: blur(6px);
+      font-size: 12px;
+      color: var(--muted);
+    }}
+    .readout strong {{
+      color: var(--ink);
+      font-weight: 700;
+    }}
+    .tooltip {{
+      position: absolute;
+      pointer-events: none;
+      max-width: 360px;
+      padding: 10px 11px;
+      border: 1px solid #b7c1c5;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 14px 34px rgba(18, 30, 36, 0.16);
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.45;
+      opacity: 0;
+      transform: translate(10px, 10px);
+      transition: opacity 120ms ease;
+      white-space: normal;
+    }}
+    .tooltip.visible {{ opacity: 1; }}
+    .tooltip .name {{ font-weight: 700; margin-bottom: 4px; }}
+    .tooltip .pareto {{ color: var(--accent); font-weight: 700; }}
+    @media (max-width: 720px) {{
+      header {{
+        align-items: flex-start;
+        flex-direction: column;
+      }}
+      h1 {{ font-size: 16px; }}
+      .toolbar {{ justify-content: flex-start; }}
+      .legend {{
+        top: 12px;
+        left: 12px;
+        right: 12px;
+        max-height: 116px;
+        overflow: auto;
+      }}
+      .readout {{
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: auto;
+      }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <h1>{safe_title}: CPU Model Size, Speed, and MAPE</h1>
+      <div class="toolbar">
+        <select id="viewMode" aria-label="Color mode">
+          <option value="backend">Backend</option>
+          <option value="family">Model Family</option>
+          <option value="pareto">Pareto</option>
+        </select>
+        <button id="resetView" title="Reset view" aria-label="Reset view">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M7 7h5a6 6 0 1 1-5.2 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <path d="M7 3v4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button id="togglePareto" title="Highlight Pareto frontier" aria-label="Highlight Pareto frontier">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+            <path d="M12 3 21 12 12 21 3 12Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+    <main>
+      <canvas id="tradeoff" aria-label="Interactive 3D CPU deployment trade-off plot"></canvas>
+      <div id="legend" class="legend"></div>
+      <div class="readout">
+        <strong>Axes:</strong> model artifact size MB, CPU throughput graphs/s, CPU mean MAPE %. Lower size and MAPE are better; higher throughput is better.
+      </div>
+      <div id="tooltip" class="tooltip"></div>
+    </main>
+  </div>
+  <script>
+    const rawPoints = {payload};
+    const palette = {{
+      pytorch: "#2f6f73",
+      pytorch_dynamic_int8: "#b65f24",
+      torchscript: "#4f7f2a",
+      onnxruntime: "#8f4e8b",
+      onnxruntime_int8: "#4869a9",
+      openvino: "#c2872a",
+      openvino_int8: "#6f5b4b",
+      accuracy: "#4869a9",
+      deploy: "#2f6f73",
+      pareto: "#138a64",
+      dominated: "#8d989b"
+    }};
+
+    const canvas = document.getElementById("tradeoff");
+    const ctx = canvas.getContext("2d");
+    const tooltip = document.getElementById("tooltip");
+    const legend = document.getElementById("legend");
+    const viewMode = document.getElementById("viewMode");
+    const resetView = document.getElementById("resetView");
+    const togglePareto = document.getElementById("togglePareto");
+
+    let yaw = -0.72;
+    let pitch = -0.55;
+    let zoom = 1;
+    let highlightPareto = true;
+    let activeBackends = new Set(rawPoints.map(p => p.backend));
+    let projected = [];
+    let dragging = false;
+    let lastX = 0;
+    let lastY = 0;
+    let hoverPoint = null;
+
+    const log10 = value => Math.log(value) / Math.LN10;
+    const extents = {{
+      size: extent(rawPoints.map(p => log10(p.size_mb))),
+      speed: extent(rawPoints.map(p => log10(p.graphs_per_sec))),
+      mape: extent(rawPoints.map(p => p.mean_mape))
+    }};
+
+    function extent(values) {{
+      const finite = values.filter(Number.isFinite);
+      let min = Math.min(...finite);
+      let max = Math.max(...finite);
+      if (min === max) {{
+        min -= 1;
+        max += 1;
+      }}
+      return [min, max];
+    }}
+
+    function normalize(value, [min, max], invert = false) {{
+      const t = (value - min) / (max - min);
+      const n = (invert ? 1 - t : t) * 2 - 1;
+      return Math.max(-1, Math.min(1, n));
+    }}
+
+    function family(point) {{
+      if (point.run_id.includes("distill")) return "distilled";
+      if (point.run_id.includes("shared_multitask")) return "multitask";
+      return "accuracy";
+    }}
+
+    function colorFor(point) {{
+      if (viewMode.value === "pareto") return point.pareto ? palette.pareto : palette.dominated;
+      if (viewMode.value === "family") {{
+        const f = family(point);
+        return f === "distilled" ? "#b65f24" : f === "multitask" ? "#2f6f73" : "#4869a9";
+      }}
+      return palette[point.backend] || "#6f5b4b";
+    }}
+
+    function world(point) {{
+      return {{
+        x: normalize(log10(point.size_mb), extents.size),
+        y: normalize(log10(point.graphs_per_sec), extents.speed),
+        z: normalize(point.mean_mape, extents.mape)
+      }};
+    }}
+
+    function rotate(p) {{
+      const cy = Math.cos(yaw), sy = Math.sin(yaw);
+      const cp = Math.cos(pitch), sp = Math.sin(pitch);
+      const x1 = cy * p.x - sy * p.y;
+      const y1 = sy * p.x + cy * p.y;
+      const z1 = p.z;
+      return {{
+        x: x1,
+        y: cp * y1 - sp * z1,
+        z: sp * y1 + cp * z1
+      }};
+    }}
+
+    function project(p) {{
+      const rect = canvas.getBoundingClientRect();
+      const scale = Math.min(rect.width, rect.height) * 0.31 * zoom;
+      const r = rotate(p);
+      return {{
+        sx: rect.width * 0.52 + r.x * scale,
+        sy: rect.height * 0.53 - r.z * scale,
+        depth: r.y,
+        scale
+      }};
+    }}
+
+    function resize() {{
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }}
+
+    function drawLine(a, b, color = "#8c999d", width = 1) {{
+      const pa = project(a);
+      const pb = project(b);
+      ctx.beginPath();
+      ctx.moveTo(pa.sx, pa.sy);
+      ctx.lineTo(pb.sx, pb.sy);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    }}
+
+    function drawLabel(text, p, offsetX, offsetY) {{
+      const pp = project(p);
+      ctx.fillStyle = "#3f4d55";
+      ctx.font = "12px system-ui, sans-serif";
+      ctx.fillText(text, pp.sx + offsetX, pp.sy + offsetY);
+    }}
+
+    function drawAxes() {{
+      const corners = [
+        {{x:-1,y:-1,z:-1}}, {{x:1,y:-1,z:-1}}, {{x:-1,y:1,z:-1}}, {{x:1,y:1,z:-1}},
+        {{x:-1,y:-1,z:1}}, {{x:1,y:-1,z:1}}, {{x:-1,y:1,z:1}}, {{x:1,y:1,z:1}}
+      ];
+      const edges = [[0,1],[0,2],[1,3],[2,3],[4,5],[4,6],[5,7],[6,7],[0,4],[1,5],[2,6],[3,7]];
+      for (const [a, b] of edges) drawLine(corners[a], corners[b], "#d0d8da", 1);
+      drawLine({{x:-1,y:-1,z:-1}}, {{x:1,y:-1,z:-1}}, "#54646b", 2);
+      drawLine({{x:-1,y:-1,z:-1}}, {{x:-1,y:1,z:-1}}, "#54646b", 2);
+      drawLine({{x:-1,y:-1,z:-1}}, {{x:-1,y:-1,z:1}}, "#54646b", 2);
+      drawLabel("Size MB", {{x:1,y:-1,z:-1}}, 8, 4);
+      drawLabel("CPU speed", {{x:-1,y:1,z:-1}}, 8, 4);
+      drawLabel("MAPE", {{x:-1,y:-1,z:1}}, 8, 4);
+    }}
+
+    function draw() {{
+      const rect = canvas.getBoundingClientRect();
+      ctx.clearRect(0, 0, rect.width, rect.height);
+      ctx.fillStyle = "#f7f8f5";
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      drawAxes();
+
+      const visible = rawPoints.filter(p => activeBackends.has(p.backend));
+      projected = visible.map(point => {{
+        const pos = project(world(point));
+        return {{...point, ...pos}};
+      }}).sort((a, b) => a.depth - b.depth);
+
+      for (const point of projected) {{
+        const radius = point.pareto && highlightPareto ? 8 : 6;
+        ctx.beginPath();
+        ctx.arc(point.sx, point.sy, radius + (point.pareto && highlightPareto ? 4 : 0), 0, Math.PI * 2);
+        ctx.fillStyle = point.pareto && highlightPareto ? "rgba(19, 138, 100, 0.16)" : "rgba(255, 255, 255, 0.28)";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(point.sx, point.sy, radius, 0, Math.PI * 2);
+        ctx.fillStyle = colorFor(point);
+        ctx.fill();
+        ctx.lineWidth = point === hoverPoint ? 3 : 1.2;
+        ctx.strokeStyle = point === hoverPoint ? "#172027" : "rgba(255, 255, 255, 0.92)";
+        ctx.stroke();
+      }}
+    }}
+
+    function updateLegend() {{
+      const backends = Array.from(new Set(rawPoints.map(p => p.backend))).sort();
+      legend.innerHTML = "";
+      for (const backend of backends) {{
+        const item = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = activeBackends.has(backend);
+        input.addEventListener("change", () => {{
+          if (input.checked) activeBackends.add(backend);
+          else activeBackends.delete(backend);
+          draw();
+        }});
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        swatch.style.background = palette[backend] || "#6f5b4b";
+        const text = document.createElement("span");
+        text.textContent = backend;
+        item.append(input, swatch, text);
+        legend.appendChild(item);
+      }}
+    }}
+
+    function nearestPoint(x, y) {{
+      let best = null;
+      let bestDistance = Infinity;
+      for (const point of projected) {{
+        const dx = point.sx - x;
+        const dy = point.sy - y;
+        const distance = Math.hypot(dx, dy);
+        if (distance < bestDistance) {{
+          best = point;
+          bestDistance = distance;
+        }}
+      }}
+      return bestDistance <= 18 ? best : null;
+    }}
+
+    function moveTooltip(event) {{
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      hoverPoint = nearestPoint(x, y);
+      if (!hoverPoint) {{
+        tooltip.classList.remove("visible");
+        draw();
+        return;
+      }}
+      tooltip.innerHTML = `
+        <div class="name">${{hoverPoint.label}}</div>
+        <div>Size: <strong>${{hoverPoint.size_mb.toFixed(2)}} MB</strong></div>
+        <div>CPU speed: <strong>${{hoverPoint.graphs_per_sec.toFixed(1)}} graphs/s</strong></div>
+        <div>CPU p50/p95: <strong>${{hoverPoint.p50_ms.toFixed(3)}} / ${{hoverPoint.p95_ms.toFixed(3)}} ms</strong></div>
+        <div>CPU mean MAPE: <strong>${{hoverPoint.mean_mape.toFixed(3)}}%</strong></div>
+        <div>Parameters: <strong>${{hoverPoint.model_params.toLocaleString()}}</strong></div>
+        ${{hoverPoint.pareto ? '<div class="pareto">Pareto frontier</div>' : ''}}
+      `;
+      const left = Math.min(rect.width - 380, Math.max(8, x + 14));
+      const top = Math.min(rect.height - 190, Math.max(8, y + 14));
+      tooltip.style.left = `${{left}}px`;
+      tooltip.style.top = `${{top}}px`;
+      tooltip.classList.add("visible");
+      draw();
+    }}
+
+    canvas.addEventListener("pointerdown", event => {{
+      dragging = true;
+      canvas.classList.add("dragging");
+      lastX = event.clientX;
+      lastY = event.clientY;
+      canvas.setPointerCapture(event.pointerId);
+    }});
+    canvas.addEventListener("pointermove", event => {{
+      if (dragging) {{
+        yaw += (event.clientX - lastX) * 0.008;
+        pitch += (event.clientY - lastY) * 0.008;
+        pitch = Math.max(-1.25, Math.min(1.25, pitch));
+        lastX = event.clientX;
+        lastY = event.clientY;
+        tooltip.classList.remove("visible");
+        draw();
+      }} else {{
+        moveTooltip(event);
+      }}
+    }});
+    canvas.addEventListener("pointerup", event => {{
+      dragging = false;
+      canvas.classList.remove("dragging");
+      canvas.releasePointerCapture(event.pointerId);
+    }});
+    canvas.addEventListener("pointerleave", () => {{
+      dragging = false;
+      hoverPoint = null;
+      tooltip.classList.remove("visible");
+      canvas.classList.remove("dragging");
+      draw();
+    }});
+    canvas.addEventListener("wheel", event => {{
+      event.preventDefault();
+      zoom *= event.deltaY < 0 ? 1.08 : 0.92;
+      zoom = Math.max(0.65, Math.min(2.4, zoom));
+      draw();
+    }}, {{passive: false}});
+    viewMode.addEventListener("change", draw);
+    resetView.addEventListener("click", () => {{
+      yaw = -0.72;
+      pitch = -0.55;
+      zoom = 1;
+      draw();
+    }});
+    togglePareto.addEventListener("click", () => {{
+      highlightPareto = !highlightPareto;
+      draw();
+    }});
+    window.addEventListener("resize", resize);
+    updateLegend();
+    resize();
+  </script>
+</body>
+</html>
+"""
+    (out_dir / "tradeoff_3d_cpu_size_speed_mape.html").write_text(html_doc)
+
+
 def main() -> None:
     args = parse_args()
     results = Path(args.results)
@@ -290,6 +860,7 @@ def main() -> None:
     plot_pareto(rows, out_dir, args.title)
     plot_heatmap(rows, out_dir, args.title)
     plot_size_latency(rows, out_dir, args.title)
+    plot_interactive_tradeoff(rows, out_dir, args.title)
     print(f"wrote plots and summary CSV to {out_dir}")
 
 
