@@ -225,3 +225,10 @@ dataset/
 
 # runs that contains logs and checkpoints
 runs/
+
+# Generated NRP calibration artifacts; regenerate with generate_model_sources.py.
+nrp_calibration_pack/models/calib_*.py
+nrp_calibration_pack/manifest/
+nrp_calibration_pack/subset/
+nrp_calibration_pack/selection_report.md
+nrp_calibration_pack/coverage_summary.json
