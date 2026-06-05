@@ -83,14 +83,30 @@ def convert_source_to_pyg_data(
 ):
     """Convert source to the optimized PerfSeer predictor's PyG data object."""
 
-    from perfseer_optimized.data import FeatureConfig, build_pyg_inference_data
+    from perfseer_optimized.data import FeatureConfig, build_pyg_inference_data, precision_hardware_config, validate_precision_hardware_request
 
+    supported_precision_hardware = None
     if ckpt_path is not None:
-        ckpt_stats, ckpt_feature_config = _checkpoint_context(ckpt_path)
+        ckpt_stats, ckpt_feature_config, supported_precision_hardware = _checkpoint_context(ckpt_path)
         if norm_stats is None:
             norm_stats = ckpt_stats
         if feature_config is None:
             feature_config = ckpt_feature_config
+        else:
+            if isinstance(feature_config, dict):
+                merged = ckpt_feature_config.to_dict()
+                merged.update(feature_config)
+                requested = FeatureConfig.from_dict(merged)
+            else:
+                requested = feature_config
+            if supported_precision_hardware:
+                validate_precision_hardware_request(requested, supported_precision_hardware, context=f"checkpoint {ckpt_path}")
+            elif precision_hardware_config(requested) != precision_hardware_config(ckpt_feature_config):
+                raise ValueError(
+                    "requested precision/hardware feature config differs from the checkpoint metadata; "
+                    "use a checkpoint trained for that precision/hardware domain"
+                )
+            feature_config = requested
 
     if feature_config is None:
         feature_config = FeatureConfig()
@@ -98,7 +114,12 @@ def convert_source_to_pyg_data(
         feature_config = FeatureConfig.from_dict(feature_config)
 
     graph = convert_source_to_networkx(spec)
-    return build_pyg_inference_data(graph, norm_stats=norm_stats, feature_config=feature_config)
+    return build_pyg_inference_data(
+        graph,
+        norm_stats=norm_stats,
+        feature_config=feature_config,
+        supported_precision_hardware=supported_precision_hardware,
+    )
 
 
 def _checkpoint_context(path: str | Path):
@@ -115,7 +136,8 @@ def _checkpoint_context(path: str | Path):
         raise KeyError(f"checkpoint {path} does not include metadata.norm_stats")
     norm_stats = {key: torch.as_tensor(value).cpu().numpy() for key, value in raw_stats.items()}
     feature_config = FeatureConfig.from_dict(meta.get("feature_config") or meta.get("config", {}).get("features"))
-    return norm_stats, feature_config
+    supported_precision_hardware = meta.get("supported_precision_hardware") or meta.get("split", {}).get("supported_precision_hardware")
+    return norm_stats, feature_config, supported_precision_hardware
 
 
 def _load_source_model(spec: SourceModelSpec) -> nn.Module:

@@ -23,7 +23,27 @@ import torch
 
 
 SEED = 20260602
-DEFAULT_SUBSET_SIZE = 4096
+DEFAULT_SUBSET_SIZE = 10000
+DEFAULT_PILOT_SUBSET_SIZE = 1000
+DEFAULT_PRECISION_SWEEP = ("fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid")
+PRECISION_ALIASES = {
+    "fp32": "fp32_ieee",
+    "float32": "fp32_ieee",
+    "fp32_ieee": "fp32_ieee",
+    "tf32": "tf32",
+    "bf16": "bf16_amp",
+    "bf16_amp": "bf16_amp",
+    "fp16": "fp16_amp",
+    "float16": "fp16_amp",
+    "fp16_amp": "fp16_amp",
+    "fp8": "fp8_te_hybrid",
+    "fp8_te": "fp8_te_hybrid",
+    "fp8_te_hybrid": "fp8_te_hybrid",
+    "fp8_e4m3": "fp8_e4m3",
+    "fp8_e5m2": "fp8_e5m2",
+    "nvfp4": "nvfp4",
+    "mxfp8": "mxfp8",
+}
 BATCH_BUCKETS = (1, 2, 4, 8, 16, 32, 64, 128, 256)
 NODE_TYPES = (
     "Conv",
@@ -55,6 +75,16 @@ SIZE_FIELDS = (
 )
 SIZE_QUANTILES = (0.0, 0.10, 0.25, 0.50, 0.75, 0.90, 1.0)
 REPORT_SIZE_FIELDS = ("node_count", "total_flops", "total_memory", "total_params", "max_tensor_size")
+ARCH_FAMILY_FIELDS = ("family_pattern", "layer_count_bucket")
+STRUCTURE_FIELDS = (
+    "dag_depth_bucket",
+    "branch_count_bucket",
+    "join_count_bucket",
+    "skip_edge_bucket",
+    "op_mix",
+    "resource_regime",
+    "size_risk",
+)
 
 
 @dataclass(frozen=True)
@@ -105,12 +135,53 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate NRP calibration model sources.")
     parser.add_argument("--data-root", default="dataset")
     parser.add_argument("--out-dir", default="nrp_calibration_pack")
-    parser.add_argument("--subset-size", type=int, default=DEFAULT_SUBSET_SIZE)
+    parser.add_argument(
+        "--profile-preset",
+        choices=("full", "pilot"),
+        default="full",
+        help=f"Subset-size preset. 'pilot' uses {DEFAULT_PILOT_SUBSET_SIZE} graphs; 'full' uses {DEFAULT_SUBSET_SIZE}.",
+    )
+    parser.add_argument("--subset-size", type=int, default=None, help="Override the graph count selected by --profile-preset.")
+    parser.add_argument(
+        "--precision-sweep",
+        default=",".join(DEFAULT_PRECISION_SWEEP),
+        help="Comma-separated precision_config values to expand into manifest rows.",
+    )
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--validation-mode", choices=("compile", "construct", "meta", "real", "none"), default="compile")
     parser.add_argument("--smoke-small", action="store_true", help="Prefer tiny CPU-friendly graphs for local smoke packs.")
     parser.add_argument("--force", action="store_true", help="Regenerate manifest/models/subset/report even if they already exist.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.subset_size is None:
+        args.subset_size = DEFAULT_PILOT_SUBSET_SIZE if args.profile_preset == "pilot" else DEFAULT_SUBSET_SIZE
+    return args
+
+
+def parse_precision_sweep(raw: str | Iterable[str] | None) -> tuple[str, ...]:
+    if raw is None:
+        values = list(DEFAULT_PRECISION_SWEEP)
+    elif isinstance(raw, str):
+        values = [part.strip() for part in raw.split(",") if part.strip()]
+    else:
+        values = [str(part).strip() for part in raw if str(part).strip()]
+    if not values:
+        raise ValueError("precision sweep cannot be empty")
+    out: list[str] = []
+    for value in values:
+        normalized = normalize_precision_config(value)
+        if normalized not in out:
+            out.append(normalized)
+    return tuple(out)
+
+
+def normalize_precision_config(value: str) -> str:
+    key = value.strip().lower().replace("-", "_")
+    if key == "bf32":
+        raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
+    if key not in PRECISION_ALIASES:
+        allowed = ", ".join(sorted(PRECISION_ALIASES))
+        raise ValueError(f"unknown precision_config {value!r}; expected one of: {allowed}")
+    return PRECISION_ALIASES[key]
 
 
 def load_records(data_root: Path) -> list[GraphRecord]:
@@ -346,6 +417,19 @@ def reserve_mandatory(records: list[GraphRecord], selected: set[int], subset_siz
             per_batch_limit=per_batch_limit,
         )
 
+    coverage_groups: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for idx, rec in enumerate(records):
+        for category, key in coverage_keys(rec):
+            coverage_groups[(category, key)].append(idx)
+    for _key, candidates in ordered_coverage_groups(coverage_groups):
+        add_closest_to_median(
+            records,
+            selected,
+            candidates,
+            limit=reserve_limit,
+            per_batch_limit=per_batch_limit,
+        )
+
     tail_fields = (
         "node_count",
         "edge_count",
@@ -438,6 +522,10 @@ def ordered_groups_by_rarity_and_size(groups: dict[tuple[int, tuple[str, ...]], 
     return ordered
 
 
+def ordered_coverage_groups(groups: dict[tuple[str, str], list[int]]) -> list[tuple[tuple[str, str], list[int]]]:
+    return sorted(groups.items(), key=lambda item: (len(item[1]), item[0]))
+
+
 def structure_signature(record: GraphRecord) -> tuple[str, ...]:
     op_presence = {op for op, count in zip(NODE_TYPES, record.op_counts) if count > 0}
     flags = []
@@ -459,8 +547,101 @@ def structure_signature(record: GraphRecord) -> tuple[str, ...]:
         f"depth:{bucket_value(record.dag_depth, (32, 96, 192))}",
         f"branches:{bucket_value(record.branch_count, (0, 2, 8, 24))}",
         f"joins:{bucket_value(record.join_count, (0, 2, 8, 24))}",
+        f"skip:{skip_edge_bucket(record)}",
         "+".join(flags),
     )
+
+
+def coverage_keys(record: GraphRecord) -> list[tuple[str, str]]:
+    return [
+        ("family_pattern", family_pattern_key(record)),
+        ("layer_count_bucket", layer_count_bucket(record)),
+        ("dag_depth_bucket", f"depth:{bucket_value(record.dag_depth, (8, 32, 96, 192))}"),
+        ("branch_count_bucket", f"branches:{bucket_value(record.branch_count, (0, 2, 8, 24))}"),
+        ("join_count_bucket", f"joins:{bucket_value(record.join_count, (0, 2, 8, 24))}"),
+        ("skip_edge_bucket", f"skip:{skip_edge_bucket(record)}"),
+        ("op_mix", op_mix_key(record)),
+        ("resource_regime", resource_regime_key(record)),
+        ("size_risk", size_risk_key(record)),
+    ]
+
+
+def family_pattern_key(record: GraphRecord) -> str:
+    family = record.family_tuple
+    if not family:
+        return "<unknown>"
+    unique = tuple(dict.fromkeys(family))
+    if len(unique) == 1:
+        return f"pure:{unique[0]}"
+    return f"mixed:{len(unique)}:{'+'.join(unique)}"
+
+
+def layer_count_bucket(record: GraphRecord) -> str:
+    count = layer_count_from_stem(record.stem)
+    if count <= 0:
+        return "<unknown>"
+    return f"layers:{bucket_value(count, (4, 8, 16, 32, 64))}"
+
+
+def layer_count_from_stem(stem: str) -> int:
+    match = re.search(r"_bnum(\d+)", stem)
+    if match:
+        return int(match.group(1))
+    match = re.search(r"(?:layers?|blocks?)(\d+)", stem, flags=re.IGNORECASE)
+    return int(match.group(1)) if match else 0
+
+
+def skip_edge_bucket(record: GraphRecord) -> str:
+    sequential_edges = max(record.node_count - 1, 0)
+    extra_edges = max(record.edge_count - sequential_edges, 0)
+    if extra_edges <= 0:
+        return "none"
+    if extra_edges <= 2:
+        return "few"
+    if extra_edges <= 8:
+        return "some"
+    return "many"
+
+
+def op_mix_key(record: GraphRecord) -> str:
+    counts = {op: count for op, count in zip(NODE_TYPES, record.op_counts)}
+    total = max(sum(counts.values()), 1)
+    conv = counts.get("Conv", 0) / total
+    gemm = counts.get("Gemm", 0) / total
+    pool = (counts.get("AveragePool", 0) + counts.get("MaxPool", 0) + counts.get("GlobalAveragePool", 0)) / total
+    join_ops = (counts.get("Concat", 0) + counts.get("Add", 0)) / total
+    if conv >= 0.45:
+        return "conv_heavy"
+    if gemm >= 0.35:
+        return "gemm_heavy"
+    if pool >= 0.25:
+        return "pooling_heavy"
+    if join_ops >= 0.15:
+        return "concat_add_heavy"
+    return "balanced"
+
+
+def resource_regime_key(record: GraphRecord) -> str:
+    if record.total_flops <= 1e6 and record.total_memory <= 1e6 and record.node_count <= 8:
+        return "small_overhead"
+    intensity = record.total_flops / max(record.total_memory, 1.0)
+    if intensity < 4.0:
+        return "memory_bound"
+    if intensity > 64.0:
+        return "compute_bound"
+    return "balanced"
+
+
+def size_risk_key(record: GraphRecord) -> str:
+    if record.batch_size >= 128 and record.max_tensor_size >= 1e8:
+        return "near_oom_batch"
+    if record.max_tensor_size >= 1e8:
+        return "very_large_tensor"
+    if record.total_params >= 1e8:
+        return "very_large_params"
+    if record.batch_size >= 128:
+        return "large_batch"
+    return "ordinary"
 
 
 def bucket_value(value: float, thresholds: tuple[float, ...]) -> str:
@@ -630,7 +811,14 @@ def clean_json(value: Any) -> Any:
     return value
 
 
-def write_pack(records: list[GraphRecord], all_records: list[GraphRecord], out_dir: Path, validation_mode: str) -> tuple[int, int]:
+def write_pack(
+    records: list[GraphRecord],
+    all_records: list[GraphRecord],
+    out_dir: Path,
+    validation_mode: str,
+    precision_sweep: Iterable[str] | str | None = None,
+) -> tuple[int, int]:
+    precision_configs = parse_precision_sweep(precision_sweep)
     sync_runtime_files(out_dir)
     models_dir = out_dir / "models"
     manifest_dir = out_dir / "manifest"
@@ -641,7 +829,7 @@ def write_pack(records: list[GraphRecord], all_records: list[GraphRecord], out_d
     (models_dir / "__init__.py").write_text('"""Generated calibration model modules."""\n')
 
     manifest_path = manifest_dir / "subset_manifest.jsonl"
-    valid_rows: list[dict[str, Any]] = []
+    model_rows: list[dict[str, Any]] = []
     validation_failures: list[dict[str, str]] = []
     target_size = len(records)
     selected_stems = {record.stem for record in records}
@@ -653,12 +841,12 @@ def write_pack(records: list[GraphRecord], all_records: list[GraphRecord], out_d
     attempted: set[str] = set()
 
     for record in candidate_pool:
-        if len(valid_rows) >= target_size:
+        if len(model_rows) >= target_size:
             break
         if record.stem in attempted:
             continue
         attempted.add(record.stem)
-        model_id = f"calib_{len(valid_rows):04d}"
+        model_id = f"calib_{len(model_rows):04d}"
         with Path(record.graph_path).open("rb") as fh:
             graph = nx.DiGraph(pickle.load(fh))
         unsupported = unsupported_ops(graph)
@@ -681,39 +869,58 @@ def write_pack(records: list[GraphRecord], all_records: list[GraphRecord], out_d
                 continue
         row = {
             **asdict(record),
+            "graph_id": model_id,
+            "hardware_id": None,
             "original_stem": record.stem,
             "original_graph_path": record.graph_path,
             "original_label_path": record.label_path,
             "model_id": model_id,
             "model_file": f"models/{model_id}.py",
             "subset_graph_file": f"subset/cg/cg/{model_id}.pkl",
-            "label_file": f"label/label/{model_id}.txt",
+            "base_label_file": f"label/label/{model_id}.txt",
             "input_shape": list(input_shape),
+            "precision_sweep": list(precision_configs),
         }
-        valid_rows.append(clean_json(row))
+        model_rows.append(clean_json(row))
 
-    if len(valid_rows) < target_size:
+    if len(model_rows) < target_size:
         raise RuntimeError(
-            f"validated only {len(valid_rows)} generated models out of requested {target_size}; "
+            f"validated only {len(model_rows)} generated models out of requested {target_size}; "
             f"{len(validation_failures)} candidates failed validation"
         )
 
     with manifest_path.open("w") as fh:
-        for row in valid_rows:
+        for row in expand_precision_rows(model_rows, precision_configs):
             fh.write(json.dumps(row, sort_keys=True) + "\n")
     write_report(
         out_dir / "selection_report.md",
         all_records,
-        [record_by_stem(all_records, row["original_stem"]) for row in valid_rows],
+        [record_by_stem(all_records, row["original_stem"]) for row in model_rows],
         validation_failures,
+        precision_configs,
     )
     write_coverage_summary(
         out_dir / "coverage_summary.json",
         all_records,
-        [record_by_stem(all_records, row["original_stem"]) for row in valid_rows],
+        [record_by_stem(all_records, row["original_stem"]) for row in model_rows],
         validation_failures,
+        precision_configs,
     )
-    return len(valid_rows), len(validation_failures)
+    return len(model_rows), len(validation_failures)
+
+
+def expand_precision_rows(model_rows: Iterable[dict[str, Any]], precision_configs: Iterable[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    configs = tuple(precision_configs)
+    for row in model_rows:
+        for index, precision_config in enumerate(configs):
+            expanded = dict(row)
+            expanded["precision_config"] = precision_config
+            expanded["precision_config_index"] = index
+            expanded["label_file"] = f"label/label/{row['model_id']}_{precision_config}.txt"
+            expanded["profile_point_id"] = f"{row['model_id']}::{precision_config}"
+            rows.append(expanded)
+    return rows
 
 
 def unsupported_ops(graph: nx.DiGraph) -> list[str]:
@@ -732,13 +939,18 @@ def write_coverage_summary(
     all_records: list[GraphRecord],
     selected: list[GraphRecord],
     validation_failures: list[dict[str, str]] | None = None,
+    precision_sweep: Iterable[str] | None = None,
 ) -> None:
     validation_failures = validation_failures or []
+    precision_configs = tuple(precision_sweep or DEFAULT_PRECISION_SWEEP)
     summary = {
         "full_dataset_graphs": len(all_records),
         "selected_graphs": len(selected),
+        "manifest_profile_points": len(selected) * len(precision_configs),
         "seed": SEED,
         "default_subset_size": DEFAULT_SUBSET_SIZE,
+        "default_pilot_subset_size": DEFAULT_PILOT_SUBSET_SIZE,
+        "precision_sweep": list(precision_configs),
         "validation_exclusions_replaced": len(validation_failures),
         "batch_size_coverage": {
             str(batch): {
@@ -762,6 +974,20 @@ def write_coverage_summary(
             (structure_key(structure_signature(rec)) for rec in all_records),
             (structure_key(structure_signature(rec)) for rec in selected),
         ),
+        "architecture_family_coverage": {
+            field: coverage_counts(
+                (coverage_value(rec, field) for rec in all_records),
+                (coverage_value(rec, field) for rec in selected),
+            )
+            for field in ARCH_FAMILY_FIELDS
+        },
+        "model_structure_coverage": {
+            field: coverage_counts(
+                (coverage_value(rec, field) for rec in all_records),
+                (coverage_value(rec, field) for rec in selected),
+            )
+            for field in STRUCTURE_FIELDS
+        },
         "size_quantiles": {
             field: quantile_summary(
                 [float(getattr(rec, field)) for rec in all_records],
@@ -772,6 +998,11 @@ def write_coverage_summary(
         "validation_failures": validation_failures[:200],
     }
     path.write_text(json.dumps(clean_json(summary), indent=2, sort_keys=True) + "\n")
+
+
+def coverage_value(record: GraphRecord, field: str) -> str:
+    values = dict(coverage_keys(record))
+    return values.get(field, "<unknown>")
 
 
 def coverage_counts(full_keys: Iterable[str], selected_keys: Iterable[str]) -> dict[str, dict[str, int]]:
@@ -847,15 +1078,20 @@ def write_report(
     all_records: list[GraphRecord],
     selected: list[GraphRecord],
     validation_failures: list[dict[str, str]] | None = None,
+    precision_sweep: Iterable[str] | None = None,
 ) -> None:
     validation_failures = validation_failures or []
+    precision_configs = tuple(precision_sweep or DEFAULT_PRECISION_SWEEP)
     lines = [
         "# NRP Calibration Subset Selection Report",
         "",
         f"- Full dataset graphs: {len(all_records)}",
         f"- Selected graphs: {len(selected)}",
+        f"- Manifest profile points: {len(selected) * len(precision_configs)}",
         f"- Seed: {SEED}",
         f"- Default target size: {DEFAULT_SUBSET_SIZE}",
+        f"- Default pilot target size: {DEFAULT_PILOT_SUBSET_SIZE}",
+        f"- Precision sweep: {', '.join(precision_configs)}",
         f"- Validation exclusions replaced: {len(validation_failures)}",
         "",
         "## Selection Policy",
@@ -863,7 +1099,8 @@ def write_report(
         "- Balance the final subset across batch sizes before filling with feature-space diversity.",
         "- Reserve pure-family examples for every batch size where they exist.",
         "- Reserve one representative for mixed architecture-family tuples when the subset budget allows it.",
-        "- Reserve operator-presence, topology-signature, and size-quantile anchors before diversity fill.",
+        "- Reserve operator-presence, topology-signature, model-structure, resource-regime, and size-quantile anchors before diversity fill.",
+        "- Expand each selected graph into one manifest row per precision_config.",
         "- Replace generated-source validation failures with the next best eligible candidates.",
         "",
         "## Batch Size Coverage",
@@ -915,6 +1152,23 @@ def write_report(
     structure_keys = sorted(full_structures, key=lambda key: (-selected_structures.get(key, 0), -full_structures[key], key))[:80]
     for signature in structure_keys:
         lines.append(f"| `{' / '.join(signature)}` | {full_structures[signature]} | {selected_structures.get(signature, 0)} |")
+    for section, fields in (
+        ("Architecture And Family Coverage", ARCH_FAMILY_FIELDS),
+        ("Model Structure And Resource Coverage", STRUCTURE_FIELDS),
+    ):
+        lines.extend(["", f"## {section}", ""])
+        for field in fields:
+            lines.extend(["", f"### {field}", "", "| bucket | full | selected |", "|---|---:|---:|"])
+            full_counts: dict[str, int] = {}
+            selected_counts: dict[str, int] = {}
+            for record in all_records:
+                key = coverage_value(record, field)
+                full_counts[key] = full_counts.get(key, 0) + 1
+            for record in selected:
+                key = coverage_value(record, field)
+                selected_counts[key] = selected_counts.get(key, 0) + 1
+            for key in sorted(full_counts, key=lambda item: (-selected_counts.get(item, 0), -full_counts[item], item))[:50]:
+                lines.append(f"| `{key}` | {full_counts[key]} | {selected_counts.get(key, 0)} |")
     lines.extend(["", "## Family Coverage", "", "| family tuple | full | selected |", "|---|---:|---:|"])
     full_families: dict[tuple[str, ...], int] = {}
     selected_families: dict[tuple[str, ...], int] = {}
@@ -956,9 +1210,11 @@ def main(argv: list[str] | None = None) -> None:
     sync_runtime_files(out_dir)
     records = load_records(Path(args.data_root))
     selected = select_smoke_subset(records, args.subset_size) if args.smoke_small else select_subset(records, args.subset_size, args.seed)
-    valid_count, failure_count = write_pack(selected, records, out_dir, args.validation_mode)
+    precision_sweep = parse_precision_sweep(args.precision_sweep)
+    valid_count, failure_count = write_pack(selected, records, out_dir, args.validation_mode, precision_sweep)
     print(
-        f"wrote {valid_count} generated models, subset graphs, manifest, and coverage report to {out_dir} "
+        f"wrote {valid_count} generated models, {valid_count * len(precision_sweep)} manifest rows, "
+        f"subset graphs, and coverage report to {out_dir} "
         f"({failure_count} validation replacements)",
         flush=True,
     )

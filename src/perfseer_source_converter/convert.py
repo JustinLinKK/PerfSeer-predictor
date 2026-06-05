@@ -42,6 +42,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--constructor-args", default="[]", help="JSON list passed positionally to the entry constructor/factory")
     parser.add_argument("--constructor-kwargs", default="{}", help="JSON object passed as keyword args to the entry constructor/factory")
     parser.add_argument("--ckpt", help="Optimized PerfSeer checkpoint supplying norm_stats and feature_config")
+    parser.add_argument("--feature-config-json", help="JSON object of FeatureConfig overrides for predictor input features")
+    parser.add_argument("--precision-config", help="FeatureConfig precision_config override, for example bf16_amp")
+    parser.add_argument("--hardware-id", help="FeatureConfig hardware_id override")
+    parser.add_argument("--hardware-features-json", default="{}", help="JSON object of numeric hardware feature overrides")
     parser.add_argument("--out", help="Path to save a torch-serialized PerfSeerOptimizedData object")
     parser.add_argument("--graph-out", help="Path to save the intermediate networkx graph pickle")
     return parser.parse_args(argv)
@@ -59,6 +63,15 @@ def main(argv: Optional[list[str]] = None) -> None:
         constructor_kwargs=constructor_kwargs,
         input_dtypes=tuple(args.input_dtype or ("float32",)),
     )
+    feature_config = parse_json_arg(args.feature_config_json, dict, "--feature-config-json") if args.feature_config_json else None
+    hardware_features = parse_json_arg(args.hardware_features_json, dict, "--hardware-features-json")
+    if args.precision_config or args.hardware_id or hardware_features:
+        feature_config = dict(feature_config or {})
+        feature_config.update(hardware_features)
+        if args.precision_config:
+            feature_config["precision_config"] = args.precision_config
+        if args.hardware_id:
+            feature_config["hardware_id"] = args.hardware_id
 
     graph = None
     if args.graph_out:
@@ -69,7 +82,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             pickle.dump(graph, fh, protocol=pickle.HIGHEST_PROTOCOL)
 
     if args.out:
-        data = convert_source_to_pyg_data(spec, ckpt_path=args.ckpt)
+        data = convert_source_to_pyg_data(spec, ckpt_path=args.ckpt, feature_config=feature_config)
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(data, out_path)

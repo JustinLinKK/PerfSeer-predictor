@@ -16,10 +16,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--checkpoint-root", required=True)
     p.add_argument("--results-path", required=True)
     p.add_argument("--data-root", required=True)
+    p.add_argument("--run-id")
     p.add_argument("--limit", type=int)
     p.add_argument("--epochs", type=int)
     p.add_argument("--batch-size", type=int)
     p.add_argument("--teacher-dir")
+    p.add_argument("--init-checkpoint")
     return p.parse_args()
 
 
@@ -31,6 +33,8 @@ def main() -> None:
     cfg.setdefault("run", {})
     cfg["run"]["out_dir"] = args.checkpoint_root
     cfg["run"]["results_path"] = args.results_path
+    if args.run_id:
+        cfg["run"]["run_id"] = args.run_id
 
     cfg.setdefault("data", {})
     cfg["data"]["root"] = args.data_root
@@ -47,6 +51,10 @@ def main() -> None:
         cfg.setdefault("distillation", {})
         cfg["distillation"]["enabled"] = True
         cfg["distillation"]["teacher_ckpt_dir"] = args.teacher_dir
+
+    if args.init_checkpoint:
+        cfg.setdefault("train", {})
+        cfg["train"]["init_checkpoint"] = args.init_checkpoint
 
     dst = Path(args.dst)
     dst.parent.mkdir(parents=True, exist_ok=True)

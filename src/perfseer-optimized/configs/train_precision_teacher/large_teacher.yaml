@@ -1,0 +1,75 @@
+run:
+  run_id: precision_large_teacher
+  out_dir: runs/optimized
+  results_path: runs/results.jsonl
+  notes: Large precision-aware SeerNetMulti teacher; pretrain on the source domain, then fine-tune with precision-labeled calibration rows.
+seed: 42
+data:
+  root: dataset
+  limit: 0
+  num_workers: 0
+  split_unit: graph
+features:
+  use_operator_type_onehot: true
+  topology: true
+  critical_path: true
+  edge_topology: true
+  include_destination_tensor: true
+  time_target_mode: raw
+  target_mode: absolute
+  include_precision_features: true
+  include_hardware_features: true
+  precision_config: fp32_ieee
+  hardware_id: source_domain_unknown
+  base_label_weight: 1.0
+  precision_label_weight: 3.0
+  pseudo_label_weight: 1.0
+model:
+  name: seernet_multi
+  hidden: 512
+  num_blocks: 4
+  head_hidden: 512
+  metric_heads: separate
+  activation: relu
+  dropout: 0.05
+  encoder_norm: layernorm
+  block_norm: prenorm
+  residual: gated
+  residual_gate_init: 0.1
+  residual_gate_mode: vector_per_stream
+  use_synmm: true
+  global_agg: synmm_plus
+  attention_pool: true
+  use_gnpb: true
+  include_u_in_edge_update: true
+  mlp_z_num_linear_layers: 4
+train:
+  metric: all
+  epochs: 600
+  batch_size: 96
+  lr: 0.0007
+  optimizer: adamw
+  weight_decay: 0.00001
+  patience: 40
+  scheduler_patience: 6
+  min_lr: 0.000001
+  loss: huber_logstd
+  huber_delta: 1.0
+  grad_clip_norm: 1.0
+  ema_decay: 0.0
+  init_checkpoint:
+  init_strict: true
+  device: auto
+multi_task:
+  enabled: true
+  loss_reduction: pcgrad
+  loss_weights:
+    train_util: 1.0
+    train_mem: 0.75
+    train_time: 1.5
+    infer_util: 1.0
+    infer_mem: 0.75
+    infer_time: 1.5
+calibration:
+  enabled: true
+  method: linear

@@ -153,7 +153,162 @@ Config meanings:
 - `train_deploy_model/shared_multitask_192_pcgrad.yaml`: compact shared multi-output deployment candidate.
 - `train_deploy_model/distill_student_192.yaml`: compact distilled student for CPU deployment; set `distillation.teacher_ckpt_dir` before a full run.
 - `train_deploy_model/distill_student_128.yaml`: smaller distilled CPU student candidate.
+- `train_precision_teacher/large_teacher.yaml`: large precision/hardware-aware multi-output teacher for source-domain pretraining and precision transfer fine-tuning. For transfer fine-tuning, set `train.init_checkpoint` to the source-domain `seernet_multi.pt` or its checkpoint directory.
+- `train_deploy_model/precision_distill_student_192.yaml`: precision/hardware-aware 192-wide distilled student; set `distillation.teacher_ckpt_dir` to either a large teacher run directory containing `seernet_multi.pt` or a six-checkpoint `seernet_metric*.pt` ensemble.
+- `train_deploy_model/precision_distill_student_128.yaml`: precision/hardware-aware 128-wide distilled student for scheduler deployment; uses the same teacher checkpoint conventions.
 - `eval_profiles/*.yaml`: GPU accuracy, CPU PyTorch fp32, dynamic INT8, TorchScript, ONNX Runtime, and OpenVINO runtime profiles.
+
+Precision calibration runs can be converted into a training-ready dataset with
+`scripts/materialize_precision_dataset.py`. It writes precision-specific label
+files plus `label/precision_metadata.jsonl`, which the optimized data loader
+uses to set per-sample precision/hardware global features. When including the
+original dataset with `--base-data-root`, pass `--source-precision-config` and
+`--source-hardware-id` so source-domain labels are tagged explicitly without
+being upweighted as newly profiled precision rows. For final runs, also pass
+`--source-precision-provenance` plus `--require-source-precision-provenance` so
+the exact original-label precision setup is recorded in metadata and the
+materialization report. If the original recipe is still unknown, keep
+`--source-precision-config source_domain_unknown`; provenance will be required
+but `source_precision_confirmed` remains false. Add
+`--require-source-precision-confirmed` only after the original profiler recipe
+is truly known. The precision-transfer flow also forwards the same provenance
+into source-teacher pretraining metadata so the source checkpoint can be
+checked before transfer. The materializer also writes
+`precision_rejected_rows.jsonl` and status/precision/fallback counts in
+`precision_materialization_report.json`, keeping unsupported FP8 rows auditable.
+Optimized evaluation records aggregate metrics plus `metrics_by_precision`,
+`metrics_by_batch_size`, `metrics_by_resource_regime`, and
+`metrics_by_graph_signature` in `runs/results.jsonl`, along with
+`precision_config_counts`, `hardware_id_counts`, and `label_domain_counts` so
+held-out recipe, hardware, and source/precision-profile/pseudo-label coverage
+can be checked directly.
+The training CLI stores initialization and distillation-teacher metadata in each
+checkpoint so source-domain pretraining, transfer fine-tuning, and student
+distillation remain auditable. Train rows and checkpoint metadata also carry
+the split unit, split hash, and train/val/test counts, which lets the final
+result checker require `graph_signature` or `graph_family` training evidence
+with minimum split sizes before accepting a deployment ledger. Precision student
+distillation uses label-domain hard-alpha settings so measured precision labels
+can stay hard-label dominated while source or pseudo rows can blend toward
+teacher soft targets. The
+precision materializer can create opt-in pseudo rows with
+`--pseudo-precision-sweep`; pseudo rows are kept in the train split only and
+excluded from normalization stats, and use `features.pseudo_label_weight`
+rather than the measured precision weight.
+Precision training checkpoints also store `supported_precision_hardware` allow-lists for
+clear deployment-time validation of requested precision/hardware domains; the
+source converter accepts `--precision-config`, `--hardware-id`, and JSON feature
+overrides and checks them against that allow-list. Optimized evaluation also
+rejects test rows outside the checkpoint's supported precision/hardware pairs
+before scoring. Deployment evaluation writes `deployment_metadata.json` beside
+exported runtime artifacts with the feature layout, precision/hardware config,
+supported allow-list, runtime backend, and held-out split evidence.
+Precision teacher/student configs set
+`data.split_unit: graph`, which keeps all precision variants for a graph in the
+same train/val/test split to avoid graph leakage across precision rows. For a
+structural robustness run, pass `--split-unit graph_signature` to the training
+CLI or flow runner to hold out whole graph-signature clusters. Their
+default `features.target_mode` is `absolute`; set it to `log_ratio_to_source`
+for a residual transfer experiment that predicts log(label/source_label) and is
+converted back to absolute metrics during evaluation.
+
+Typical precision-transfer sequence:
+
+```bash
+python scripts/run_precision_transfer_flow.py \
+  --results-dir /mnt/output/nrp_calibration \
+  --precision-data-root dataset_precision_a100 \
+  --hardware-id a100 \
+  --dry-run
+```
+
+The flow runner prints or executes the materialization, source-teacher
+pretraining, source-domain evaluation, precision transfer, student distillation,
+and held-out precision evaluation commands. Use `--skip-source-eval` only when
+you already have a separate baseline-preservation check for the source teacher.
+Add `--structural-validation-splits graph_signature,graph_family` to run
+additional split-suffixed transfer/student validation flows that reuse the
+source checkpoint and require matching structural split evidence in the checker.
+For final source pretraining gates, pass `--baseline-run-id` and
+`--max-source-baseline-mape-delta` with `--check-results` so the source teacher
+must stay within the accepted MAPE delta from the current baseline eval row.
+Its default `--source-precision-config` is `source_domain_unknown`; replace it
+with `fp32_ieee`, `tf32`, or another concrete recipe only after the original
+label collection setup is confirmed. The current evidence snapshot is recorded
+in `SOURCE_PRECISION_PROVENANCE.md`.
+Add `--check-results` after a real run to validate that `runs/results.jsonl`
+contains source-teacher, precision-teacher, and precision-student eval rows with
+precision, label-domain, batch-size, resource-regime, and graph-signature slices
+before using the student for deployment. Pass `--required-label-domain
+precision_profile` for final transfer/student gates so held-out accuracy must
+come from real precision labels rather than only source or pseudo rows; add
+`--min-eval-precision-labels` to require a concrete held-out precision-profile
+count in precision teacher/student and deployment eval rows. Add
+`--min-eval-precision-count bf16_amp=20` or repeat the flag for each required
+recipe when a final run must prove enough held-out examples for specific
+precision configs. Add `--min-eval-hardware-count a100=20` when a final run
+must prove enough held-out examples for a specific hardware domain. When the
+flow is run with `--split-unit
+graph_signature`, the checker also requires eval rows to report that same
+split-unit evidence and test hash; deployment eval rows record the same split
+metadata for later artifact comparison. If a checkpoint test hash is present,
+the checker rejects eval rows that silently score a different full held-out
+split. Add `--min-batch-size-slices`,
+`--min-resource-regime-slices`, `--min-label-domain-slices`, or
+`--min-graph-signature-slices` when a run must prove broader held-out coverage.
+When source precision provenance is required, the checker reads
+`precision_materialization_report.json` to verify that provenance and the
+accepted precision-label count, and requires the source-teacher
+`train_complete` row to record the same provenance. Add
+`--require-source-precision-confirmed` only when the source recipe has been
+confirmed and both the materialization report and source train checkpoint should
+mark it confirmed. Pass
+`--deploy-eval-profile` to add a deployment runtime evaluation for the student;
+with `--check-results`, the checker requires the deployment row and its
+`deployment_metadata.json` sidecar. Add `--require-checkpoint-files` when the
+final gate should also prove that every eval ledger row still points at a real
+checkpoint file; with deployment eval enabled, the flow also requires the
+deployment eval checkpoint paths to match the held-out precision-student eval
+checkpoint paths. With `--require-train-events` and `--require-checkpoint-files`,
+the flow additionally requires source/transfer/student eval checkpoint paths to
+match their corresponding `train_complete` checkpoint paths. Add
+`--require-train-events` to require source, transfer, and
+student `train_complete` rows in the same ledger; pass
+`--required-train-label-domain source,precision_profile` so precision
+teacher/student training rows must prove the train split included both original
+source-domain and measured precision-label rows; add
+`--min-train-source-labels` and `--min-train-precision-labels` to enforce final
+train-split count floors for the original 53k source rows and real precision
+profiles; add `--min-train-precision-count bf16_amp=20` for per-recipe
+train-split floors; add `--min-train-hardware-count a100=20` for per-hardware
+train-split floors; add `--min-train-split-count`, `--min-val-split-count`, and
+`--min-train-test-count` when final ledgers must prove structural-holdout
+training used enough rows in every split; add
+`--require-unlimited-train-data` for final non-smoke runs so accidental
+`--limit` training cannot pass the gate. The underlying
+training commands are:
+
+```bash
+conda run -n perfseer python -m perfseer_optimized.train \
+  --config src/perfseer-optimized/configs/train_precision_teacher/large_teacher.yaml \
+  --run-id precision_large_teacher_source \
+  --data-root dataset \
+  --precision-config fp32_ieee \
+  --hardware-id source_domain_unknown \
+  --source-precision-provenance original-profiler-notes.md#fp32 \
+  --require-source-precision-provenance
+
+conda run -n perfseer python -m perfseer_optimized.train \
+  --config src/perfseer-optimized/configs/train_precision_teacher/large_teacher.yaml \
+  --run-id precision_large_teacher_transfer \
+  --data-root dataset_precision_a100 \
+  --init-checkpoint runs/optimized/precision_large_teacher_source/seernet_multi.pt
+
+conda run -n perfseer python -m perfseer_optimized.train \
+  --config src/perfseer-optimized/configs/train_deploy_model/precision_distill_student_128.yaml \
+  --data-root dataset_precision_a100 \
+  --teacher-ckpt-dir runs/optimized/precision_large_teacher_transfer
+```
 
 ### Optimized Model Differences and Expected Performance
 

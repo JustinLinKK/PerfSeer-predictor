@@ -15,6 +15,9 @@ WARMUP="20"
 INFER_REPEATS="50"
 TRAIN_REPEATS="50"
 SAMPLE_INTERVAL="0.01"
+PRECISION_CONFIG=""
+PRECISION_SWEEP=""
+FP8_BACKEND="transformer_engine"
 DRY_RUN="0"
 
 usage() {
@@ -41,6 +44,9 @@ Options:
   --infer-repeats N       Timed inference iterations per model. Default: 50.
   --train-repeats N       Timed train-step iterations per model. Default: 50.
   --sample-interval SEC   NVML sampling interval in seconds. Default: 0.01.
+  --precision-config VAL  Precision config filter. May be comma-separated. Example: fp32_ieee,bf16_amp.
+  --precision-sweep VAL   Alias for comma-separated precision config filter.
+  --fp8-backend VALUE     FP8 backend selector. Default: transformer_engine.
   --dry-run               Print rendered YAML without submitting.
 EOF
 }
@@ -61,6 +67,9 @@ while [[ $# -gt 0 ]]; do
     --infer-repeats) INFER_REPEATS="$2"; shift 2 ;;
     --train-repeats) TRAIN_REPEATS="$2"; shift 2 ;;
     --sample-interval) SAMPLE_INTERVAL="$2"; shift 2 ;;
+    --precision-config) PRECISION_CONFIG="$2"; shift 2 ;;
+    --precision-sweep) PRECISION_SWEEP="$2"; shift 2 ;;
+    --fp8-backend) FP8_BACKEND="$2"; shift 2 ;;
     --dry-run) DRY_RUN="1"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage; exit 2 ;;
@@ -71,6 +80,14 @@ if [[ -z "$NAMESPACE" || -z "$IMAGE" || -z "$PVC" ]]; then
   echo "--namespace, --image, and --pvc are required" >&2
   usage
   exit 2
+fi
+
+PRECISION_ARGS="--fp8-backend ${FP8_BACKEND}"
+if [[ -n "$PRECISION_CONFIG" ]]; then
+  PRECISION_ARGS="${PRECISION_ARGS} --precision-config ${PRECISION_CONFIG}"
+fi
+if [[ -n "$PRECISION_SWEEP" ]]; then
+  PRECISION_ARGS="${PRECISION_ARGS} --precision-sweep ${PRECISION_SWEEP}"
 fi
 
 AFFINITY_BLOCK=""
@@ -131,6 +148,7 @@ ${AFFINITY_BLOCK}
           --infer-repeats ${INFER_REPEATS}
           --train-repeats ${TRAIN_REPEATS}
           --sample-interval ${SAMPLE_INTERVAL}
+          ${PRECISION_ARGS}
         resources:
           requests:
             cpu: "4"

@@ -24,21 +24,39 @@ target hardware while preserving the current dataset label format.
 python nrp_calibration_pack/generate_model_sources.py \
   --data-root dataset \
   --out-dir nrp_calibration_pack \
-  --subset-size 4096 \
+  --profile-preset full \
+  --subset-size 10000 \
   --force
 ```
 
-Default behavior selects `4096` graphs with seed `20260602` and validates every
-generated source with Python compilation only. The selector balances batch
-sizes, reserves pure and mixed architecture-family coverage, anchors rare
-operator and topology signatures, anchors model-size quantiles, then fills the
+Default behavior selects the full `10000` graphs with seed `20260602` and
+validates every generated source with Python compilation only. Use
+`--profile-preset pilot` for the chosen 1000-graph precision pilot before the
+full sweep; `--subset-size` can still override either preset. The selector
+balances batch sizes, reserves pure and mixed architecture-family coverage,
+anchors rare operator and topology signatures, anchors model-structure,
+resource, and size coverage, anchors model-size quantiles, then fills the
 remaining slots with feature-space diversity.
+
+The generated manifest expands every selected graph across the default
+precision sweep:
+
+```text
+fp32_ieee, tf32, bf16_amp, fp16_amp, fp8_te_hybrid
+```
+
+Use `--profile-preset pilot --precision-sweep fp32_ieee,bf16_amp` for a smaller
+pilot pack, or `--precision-sweep fp32_ieee` for local CPU smoke tests. `bf32`
+is intentionally rejected because it is ambiguous; choose `tf32` or `bf16_amp`.
+Each profiler result row records the actual precision recipe metadata, including
+the TF32 control API family/effective state, BF16 support probe, FP16 GradScaler
+state, FP8 backend policy, and unsupported/fallback status where applicable.
 
 The generator writes three handoff artifacts:
 
 - `subset/cg/cg/calib_XXXX.pkl`: filtered graph subset with model-id filenames.
 - `models/calib_XXXX.py`: reverse-engineered executable PyTorch workload model.
-- `manifest/subset_manifest.jsonl`: mapping between model ids, original dataset stems, subset graph files, model files, and expected label files.
+- `manifest/subset_manifest.jsonl`: mapping between model ids, precision configs, original dataset stems, subset graph files, model files, and expected label files.
 
 Use `--smoke-small --subset-size 2 --validation-mode real` for a small local CPU
 forward-check pack. Do not commit generated `calib_*.py`, `manifest/`,
@@ -61,6 +79,7 @@ python /tmp/nrp_calibration_smoke_pack/profile/run_profile.py \
   --models-dir /tmp/nrp_calibration_smoke_pack/models \
   --output-dir /tmp/perfseer_calibration_smoke \
   --num-shards 1 \
+  --precision-config fp32_ieee \
   --warmup 1 \
   --infer-repeats 1 \
   --train-repeats 1 \
@@ -86,8 +105,7 @@ docker push <your-registry>/perfseer-calibration:latest
 python nrp_calibration_pack/generate_model_sources.py \
   --data-root dataset \
   --out-dir nrp_calibration_pack \
-  --subset-size 4096 \
-  --workers 16 \
+  --subset-size 10000 \
   --force
 ```
 
@@ -101,6 +119,7 @@ python nrp_calibration_pack/generate_model_sources.py \
   --gpu-product NVIDIA-GeForce-RTX-4090 \
   --parallelism 4 \
   --completions 64 \
+  --precision-sweep fp32_ieee,tf32,bf16_amp,fp16_amp \
   --warmup 20 \
   --infer-repeats 50 \
   --train-repeats 50
@@ -120,7 +139,7 @@ models are trained and inferred during profiling, see `GOLDEN_DATA_GUIDE.md`.
 
 The job writes:
 
-- `label/label/<model_id>.txt`: dataset-compatible label dict.
+- `label/label/<model_id>_<precision_config>.txt`: dataset-compatible label dict for a precision-specific profile point.
 - `results_shard*.jsonl`: detailed hardware, timing, memory, and status rows.
 - `hardware_shard*.json`: detected CUDA/GPU metadata for each shard.
 

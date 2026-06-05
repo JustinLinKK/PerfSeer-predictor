@@ -9,24 +9,30 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import numpy as np
 import torch
 import yaml
 from torch_geometric.loader import DataLoader
 
-from perfseer.data import list_pairs
-
 from .bench import configure_cpu_threads, summarize_latencies
 from .calibration import LinearCalibrator
 from .data import (
     FeatureConfig,
+    LABEL_DOMAIN_VOCAB,
     NUM_TARGETS,
+    PRECISION_CONFIG_VOCAB,
+    RESOURCE_REGIME_VOCAB,
     TARGET_NAMES,
     PerfSeerOptimizedDataset,
     feature_layout,
+    graph_signature_bucket,
+    invert_targets,
+    list_precision_pairs,
     split_dataset,
+    split_hash,
+    validate_precision_hardware_pairs,
 )
 from .metrics import all_metrics
 from .model import SeerNet, SeerNetConfig, SeerNetMulti, count_parameters
@@ -77,20 +83,58 @@ def build_test_dataset(args: argparse.Namespace, ckpt: dict[str, Any], norm_stat
     data_root = args.data_root or cfg.get("data", {}).get("root", "dataset")
     feature_cfg = FeatureConfig.from_dict(meta.get("feature_config") or cfg.get("features"))
     split_meta = meta.get("split", {})
+    seed = int(args.seed if args.seed is not None else split_meta.get("seed", cfg.get("seed", 42)))
+    split_unit = str(split_meta.get("split_unit", cfg.get("data", {}).get("split_unit", "pair")) or "pair")
+    test_pair_ids = split_meta.get("test_pair_ids")
     test_stems = split_meta.get("test_stems")
-    if test_stems:
-        by_stem = {Path(gp).stem: (gp, lp) for gp, lp in list_pairs(data_root)}
+    reconstruction_source = "computed_split"
+    if test_pair_ids:
+        by_pair = {(Path(gp).stem, Path(lp).stem): (gp, lp) for gp, lp in list_precision_pairs(data_root)}
+        test_files = [
+            by_pair[(item["graph_stem"], item["label_stem"])]
+            for item in test_pair_ids
+            if (item["graph_stem"], item["label_stem"]) in by_pair
+        ]
+        reconstruction_source = "checkpoint_test_pair_ids"
+    elif test_stems:
+        by_stem = {Path(gp).stem: (gp, lp) for gp, lp in list_precision_pairs(data_root)}
         test_files = [by_stem[stem] for stem in test_stems if stem in by_stem]
+        reconstruction_source = "checkpoint_test_stems"
     else:
-        seed = int(args.seed if args.seed is not None else split_meta.get("seed", cfg.get("seed", 42)))
-        _train, _val, test_files = split_dataset(data_root, seed=seed)
+        _train, _val, test_files = split_dataset(data_root, seed=seed, split_unit=split_unit)
         limit = int(args.limit if args.limit is not None else cfg.get("data", {}).get("limit", 0) or 0)
         if limit > 0:
             test_files = test_files[: max(1, limit // 2)]
     if args.limit is not None and args.limit > 0 and not test_stems:
         test_files = test_files[: max(1, args.limit // 2)]
+    setattr(
+        args,
+        "_eval_split_metadata",
+        {
+            "seed": seed,
+            "split_unit": split_unit,
+            "source": reconstruction_source,
+            "checkpoint_split_unit": split_meta.get("split_unit"),
+            "checkpoint_test_hash": split_meta.get("test_hash"),
+            "test_hash": split_hash(test_files),
+            "test_count": len(test_files),
+            "test_pair_ids_reconstructed": bool(test_pair_ids),
+            "limit_applied": bool(args.limit is not None and args.limit > 0),
+        },
+    )
+    supported = meta.get("supported_precision_hardware") or split_meta.get("supported_precision_hardware")
+    validate_precision_hardware_pairs(test_files, feature_cfg, supported, context="evaluation")
     ds = PerfSeerOptimizedDataset(file_list=test_files, split="test", root=data_root, norm_stats=norm_stats, feature_config=feature_cfg)
     return ds, feature_cfg, data_root
+
+
+def split_result_fields(args: argparse.Namespace) -> dict[str, Any]:
+    eval_split = getattr(args, "_eval_split_metadata", {}) or {}
+    return {
+        "split_unit": eval_split.get("split_unit"),
+        "test_hash": eval_split.get("test_hash"),
+        "evaluation_split": eval_split,
+    }
 
 
 def apply_calibration(pred_std: np.ndarray, ckpt: dict[str, Any]) -> np.ndarray:
@@ -98,12 +142,44 @@ def apply_calibration(pred_std: np.ndarray, ckpt: dict[str, Any]) -> np.ndarray:
     return cal.apply(pred_std) if cal is not None else pred_std
 
 
-def invert_selected(pred_std: np.ndarray, stats: dict[str, np.ndarray], metric_idx: int) -> np.ndarray:
-    return np.expm1(pred_std.reshape(-1) * float(stats["y_std"][metric_idx]) + float(stats["y_mean"][metric_idx]))
+def feature_config_from_checkpoint(ckpt: dict[str, Any]) -> FeatureConfig:
+    meta = ckpt.get("metadata", {})
+    cfg = meta.get("config", {})
+    return FeatureConfig.from_dict(meta.get("feature_config") or cfg.get("features"))
 
 
-def invert_all(pred_std: np.ndarray, stats: dict[str, np.ndarray]) -> np.ndarray:
-    return np.expm1(pred_std * stats["y_std"].reshape(1, -1) + stats["y_mean"].reshape(1, -1))
+def invert_selected(
+    pred_std: np.ndarray,
+    stats: dict[str, np.ndarray],
+    metric_idx: int,
+    feature_cfg: FeatureConfig | None = None,
+    base_raw: np.ndarray | None = None,
+) -> np.ndarray:
+    base = None if base_raw is None else np.asarray(base_raw)[:, metric_idx : metric_idx + 1]
+    return invert_targets(pred_std.reshape(-1, 1), {"y_mean": stats["y_mean"][metric_idx : metric_idx + 1], "y_std": stats["y_std"][metric_idx : metric_idx + 1]}, feature_cfg, base).reshape(-1)
+
+
+def invert_all(
+    pred_std: np.ndarray,
+    stats: dict[str, np.ndarray],
+    feature_cfg: FeatureConfig | None = None,
+    base_raw: np.ndarray | None = None,
+) -> np.ndarray:
+    return invert_targets(pred_std, stats, feature_cfg, base_raw)
+
+
+def batch_base_raw(batch) -> np.ndarray | None:
+    value = getattr(batch, "y_base_raw", None)
+    if value is None:
+        return None
+    return value.view(-1, NUM_TARGETS).detach().cpu().numpy().astype(np.float64)
+
+
+def batch_eval_raw(batch) -> np.ndarray | None:
+    value = getattr(batch, "y_eval_raw", None)
+    if value is None:
+        return None
+    return value.view(-1, NUM_TARGETS).detach().cpu().numpy().astype(np.float64)
 
 
 def batch_counts(batch) -> tuple[np.ndarray, np.ndarray]:
@@ -121,50 +197,180 @@ def batch_counts(batch) -> tuple[np.ndarray, np.ndarray]:
     return node_counts, edge_counts
 
 
+def batch_precision_ids(batch) -> np.ndarray:
+    ids = getattr(batch, "precision_config_idx", None)
+    graph_count = int(getattr(batch, "num_graphs", 1))
+    if ids is None:
+        return np.full(graph_count, -1, dtype=np.int64)
+    return ids.view(-1).detach().cpu().numpy().astype(np.int64)
+
+
+def batch_label_domain_ids(batch) -> np.ndarray:
+    ids = getattr(batch, "label_domain_idx", None)
+    graph_count = int(getattr(batch, "num_graphs", 1))
+    if ids is None:
+        return np.full(graph_count, -1, dtype=np.int64)
+    return ids.view(-1).detach().cpu().numpy().astype(np.int64)
+
+
+def batch_resource_regime_ids(batch) -> np.ndarray:
+    ids = getattr(batch, "resource_regime_idx", None)
+    graph_count = int(getattr(batch, "num_graphs", 1))
+    if ids is None:
+        return np.full(graph_count, -1, dtype=np.int64)
+    return ids.view(-1).detach().cpu().numpy().astype(np.int64)
+
+
+def batch_size_values(batch) -> np.ndarray:
+    values = getattr(batch, "batch_size_raw", None)
+    graph_count = int(getattr(batch, "num_graphs", 1))
+    if values is None:
+        return np.zeros(graph_count, dtype=np.float64)
+    return values.view(-1).detach().cpu().numpy().astype(np.float64)
+
+
+def batch_graph_family_names(batch) -> np.ndarray:
+    graph_count = int(getattr(batch, "num_graphs", 1))
+    value = getattr(batch, "graph_family_name", None)
+    if value is None:
+        return np.full(graph_count, "unknown", dtype=object)
+    if isinstance(value, str):
+        return np.full(graph_count, value, dtype=object)
+    if isinstance(value, (list, tuple)):
+        names = [str(item) for item in value]
+        if len(names) == graph_count:
+            return np.asarray(names, dtype=object)
+        if len(names) == 1:
+            return np.full(graph_count, names[0], dtype=object)
+    return np.full(graph_count, "unknown", dtype=object)
+
+
+def batch_hardware_ids(batch) -> np.ndarray:
+    graph_count = int(getattr(batch, "num_graphs", 1))
+    value = getattr(batch, "hardware_id_name", None)
+    if value is None:
+        return np.full(graph_count, "unknown", dtype=object)
+    if isinstance(value, str):
+        return np.full(graph_count, value, dtype=object)
+    if isinstance(value, (list, tuple)):
+        names = [str(item) for item in value]
+        if len(names) == graph_count:
+            return np.asarray(names, dtype=object)
+        if len(names) == 1:
+            return np.full(graph_count, names[0], dtype=object)
+    return np.full(graph_count, "unknown", dtype=object)
+
+
 def evaluate_multi(model, ckpt, loader, device, stats):
+    feature_cfg = feature_config_from_checkpoint(ckpt)
     preds_std: list[np.ndarray] = []
     targets_std: list[np.ndarray] = []
+    targets_eval_raw: list[np.ndarray] = []
+    base_raw: list[np.ndarray] = []
     node_counts: list[np.ndarray] = []
     edge_counts: list[np.ndarray] = []
+    precision_ids: list[np.ndarray] = []
+    label_domain_ids: list[np.ndarray] = []
+    batch_sizes: list[np.ndarray] = []
+    resource_ids: list[np.ndarray] = []
+    hardware_ids: list[np.ndarray] = []
+    graph_families: list[np.ndarray] = []
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(device)
             pred = model(batch)
             preds_std.append(pred.cpu().numpy())
             targets_std.append(batch.y.view(-1, NUM_TARGETS).cpu().numpy())
+            eval_raw = batch_eval_raw(batch)
+            base = batch_base_raw(batch)
+            if eval_raw is not None:
+                targets_eval_raw.append(eval_raw)
+            if base is not None:
+                base_raw.append(base)
             nc, ec = batch_counts(batch)
             node_counts.append(nc)
             edge_counts.append(ec)
+            precision_ids.append(batch_precision_ids(batch))
+            label_domain_ids.append(batch_label_domain_ids(batch))
+            batch_sizes.append(batch_size_values(batch))
+            resource_ids.append(batch_resource_regime_ids(batch))
+            hardware_ids.append(batch_hardware_ids(batch))
+            graph_families.append(batch_graph_family_names(batch))
     pred_std = apply_calibration(np.concatenate(preds_std, axis=0), ckpt)
     true_std = np.concatenate(targets_std, axis=0)
-    y_pred = invert_all(pred_std, stats)
-    y_true = invert_all(true_std, stats)
-    return y_true, y_pred, np.concatenate(node_counts), np.concatenate(edge_counts)
+    base_all = np.concatenate(base_raw, axis=0) if base_raw else None
+    y_pred = invert_all(pred_std, stats, feature_cfg, base_all)
+    y_true = np.concatenate(targets_eval_raw, axis=0) if targets_eval_raw else invert_all(true_std, stats, feature_cfg, base_all)
+    return (
+        y_true,
+        y_pred,
+        np.concatenate(node_counts),
+        np.concatenate(edge_counts),
+        np.concatenate(precision_ids),
+        np.concatenate(label_domain_ids),
+        np.concatenate(batch_sizes),
+        np.concatenate(resource_ids),
+        np.concatenate(hardware_ids),
+        np.concatenate(graph_families),
+    )
 
 
 def evaluate_singles(models, ckpts, loader, device, stats):
+    feature_cfg = feature_config_from_checkpoint(ckpts[0])
     metric_to_pred: dict[int, list[np.ndarray]] = {int(c["metric_idx"]): [] for c in ckpts}
     targets_std: list[np.ndarray] = []
+    targets_eval_raw: list[np.ndarray] = []
+    base_raw: list[np.ndarray] = []
     node_counts: list[np.ndarray] = []
     edge_counts: list[np.ndarray] = []
+    precision_ids: list[np.ndarray] = []
+    label_domain_ids: list[np.ndarray] = []
+    batch_sizes: list[np.ndarray] = []
+    resource_ids: list[np.ndarray] = []
+    hardware_ids: list[np.ndarray] = []
+    graph_families: list[np.ndarray] = []
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(device)
             targets_std.append(batch.y.view(-1, NUM_TARGETS).cpu().numpy())
+            eval_raw = batch_eval_raw(batch)
+            base = batch_base_raw(batch)
+            if eval_raw is not None:
+                targets_eval_raw.append(eval_raw)
+            if base is not None:
+                base_raw.append(base)
             nc, ec = batch_counts(batch)
             node_counts.append(nc)
             edge_counts.append(ec)
+            precision_ids.append(batch_precision_ids(batch))
+            label_domain_ids.append(batch_label_domain_ids(batch))
+            batch_sizes.append(batch_size_values(batch))
+            resource_ids.append(batch_resource_regime_ids(batch))
+            hardware_ids.append(batch_hardware_ids(batch))
+            graph_families.append(batch_graph_family_names(batch))
             for model, ckpt in zip(models, ckpts):
                 pred = model(batch).cpu().numpy()
                 pred = apply_calibration(pred, ckpt)
                 metric_to_pred[int(ckpt["metric_idx"])].append(pred.reshape(-1))
     true_std = np.concatenate(targets_std, axis=0)
-    y_true_all = invert_all(true_std, stats)
+    base_all = np.concatenate(base_raw, axis=0) if base_raw else None
+    y_true_all = np.concatenate(targets_eval_raw, axis=0) if targets_eval_raw else invert_all(true_std, stats, feature_cfg, base_all)
     y_pred_all = np.full_like(y_true_all, np.nan)
     for metric_idx, chunks in metric_to_pred.items():
         pred_std = np.concatenate(chunks)
-        y_pred_all[:, metric_idx] = invert_selected(pred_std, stats, metric_idx)
-    return y_true_all, y_pred_all, np.concatenate(node_counts), np.concatenate(edge_counts)
+        y_pred_all[:, metric_idx] = invert_selected(pred_std, stats, metric_idx, feature_cfg, base_all)
+    return (
+        y_true_all,
+        y_pred_all,
+        np.concatenate(node_counts),
+        np.concatenate(edge_counts),
+        np.concatenate(precision_ids),
+        np.concatenate(label_domain_ids),
+        np.concatenate(batch_sizes),
+        np.concatenate(resource_ids),
+        np.concatenate(hardware_ids),
+        np.concatenate(graph_families),
+    )
 
 
 def rows_from_predictions(y_true: np.ndarray, y_pred: np.ndarray) -> dict[int, dict[str, float]]:
@@ -175,6 +381,129 @@ def rows_from_predictions(y_true: np.ndarray, y_pred: np.ndarray) -> dict[int, d
         rows[idx] = all_metrics(y_true[:, idx], y_pred[:, idx])
         rows[idx]["name"] = name
     return rows
+
+
+def rows_by_precision(y_true: np.ndarray, y_pred: np.ndarray, precision_ids: np.ndarray) -> dict[str, dict[str, dict[str, float]]]:
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    for idx in sorted(set(int(value) for value in precision_ids if int(value) >= 0)):
+        if idx >= len(PRECISION_CONFIG_VOCAB):
+            name = f"unknown_{idx}"
+        else:
+            name = PRECISION_CONFIG_VOCAB[idx]
+        mask = precision_ids == idx
+        rows = rows_from_predictions(y_true[mask], y_pred[mask])
+        out[name] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+    return out
+
+
+def precision_config_counts(precision_ids: np.ndarray) -> dict[str, int]:
+    return counts_by_index_slice(precision_ids, PRECISION_CONFIG_VOCAB, "precision")
+
+
+def rows_by_label_domain(y_true: np.ndarray, y_pred: np.ndarray, label_domain_ids: np.ndarray) -> dict[str, dict[str, dict[str, float]]]:
+    return rows_by_index_slice(y_true, y_pred, label_domain_ids, LABEL_DOMAIN_VOCAB, "label_domain")
+
+
+def counts_by_index_slice(ids: np.ndarray, vocab: Sequence[str], unknown_prefix: str) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for idx in sorted(set(int(value) for value in ids if int(value) >= 0)):
+        name = vocab[idx] if idx < len(vocab) else f"{unknown_prefix}_{idx}"
+        out[name] = int(np.sum(ids == idx))
+    return out
+
+
+def label_domain_counts(label_domain_ids: np.ndarray) -> dict[str, int]:
+    return counts_by_index_slice(label_domain_ids, LABEL_DOMAIN_VOCAB, "label_domain")
+
+
+def string_value_counts(values: np.ndarray) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for value in values:
+        name = str(value)
+        out[name] = out.get(name, 0) + 1
+    return dict(sorted(out.items()))
+
+
+def rows_by_index_slice(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    ids: np.ndarray,
+    vocab: Sequence[str],
+    unknown_prefix: str,
+) -> dict[str, dict[str, dict[str, float]]]:
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    for idx in sorted(set(int(value) for value in ids if int(value) >= 0)):
+        name = vocab[idx] if idx < len(vocab) else f"{unknown_prefix}_{idx}"
+        mask = ids == idx
+        rows = rows_from_predictions(y_true[mask], y_pred[mask])
+        out[name] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+    return out
+
+
+def batch_bucket(value: float) -> str:
+    if value <= 0:
+        return "unknown"
+    for threshold in (1, 2, 4, 8, 16, 32, 64, 128, 256):
+        if value <= threshold:
+            return f"bs_le_{threshold}"
+    return "bs_gt_256"
+
+
+def rows_by_batch_size(y_true: np.ndarray, y_pred: np.ndarray, batch_sizes: np.ndarray) -> dict[str, dict[str, dict[str, float]]]:
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    buckets = np.asarray([batch_bucket(float(value)) for value in batch_sizes], dtype=object)
+    for bucket in sorted(set(str(value) for value in buckets)):
+        if bucket == "unknown":
+            continue
+        mask = buckets == bucket
+        rows = rows_from_predictions(y_true[mask], y_pred[mask])
+        out[bucket] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+    return out
+
+
+def rows_by_graph_signature(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    node_counts: np.ndarray,
+    edge_counts: np.ndarray,
+) -> dict[str, dict[str, dict[str, float]]]:
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    buckets = np.asarray(
+        [graph_signature_bucket(float(nodes), float(edges)) for nodes, edges in zip(node_counts, edge_counts)],
+        dtype=object,
+    )
+    for bucket in sorted(set(str(value) for value in buckets)):
+        if bucket == "unknown":
+            continue
+        mask = buckets == bucket
+        rows = rows_from_predictions(y_true[mask], y_pred[mask])
+        out[bucket] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+    return out
+
+
+def rows_by_graph_family(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    graph_families: np.ndarray,
+) -> dict[str, dict[str, dict[str, float]]]:
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    families = np.asarray([str(value) for value in graph_families], dtype=object)
+    for family in sorted(set(str(value) for value in families)):
+        if family == "unknown":
+            continue
+        mask = families == family
+        rows = rows_from_predictions(y_true[mask], y_pred[mask])
+        out[family] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+    return out
+
+
+def print_slice_summary(title: str, grouped_rows: dict[str, dict[str, dict[str, float]]]) -> None:
+    for name, metrics in grouped_rows.items():
+        if not metrics:
+            continue
+        mapes = [row["MAPE"] for row in metrics.values() if not np.isnan(row["MAPE"])]
+        if mapes:
+            print(f"{title} {name}: mean MAPE {np.mean(mapes):.3f}% over {len(metrics)} metrics", flush=True)
 
 
 def print_table(rows: dict[int, dict[str, float]]) -> None:
@@ -358,11 +687,26 @@ def main(argv: Optional[list[str]] = None) -> None:
     print(f"test graphs: {len(ds)} | feature dims: {feature_layout(feature_cfg)}", flush=True)
 
     if loaded[0][2]:
-        y_true, y_pred, node_counts, edge_counts = evaluate_multi(models[0], first, loader, device, stats)
+        y_true, y_pred, node_counts, edge_counts, precision_ids, label_domain_ids, batch_sizes, resource_ids, hardware_ids, graph_families = evaluate_multi(models[0], first, loader, device, stats)
     else:
-        y_true, y_pred, node_counts, edge_counts = evaluate_singles(models, ckpts, loader, device, stats)
+        y_true, y_pred, node_counts, edge_counts, precision_ids, label_domain_ids, batch_sizes, resource_ids, hardware_ids, graph_families = evaluate_singles(models, ckpts, loader, device, stats)
     rows = rows_from_predictions(y_true, y_pred)
+    precision_rows = rows_by_precision(y_true, y_pred, precision_ids)
+    precision_count_rows = precision_config_counts(precision_ids)
+    label_domain_rows = rows_by_label_domain(y_true, y_pred, label_domain_ids)
+    label_domain_count_rows = label_domain_counts(label_domain_ids)
+    hardware_id_count_rows = string_value_counts(hardware_ids)
+    batch_rows = rows_by_batch_size(y_true, y_pred, batch_sizes)
+    resource_rows = rows_by_index_slice(y_true, y_pred, resource_ids, RESOURCE_REGIME_VOCAB, "resource")
+    graph_signature_rows = rows_by_graph_signature(y_true, y_pred, node_counts, edge_counts)
+    graph_family_rows = rows_by_graph_family(y_true, y_pred, graph_families)
     print_table(rows)
+    print_slice_summary("precision", precision_rows)
+    print_slice_summary("label_domain", label_domain_rows)
+    print_slice_summary("batch", batch_rows)
+    print_slice_summary("resource", resource_rows)
+    print_slice_summary("graph_signature", graph_signature_rows)
+    print_slice_summary("graph_family", graph_family_rows)
 
     bench = None
     if args.bench_cpu:
@@ -392,10 +736,20 @@ def main(argv: Optional[list[str]] = None) -> None:
         "num_bench_graphs": args.num_bench_graphs if args.bench_cpu else 0,
         "data_root": data_root,
         "num_test_graphs": len(ds),
+        **split_result_fields(args),
         "params": int(sum(count_parameters(model) for model in models)),
         "model_params": int(sum(count_parameters(model) for model in models)),
         "mean_mape": float(np.mean(mapes)) if mapes else float("nan"),
         "metrics": {TARGET_NAMES[idx]: rows[idx] for idx in rows},
+        "metrics_by_precision": precision_rows,
+        "precision_config_counts": precision_count_rows,
+        "metrics_by_label_domain": label_domain_rows,
+        "label_domain_counts": label_domain_count_rows,
+        "hardware_id_counts": hardware_id_count_rows,
+        "metrics_by_batch_size": batch_rows,
+        "metrics_by_resource_regime": resource_rows,
+        "metrics_by_graph_signature": graph_signature_rows,
+        "metrics_by_graph_family": graph_family_rows,
         "cpu_forward": bench,
         "latency_forward_ms_mean": bench["mean_ms"] if bench else float("nan"),
         "latency_forward_ms_p50": bench["p50_ms"] if bench else float("nan"),
