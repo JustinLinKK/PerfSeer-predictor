@@ -40,6 +40,10 @@ DTYPE_ALIASES: dict[str, torch.dtype] = {
     "float": torch.float32,
     "float32": torch.float32,
     "fp32": torch.float32,
+    "int64": torch.int64,
+    "long": torch.int64,
+    "token": torch.int64,
+    "tokens": torch.int64,
     "float64": torch.float64,
     "double": torch.float64,
     "float16": torch.float16,
@@ -225,6 +229,13 @@ def _fx_to_networkx(gm: GraphModule) -> nx.DiGraph:
             continue
         if _tensor_meta(node) is None:
             continue
+        if _is_tensor_getitem(node):
+            for dep in _dependency_nodes(node):
+                src_id = fx_to_graph_id.get(dep)
+                if src_id is not None:
+                    fx_to_graph_id[node] = src_id
+                    break
+            continue
 
         op_type = _classify_node(node, modules)
         if op_type is None:
@@ -252,21 +263,45 @@ def _classify_node(node: Node, modules: dict[str, nn.Module]) -> str | None:
     if node.op == "call_module":
         module = modules[str(node.target)]
         if isinstance(module, nn.Conv2d):
+            if module.groups == module.in_channels and module.in_channels > 1:
+                return "DepthwiseConv"
             return "Conv"
+        if isinstance(module, nn.ConvTranspose2d):
+            return "ConvTranspose"
         if isinstance(module, (nn.ReLU, nn.ReLU6)):
             return "Relu"
+        if isinstance(module, nn.GELU):
+            return "Gelu"
+        if isinstance(module, nn.SiLU):
+            return "Silu"
         if isinstance(module, nn.BatchNorm2d):
             return "BatchNormalization"
+        if isinstance(module, nn.LayerNorm):
+            return "LayerNormalization"
+        if isinstance(module, nn.GroupNorm):
+            return "GroupNormalization"
+        if isinstance(module, nn.Embedding):
+            return "Embedding"
         if isinstance(module, nn.AvgPool2d):
             return "AveragePool"
         if isinstance(module, nn.AdaptiveAvgPool2d):
             return "GlobalAveragePool" if _is_global_pool_output(output_shape) else "AveragePool"
         if isinstance(module, nn.MaxPool2d):
             return "MaxPool"
+        if isinstance(module, nn.Upsample):
+            return "Upsample"
         if isinstance(module, nn.Flatten):
             return "Flatten"
         if isinstance(module, nn.Linear):
             return "Gemm"
+        if isinstance(module, nn.MultiheadAttention):
+            return "MultiHeadAttention"
+        if isinstance(module, nn.RNN):
+            return "RNN"
+        if isinstance(module, nn.GRU):
+            return "GRU"
+        if isinstance(module, nn.LSTM):
+            return "LSTM"
         return None
 
     if node.op == "call_function":
@@ -274,30 +309,60 @@ def _classify_node(node: Node, modules: dict[str, nn.Module]) -> str | None:
         name = _target_name(target)
         if target in {torch.relu, F.relu} or name in {"relu", "relu_"}:
             return "Relu"
+        if target is F.gelu or name == "gelu":
+            return "Gelu"
+        if target is F.silu or name in {"silu", "swish"}:
+            return "Silu"
+        if target is F.softmax or name == "softmax":
+            return "Softmax"
         if target is torch.cat or name == "cat":
             return "Concat"
         if target is torch.flatten or name == "flatten":
             return "Flatten"
         if target in {operator.add, torch.add} or name == "add":
             return "Add"
+        if target in {operator.mul, torch.mul} or name == "mul":
+            return "Mul"
+        if target in {torch.matmul, operator.matmul} or name == "matmul":
+            return "MatMul"
+        if target is torch.bmm or name == "bmm":
+            return "Bmm"
         if target is F.avg_pool2d or name == "avg_pool2d":
             return "AveragePool"
         if target is F.adaptive_avg_pool2d or name == "adaptive_avg_pool2d":
             return "GlobalAveragePool" if _is_global_pool_output(output_shape) else "AveragePool"
         if target is F.max_pool2d or name == "max_pool2d":
             return "MaxPool"
+        if target is F.interpolate or name == "interpolate":
+            return "Upsample"
         return None
 
     if node.op == "call_method":
         name = str(node.target)
         if name in {"relu", "relu_"}:
             return "Relu"
+        if name == "gelu":
+            return "Gelu"
+        if name == "silu":
+            return "Silu"
+        if name == "softmax":
+            return "Softmax"
         if name in {"flatten"}:
             return "Flatten"
         if name in {"view", "reshape"} and _looks_like_flatten(node):
             return "Flatten"
+        if name in {"view", "reshape"}:
+            return "Reshape"
+        if name in {"transpose", "permute"}:
+            return "Transpose"
         if name in {"add", "add_"}:
             return "Add"
+        if name in {"mul", "mul_"}:
+            return "Mul"
+        if name == "matmul":
+            return "MatMul"
+        if name == "bmm":
+            return "Bmm"
         return None
 
     return None
@@ -348,8 +413,8 @@ def _args_for_node(
     args = {key: 0 for key in ARG_KEYS}
     module = modules.get(str(node.target)) if node.op == "call_module" else None
 
-    if op_type == "Conv":
-        conv = module if isinstance(module, nn.Conv2d) else None
+    if op_type in {"Conv", "DepthwiseConv", "ConvTranspose"}:
+        conv = module if isinstance(module, (nn.Conv2d, nn.ConvTranspose2d)) else None
         if conv is None:
             return args
         args.update(
@@ -417,7 +482,7 @@ def _flops_for_node(
     output_elems = _numel(output_shape)
     module = modules.get(str(node.target)) if node.op == "call_module" else None
 
-    if op_type == "Conv":
+    if op_type in {"Conv", "DepthwiseConv", "ConvTranspose"}:
         in_shape = _shape(input_metas[0])
         batch = output_shape[0] if output_shape else 1
         out_channels = output_shape[1] if len(output_shape) >= 2 else 1
@@ -429,16 +494,18 @@ def _flops_for_node(
         macs = batch * out_channels * out_h * out_w * (in_channels // groups) * kernel * kernel
         bias_cost = 2 * output_elems if args.get("conv_bias") else 0
         return int(2 * macs + bias_cost)
-    if op_type == "Relu":
+    if op_type in {"Relu", "Gelu", "Silu", "Sigmoid"}:
         return int(output_elems)
-    if op_type == "BatchNormalization":
+    if op_type in {"BatchNormalization", "LayerNormalization", "GroupNormalization"}:
         return int(2 * output_elems)
+    if op_type == "Softmax":
+        return int(3 * output_elems)
     if op_type in {"AveragePool", "MaxPool"}:
         kernel = max(1, int(args.get("pool_kernel_size", 1)))
         return int(output_elems * kernel * kernel)
     if op_type == "GlobalAveragePool":
         return int(_numel(_shape(input_metas[0])))
-    if op_type == "Flatten":
+    if op_type in {"Flatten", "Reshape", "Transpose", "Embedding", "Upsample"}:
         return 0
     if op_type == "Gemm":
         in_features = int(args.get("linear_in_features", 0))
@@ -448,9 +515,29 @@ def _flops_for_node(
             in_features = int(module.in_features)
             out_features = int(module.out_features)
         return int(2 * batch * in_features * out_features)
+    if op_type in {"MatMul", "Bmm"}:
+        lhs = _shape(input_metas[0])
+        rhs = _shape(input_metas[1]) if len(input_metas) > 1 else output_shape
+        if len(lhs) >= 2 and len(rhs) >= 2:
+            batch = int(math.prod(lhs[:-2])) if len(lhs) > 2 else 1
+            return int(2 * batch * lhs[-2] * lhs[-1] * rhs[-1])
+        return int(2 * output_elems)
+    if op_type in {"Attention", "MultiHeadAttention"}:
+        batch = output_shape[0] if output_shape else 1
+        seq = output_shape[1] if len(output_shape) >= 3 else 1
+        dim = output_shape[-1] if output_shape else 1
+        return int(8 * batch * seq * dim * dim + 4 * batch * seq * seq * dim)
+    if op_type in {"RNN", "GRU", "LSTM"}:
+        in_shape = _shape(input_metas[0])
+        batch = in_shape[0] if in_shape else 1
+        seq = in_shape[1] if len(in_shape) >= 3 else 1
+        input_dim = in_shape[-1] if in_shape else 1
+        hidden = output_shape[-1] if output_shape else input_dim
+        gates = {"RNN": 1, "GRU": 3, "LSTM": 4}[op_type]
+        return int(2 * gates * batch * seq * (input_dim * hidden + hidden * hidden))
     if op_type == "Concat":
         return 0
-    if op_type == "Add":
+    if op_type in {"Add", "Mul"}:
         return int(max(1, len(input_metas) - 1) * output_elems)
     return 0
 
@@ -463,12 +550,16 @@ def _weight_size(
     output_meta: Any,
 ) -> int:
     module = modules.get(str(node.target)) if node.op == "call_module" else None
-    if isinstance(module, nn.Conv2d):
+    if isinstance(module, (nn.Conv2d, nn.ConvTranspose2d)):
         return int(module.weight.numel() + (module.bias.numel() if module.bias is not None else 0))
-    if isinstance(module, nn.BatchNorm2d):
-        return int(4 * module.num_features)
+    if isinstance(module, (nn.BatchNorm2d, nn.LayerNorm, nn.GroupNorm)):
+        return int(sum(param.numel() for param in module.parameters()))
+    if isinstance(module, nn.Embedding):
+        return int(module.weight.numel())
     if isinstance(module, nn.Linear):
         return int(module.weight.numel() + (module.bias.numel() if module.bias is not None else 0))
+    if isinstance(module, (nn.RNN, nn.GRU, nn.LSTM, nn.MultiheadAttention)):
+        return int(sum(param.numel() for param in module.parameters()))
     if op_type == "BatchNormalization":
         shape = _shape(output_meta)
         return int(4 * shape[1]) if len(shape) >= 2 else 0
@@ -489,10 +580,19 @@ def _memory_info(
     out_shape = _shape(output_meta)
     batch_size, input_channels, input_h, input_w = _aggregate_input_dims(in_shapes)
     _, output_channels, output_h, output_w = _tensor_dims(out_shape)
+    sequence_length = _sequence_length(out_shape)
+    output_features = _feature_dim(out_shape)
+    input_features = _feature_dim(in_shapes[0]) if in_shapes else 0
     return {
         "bytes": int(total_bytes),
         "weight_size": int(weight_size),
         "batch_size": int(batch_size),
+        "rank": int(len(out_shape)),
+        "sequence_length": int(sequence_length),
+        "input_features": int(input_features),
+        "output_features": int(output_features),
+        "graph_nodes": 0,
+        "spatial_area": int(output_h * output_w),
         "input_size_with_weight": int(input_size_with_weight),
         "input_size": int(input_size),
         "input_channels": input_channels,
@@ -528,6 +628,22 @@ def _tensor_dims(shape: tuple[int, ...]) -> tuple[int, int, int, int]:
     return 0, 0, 0, 0
 
 
+def _sequence_length(shape: tuple[int, ...]) -> int:
+    if len(shape) == 3:
+        return int(shape[1])
+    if len(shape) == 2:
+        return int(shape[1])
+    return 0
+
+
+def _feature_dim(shape: tuple[int, ...]) -> int:
+    if not shape:
+        return 0
+    if len(shape) == 4:
+        return int(shape[1])
+    return int(shape[-1])
+
+
 def _looks_like_flatten(node: Node) -> bool:
     input_metas = _input_tensor_metas((node.args[:1], {}))
     output_meta = _tensor_meta(node)
@@ -559,6 +675,10 @@ def _dependency_nodes(node: Node) -> list[Node]:
     visit(node.args)
     visit(node.kwargs)
     return deps
+
+
+def _is_tensor_getitem(node: Node) -> bool:
+    return node.op == "call_function" and node.target is operator.getitem
 
 
 def _input_tensor_metas(value: Any) -> list[Any]:

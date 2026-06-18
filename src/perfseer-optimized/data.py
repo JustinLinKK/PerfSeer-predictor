@@ -18,6 +18,16 @@ import numpy as np
 import torch
 from torch_geometric.data import Data, InMemoryDataset
 
+from perfseer.architecture_schema import (
+    ARCHITECTURE_FAMILIES,
+    FEATURE_SCHEMA_LEGACY,
+    FEATURE_SCHEMA_V2,
+    MODALITIES,
+    VARIANT_KINDS,
+    feature_schema_signature,
+    is_v2_schema,
+    node_types_for_schema,
+)
 from perfseer.data import ARG_KEYS, NODE_TYPES, list_pairs, parse_graph, parse_label
 from perfseer.data import _resolve_dirs as resolve_dataset_dirs
 
@@ -160,6 +170,7 @@ except Exception:
 
 @dataclass(frozen=True)
 class FeatureConfig:
+    feature_schema_version: str = FEATURE_SCHEMA_LEGACY
     use_operator_type_onehot: bool = True
     topology: bool = False
     critical_path: bool = False
@@ -203,7 +214,9 @@ class FeatureConfig:
         return asdict(self)
 
     def signature(self) -> str:
-        return json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+        payload = self.to_dict()
+        payload["feature_schema_signature"] = feature_schema_signature(self.feature_schema_version)
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 @dataclass(frozen=True)
@@ -222,6 +235,7 @@ class FeatureLayout:
 def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
     node_names: list[str] = []
     node_std: list[int] = []
+    node_type_vocab = node_types_for_schema(cfg.feature_schema_version)
 
     def add_node(name: str, standardize: bool) -> None:
         idx = len(node_names)
@@ -230,7 +244,7 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             node_std.append(idx)
 
     if cfg.use_operator_type_onehot:
-        for typ in NODE_TYPES:
+        for typ in node_type_vocab:
             add_node(f"type_{typ}", False)
     for key in ARG_KEYS:
         add_node(f"arg_{key}", True)
@@ -238,6 +252,18 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
         add_node(name, True)
     for name in ["flops_ratio", "mac_ratio", "weight_ratio"]:
         add_node(name, False)
+    if is_v2_schema(cfg.feature_schema_version):
+        for name in [
+            "tensor_rank",
+            "input_numel_log1p",
+            "output_numel_log1p",
+            "input_feature_dim_log1p",
+            "output_feature_dim_log1p",
+            "sequence_length_log1p",
+            "spatial_area_log1p",
+            "graph_node_count_log1p",
+        ]:
+            add_node(name, True)
     if cfg.topology:
         for name in ["in_degree", "out_degree", "topo_index", "forward_depth", "reverse_depth"]:
             add_node(name, True)
@@ -345,6 +371,15 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             "hardware_peak_fp8_tflops",
         ]:
             add_global(name, True)
+    if is_v2_schema(cfg.feature_schema_version):
+        for family in ARCHITECTURE_FAMILIES:
+            add_global(f"architecture_family_{family}", False)
+        for modality in MODALITIES:
+            add_global(f"modality_{modality}", False)
+        for variant in VARIANT_KINDS:
+            add_global(f"variant_kind_{variant}", False)
+        for name in ["architecture_depth_bucket", "architecture_width_bucket"]:
+            add_global(name, True)
 
     return FeatureLayout(
         node_dim=len(node_names),
@@ -393,10 +428,11 @@ def _stats4(arr: np.ndarray) -> tuple[float, float, float, float]:
     return float(np.sum(arr)), float(np.mean(arr)), float(np.median(arr)), float(np.max(arr))
 
 
-def _node_type_onehot(type_str: str) -> list[float]:
-    vec = [0.0] * len(NODE_TYPES)
-    if type_str in NODE_TYPES:
-        vec[NODE_TYPES.index(type_str)] = 1.0
+def _node_type_onehot(type_str: str, cfg: FeatureConfig) -> list[float]:
+    vocab = node_types_for_schema(cfg.feature_schema_version)
+    vec = [0.0] * len(vocab)
+    if type_str in vocab:
+        vec[vocab.index(type_str)] = 1.0
     return vec
 
 
@@ -421,6 +457,11 @@ def _precision_settings(cfg: FeatureConfig) -> dict[str, str]:
         if value:
             settings[field] = str(value).lower()
     return settings
+
+
+def _metadata_onehot(value: Any, vocab: Sequence[str]) -> list[float]:
+    key = str(value or "").strip().lower()
+    return [1.0 if key == item else 0.0 for item in vocab]
 
 
 def precision_hardware_config(cfg: FeatureConfig) -> dict[str, Any]:
@@ -1015,7 +1056,7 @@ def _node_raw(feat: dict, totals: dict[str, float], cfg: FeatureConfig) -> list[
     weight = max(_f(mem.get("weight_size")), 0.0)
     out: list[float] = []
     if cfg.use_operator_type_onehot:
-        out.extend(_node_type_onehot(str(feat.get("type", ""))))
+        out.extend(_node_type_onehot(str(feat.get("type", "")), cfg))
     out.extend(_f(args.get(key)) for key in ARG_KEYS)
     out.extend(
         [
@@ -1028,7 +1069,46 @@ def _node_raw(feat: dict, totals: dict[str, float], cfg: FeatureConfig) -> list[
             _safe_div(weight, totals["weight"]),
         ]
     )
+    if is_v2_schema(cfg.feature_schema_version):
+        out.extend(_node_shape_raw(mem))
     return [float(v) for v in out]
+
+
+def _node_shape_raw(mem: dict) -> list[float]:
+    input_size = max(_f(mem.get("input_size")), 0.0)
+    output_size = max(_f(mem.get("output_size")), 0.0)
+    input_features = max(_f(mem.get("input_features"), _f(mem.get("input_channels"))), 0.0)
+    output_features = max(_f(mem.get("output_features"), _f(mem.get("output_channels"))), 0.0)
+    sequence_length = max(_f(mem.get("sequence_length"), _f(mem.get("output_h"))), 0.0)
+    graph_nodes = max(_f(mem.get("graph_nodes")), 0.0)
+    out_h = max(_f(mem.get("output_h")), 0.0)
+    out_w = max(_f(mem.get("output_w")), 0.0)
+    spatial_area = max(_f(mem.get("spatial_area")), out_h * out_w)
+    rank = _f(mem.get("rank"))
+    if rank <= 0:
+        rank = inferred_tensor_rank(mem)
+    return [
+        rank,
+        np.log1p(input_size),
+        np.log1p(output_size),
+        np.log1p(input_features),
+        np.log1p(output_features),
+        np.log1p(sequence_length),
+        np.log1p(spatial_area),
+        np.log1p(graph_nodes),
+    ]
+
+
+def inferred_tensor_rank(mem: dict) -> float:
+    if _f(mem.get("graph_nodes")) > 0:
+        return 3.0
+    if _f(mem.get("sequence_length")) > 0:
+        return 3.0
+    if _f(mem.get("output_h")) > 0 and _f(mem.get("output_w")) > 0:
+        return 4.0
+    if _f(mem.get("output_features")) > 0 or _f(mem.get("output_channels")) > 0:
+        return 2.0
+    return 0.0
 
 
 def _edge_base(src_feat: dict) -> list[float]:
@@ -1161,6 +1241,8 @@ def _extract_raw(g: nx.DiGraph, cfg: FeatureConfig) -> tuple[np.ndarray, np.ndar
                 float(np.sum(topo["on_weighted"])),  # type: ignore[arg-type]
             ]
         )
+    if is_v2_schema(cfg.feature_schema_version):
+        u.extend(_graph_architecture_raw(g))
     if cfg.include_precision_features:
         precision = _precision_settings(cfg)
         for field in ("weight_dtype", "activation_dtype", "grad_dtype", "accum_dtype", "optimizer_state_dtype"):
@@ -1194,6 +1276,16 @@ def _extract_raw(g: nx.DiGraph, cfg: FeatureConfig) -> tuple[np.ndarray, np.ndar
     if u_raw.shape[0] != layout.global_dim:
         raise ValueError(f"global feature length mismatch: {u_raw.shape[0]} != {layout.global_dim}")
     return x_raw, edge_index, e_raw, u_raw, batch_size
+
+
+def _graph_architecture_raw(g: nx.DiGraph) -> list[float]:
+    meta = getattr(g, "graph", {}) or {}
+    out: list[float] = []
+    out.extend(_metadata_onehot(meta.get("architecture_family"), ARCHITECTURE_FAMILIES))
+    out.extend(_metadata_onehot(meta.get("modality"), MODALITIES))
+    out.extend(_metadata_onehot(meta.get("variant_kind"), VARIANT_KINDS))
+    out.extend([_f(meta.get("depth_bucket")), _f(meta.get("width_bucket"))])
+    return out
 
 
 def standardize_targets(y_raw, stats: dict[str, np.ndarray], cfg: FeatureConfig | None = None):

@@ -24,15 +24,21 @@ from nrp_calibration_pack.build_pack import (  # noqa: E402
     BATCH_BUCKETS,
     DEFAULT_PILOT_SUBSET_SIZE,
     DEFAULT_SUBSET_SIZE,
+    DEFAULT_TEMPLATE_V2_SEED,
     DEFAULT_PRECISION_SWEEP,
     NODE_TYPES,
     GraphRecord,
     generate_model_source,
+    load_records,
+    materialize_template_records,
     parse_args as parse_pack_args,
     parse_precision_sweep,
+    resolve_generation_workers,
     select_subset,
     write_pack,
 )
+from nrp_calibration_pack.template_catalog import template_family_counts  # noqa: E402
+from perfseer.architecture_schema import ARCHITECTURE_FAMILY_QUOTAS, FEATURE_SCHEMA_V2, V2_NODE_TYPES  # noqa: E402
 from perfseer.data import parse_label as parse_dataset_label  # noqa: E402
 from perfseer_optimized.train import apply_overrides as apply_train_overrides  # noqa: E402
 from perfseer_optimized.train import parse_args as parse_train_args  # noqa: E402
@@ -512,6 +518,58 @@ class NrpCalibrationPackTests(unittest.TestCase):
         override = parse_pack_args(["--profile-preset", "pilot", "--subset-size", "17"])
         self.assertEqual(override.subset_size, 17)
 
+    def test_template_v2_catalog_mode_uses_noncnn_defaults(self) -> None:
+        args = parse_pack_args(["--catalog-mode", "template_v2"])
+
+        self.assertEqual(args.out_dir, "nrp_calibration_pack_noncnn")
+        self.assertEqual(args.seed, DEFAULT_TEMPLATE_V2_SEED)
+        self.assertEqual(args.subset_size, DEFAULT_SUBSET_SIZE)
+
+    def test_v2_feature_layout_expands_schema_and_signature(self) -> None:
+        from perfseer_optimized.data import FeatureConfig, feature_layout
+
+        legacy_cfg = FeatureConfig()
+        v2_cfg = FeatureConfig(feature_schema_version=FEATURE_SCHEMA_V2)
+        legacy_layout = feature_layout(legacy_cfg)
+        v2_layout = feature_layout(v2_cfg)
+
+        self.assertGreater(v2_layout.node_dim, legacy_layout.node_dim)
+        self.assertGreater(v2_layout.global_dim, legacy_layout.global_dim)
+        self.assertIn("type_Attention", v2_layout.node_names)
+        self.assertIn("architecture_family_bert_encoder", v2_layout.global_names)
+        self.assertNotEqual(legacy_cfg.signature(), v2_cfg.signature())
+
+    def test_template_v2_full_quota_table_is_exact(self) -> None:
+        counts = template_family_counts(DEFAULT_SUBSET_SIZE)
+
+        self.assertEqual(counts, dict(ARCHITECTURE_FAMILY_QUOTAS))
+        self.assertEqual(sum(counts.values()), 10000)
+
+    def test_generation_workers_resolve_auto_and_serial_modes(self) -> None:
+        self.assertGreaterEqual(parse_pack_args([]).generation_workers, 1)
+        self.assertGreaterEqual(resolve_generation_workers(0), 1)
+        self.assertEqual(parse_pack_args(["--generation-workers", "1"]).generation_workers, 1)
+        with self.assertRaises(SystemExit):
+            parse_pack_args(["--generation-workers", "-1"])
+
+    def test_load_records_can_parse_dataset_in_parallel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_dir = tmp_path / "cg" / "cg"
+            label_dir = tmp_path / "label" / "label"
+            graph_dir.mkdir(parents=True)
+            label_dir.mkdir(parents=True)
+            for idx in range(2):
+                stem = f"bs{idx + 1}_parallel_{idx}"
+                with (graph_dir / f"{stem}.pkl").open("wb") as fh:
+                    pickle.dump(sequential_graph(), fh)
+                (label_dir / f"{stem}.txt").write_text("{'train': '1|2|3|4|5|6|7', 'infer': '1|2|3|4|5|6|7'}\n")
+
+            records = load_records(tmp_path, generation_workers=2)
+
+        self.assertEqual([item.stem for item in records], ["bs1_parallel_0", "bs2_parallel_1"])
+        self.assertEqual([item.batch_size for item in records], [1, 2])
+
     def test_precision_sweep_rejects_ambiguous_bf32(self) -> None:
         with self.assertRaisesRegex(ValueError, "bf32 is ambiguous"):
             parse_precision_sweep("bf32")
@@ -579,6 +637,34 @@ class NrpCalibrationPackTests(unittest.TestCase):
         for expected in ("Conv", "BatchNormalization", "Relu", "MaxPool", "AveragePool", "GlobalAveragePool", "Flatten", "Gemm"):
             self.assertIn(expected, types)
 
+    def test_template_v2_pack_manifest_fields_and_operator_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pack_dir = tmp_path / "pack"
+            records = materialize_template_records(pack_dir, 30, DEFAULT_TEMPLATE_V2_SEED, force=True)
+            written, failures = write_pack(records, records, pack_dir, "compile", precision_sweep=("fp32_ieee",), generation_workers=1)
+            rows = [
+                json.loads(line)
+                for line in (pack_dir / "manifest" / "subset_manifest.jsonl").read_text().splitlines()
+            ]
+            coverage = json.loads((pack_dir / "coverage_summary.json").read_text())
+
+        self.assertEqual(written, 30)
+        self.assertEqual(failures, 0)
+        self.assertEqual(len(rows), 30)
+        self.assertEqual(rows[0]["feature_schema_version"], FEATURE_SCHEMA_V2)
+        for field in ("architecture_family", "variant_kind", "variant_signature", "input_specs"):
+            self.assertIn(field, rows[0])
+        family_counts: dict[str, int] = {}
+        for row in rows:
+            family_counts[row["architecture_family"]] = family_counts.get(row["architecture_family"], 0) + 1
+        self.assertTrue(all(count == 2 for count in family_counts.values()))
+        self.assertEqual(set(family_counts), set(ARCHITECTURE_FAMILY_QUOTAS))
+        self.assertIn("Attention", coverage["operator_coverage"])
+        self.assertIn("GRU", coverage["operator_coverage"])
+        self.assertIn("GraphMessage", coverage["operator_coverage"])
+        self.assertEqual(set(coverage["operator_coverage"]).issubset(set(V2_NODE_TYPES)), True)
+
     def test_write_pack_replaces_validation_failures(self) -> None:
         bad = nx.DiGraph()
         bad.add_node(0, feature=feature("Unsupported", mem=memory_info()))
@@ -603,6 +689,42 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertEqual(failures, 1)
         self.assertIn('"stem": "good"', manifest)
         self.assertNotIn('"stem": "bad"', manifest)
+
+    def test_write_pack_parallel_generation_replaces_failures_in_order(self) -> None:
+        bad = nx.DiGraph()
+        bad.add_node(0, feature=feature("Unsupported", mem=memory_info()))
+        first_good = sequential_graph()
+        second_good = sequential_graph()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paths = {}
+            for name, graph in (("bad", bad), ("first_good", first_good), ("second_good", second_good)):
+                path = tmp_path / f"{name}.pkl"
+                with path.open("wb") as fh:
+                    pickle.dump(graph, fh)
+                paths[name] = path
+
+            bad_record = record("bad", graph_path=str(paths["bad"]), label_path=str(tmp_path / "bad.txt"))
+            first_good_record = record("first_good", graph_path=str(paths["first_good"]), label_path=str(tmp_path / "first_good.txt"))
+            second_good_record = record("second_good", graph_path=str(paths["second_good"]), label_path=str(tmp_path / "second_good.txt"))
+            written, failures = write_pack(
+                [bad_record, first_good_record],
+                [bad_record, first_good_record, second_good_record],
+                tmp_path / "pack",
+                "compile",
+                generation_workers=2,
+            )
+            rows = [
+                json.loads(line)
+                for line in (tmp_path / "pack" / "manifest" / "subset_manifest.jsonl").read_text().splitlines()
+                if '"precision_config": "fp32_ieee"' in line
+            ]
+
+        self.assertEqual(written, 2)
+        self.assertEqual(failures, 1)
+        self.assertEqual([row["model_id"] for row in rows], ["calib_0000", "calib_0001"])
+        self.assertEqual([row["original_stem"] for row in rows], ["first_good", "second_good"])
 
     def test_write_pack_manifest_subset_graph_and_coverage_summary(self) -> None:
         graph = sequential_graph()
@@ -683,6 +805,137 @@ class NrpCalibrationPackTests(unittest.TestCase):
 
         self.assertTrue(label_exists)
         self.assertEqual(parsed.shape, (6,))
+
+    def test_profiler_uses_profile_dataset_specs_for_repeat_timing(self) -> None:
+        graph = sequential_graph()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_path = tmp_path / "graph.pkl"
+            with graph_path.open("wb") as fh:
+                pickle.dump(graph, fh)
+            graph_record = record("original_stem", graph_path=str(graph_path), label_path=str(tmp_path / "original_stem.txt"))
+            write_pack([graph_record], [graph_record], tmp_path / "pack", "compile", precision_sweep=("fp32_ieee",))
+            manifest = tmp_path / "pack" / "manifest" / "subset_manifest.jsonl"
+            profile_data_dir = tmp_path / "profile_datasets"
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "profile" / "make_profile_datasets.py"),
+                    "--manifest",
+                    str(manifest),
+                    "--output-dir",
+                    str(profile_data_dir),
+                    "--train-repeats",
+                    "2",
+                    "--infer-repeats",
+                    "3",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "profile" / "run_profile.py"),
+                    "--manifest",
+                    str(manifest),
+                    "--models-dir",
+                    str(tmp_path / "pack" / "models"),
+                    "--output-dir",
+                    str(tmp_path / "out"),
+                    "--num-shards",
+                    "1",
+                    "--precision-config",
+                    "fp32_ieee",
+                    "--warmup",
+                    "1",
+                    "--profile-dataset-dir",
+                    str(profile_data_dir),
+                    "--device",
+                    "cpu",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            label_path = tmp_path / "out" / "label" / "label" / "calib_0000_fp32_ieee.txt"
+            parsed = parse_dataset_label(str(label_path))
+            result_path = tmp_path / "out" / "results_shard0.jsonl"
+            result = json.loads(result_path.read_text().splitlines()[0])
+
+        self.assertEqual(parsed.shape, (6,))
+        self.assertEqual(result["profile_dataset"]["source"], "profile_dataset_dir")
+        self.assertEqual(result["profile_dataset"]["train_repeats"], 2)
+        self.assertEqual(result["profile_dataset"]["infer_repeats"], 3)
+        self.assertEqual(len(result["details"]["train"]["raw_iter_ms"]), 2)
+        self.assertEqual(len(result["details"]["infer"]["raw_iter_ms"]), 3)
+        self.assertNotIn("repeat_unit", result["details"]["train"])
+
+    def test_profiler_handles_template_v2_multi_input_graph_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pack_dir = tmp_path / "pack"
+            records = materialize_template_records(pack_dir, 15, DEFAULT_TEMPLATE_V2_SEED, force=True)
+            graph_record = next(item for item in records if item.family_tuple == ("gat_graph",))
+            write_pack([graph_record], [graph_record], pack_dir, "compile", precision_sweep=("fp32_ieee",))
+            manifest = pack_dir / "manifest" / "subset_manifest.jsonl"
+            profile_data_dir = tmp_path / "profile_datasets"
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "profile" / "make_profile_datasets.py"),
+                    "--manifest",
+                    str(manifest),
+                    "--output-dir",
+                    str(profile_data_dir),
+                    "--train-repeats",
+                    "1",
+                    "--infer-repeats",
+                    "1",
+                    "--force",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "profile" / "run_profile.py"),
+                    "--manifest",
+                    str(manifest),
+                    "--models-dir",
+                    str(pack_dir / "models"),
+                    "--output-dir",
+                    str(tmp_path / "out"),
+                    "--num-shards",
+                    "1",
+                    "--precision-config",
+                    "fp32_ieee",
+                    "--warmup",
+                    "1",
+                    "--profile-dataset-dir",
+                    str(profile_data_dir),
+                    "--device",
+                    "cpu",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            label_path = tmp_path / "out" / "label" / "label" / "calib_0000_fp32_ieee.txt"
+            parsed = parse_dataset_label(str(label_path))
+            result = json.loads((tmp_path / "out" / "results_shard0.jsonl").read_text().splitlines()[0])
+
+        self.assertEqual(parsed.shape, (6,))
+        self.assertEqual(len(result["input_specs"]), 2)
+        self.assertEqual(result["input_specs"][1]["kind"], "adjacency")
+        self.assertEqual(result["status"], "ok")
 
     def test_tf32_controls_prefer_new_fp32_precision_api(self) -> None:
         module = import_run_profile_module()
@@ -1127,6 +1380,7 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("--sample-interval 0.02", yaml)
         self.assertIn("--precision-sweep fp32_ieee,bf16_amp", yaml)
         self.assertIn("--fp8-backend transformer_engine", yaml)
+        self.assertNotIn("--train-epochs", yaml)
 
     def test_submit_script_uses_stable_default_profile_budget(self) -> None:
         result = subprocess.run(
@@ -1152,6 +1406,7 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("--train-repeats 50", yaml)
         self.assertIn("--sample-interval 0.01", yaml)
         self.assertIn("--fp8-backend transformer_engine", yaml)
+        self.assertNotIn("--train-epochs", yaml)
 
     def test_precision_transfer_flow_dry_run_evaluates_source_and_precision_domains(self) -> None:
         result = subprocess.run(

@@ -15,6 +15,7 @@ target hardware while preserving the current dataset label format.
 - `coverage_summary.json`: machine-readable selected-vs-full coverage summary.
 - `selection_report.md`: selected-vs-full dataset coverage report.
 - `profile/run_profile.py`: NRP runtime profiler for train and inference labels.
+- `profile/make_profile_datasets.py`: creates per-model input/repeat specs for label generation.
 - `submit_nrp_calibration.sh`: one-click Kubernetes Indexed Job launcher.
 - `Dockerfile`: optional image recipe for shipping the pack.
 
@@ -26,11 +27,14 @@ python nrp_calibration_pack/generate_model_sources.py \
   --out-dir nrp_calibration_pack \
   --profile-preset full \
   --subset-size 10000 \
+  --generation-workers "$(nproc)" \
   --force
 ```
 
 Default behavior selects the full `10000` graphs with seed `20260602` and
-validates every generated source with Python compilation only. Use
+validates every generated source with Python compilation only. Source pack
+generation runs in parallel by default; pass `--generation-workers 1` for
+serial/debug runs, or an explicit worker count to tune CPU and disk pressure. Use
 `--profile-preset pilot` for the chosen 1000-graph precision pilot before the
 full sweep; `--subset-size` can still override either preset. The selector
 balances batch sizes, reserves pure and mixed architecture-family coverage,
@@ -63,6 +67,22 @@ forward-check pack. Do not commit generated `calib_*.py`, `manifest/`,
 `subset/`, `selection_report.md`, or `coverage_summary.json`; they are ignored
 and should be regenerated locally before building the cluster image.
 
+## Make Profile Dataset Specs
+
+The generated workload models do not need real accuracy data. For label
+generation, create one lightweight synthetic input spec per model; the profiler
+uses each spec to allocate a correctly shaped random input on the target device
+while preserving the original `train`/`infer` label semantics:
+
+```bash
+python nrp_calibration_pack/profile/make_profile_datasets.py \
+  --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
+  --output-dir nrp_calibration_pack/profile_datasets \
+  --train-repeats 50 \
+  --infer-repeats 50 \
+  --force
+```
+
 ## Local Smoke Test
 
 ```bash
@@ -74,12 +94,20 @@ python nrp_calibration_pack/generate_model_sources.py \
   --validation-mode real \
   --force
 
+python nrp_calibration_pack/profile/make_profile_datasets.py \
+  --manifest /tmp/nrp_calibration_smoke_pack/manifest/subset_manifest.jsonl \
+  --output-dir /tmp/nrp_calibration_smoke_pack/profile_datasets \
+  --train-repeats 2 \
+  --infer-repeats 2 \
+  --force
+
 python /tmp/nrp_calibration_smoke_pack/profile/run_profile.py \
   --manifest /tmp/nrp_calibration_smoke_pack/manifest/subset_manifest.jsonl \
   --models-dir /tmp/nrp_calibration_smoke_pack/models \
   --output-dir /tmp/perfseer_calibration_smoke \
   --num-shards 1 \
   --precision-config fp32_ieee \
+  --profile-dataset-dir /tmp/nrp_calibration_smoke_pack/profile_datasets \
   --warmup 1 \
   --infer-repeats 1 \
   --train-repeats 1 \
@@ -95,6 +123,12 @@ From the repository root:
 
 ```bash
 python nrp_calibration_pack/generate_model_sources.py --force
+python nrp_calibration_pack/profile/make_profile_datasets.py \
+  --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
+  --output-dir nrp_calibration_pack/profile_datasets \
+  --train-repeats 50 \
+  --infer-repeats 50 \
+  --force
 docker build -f nrp_calibration_pack/Dockerfile -t <your-registry>/perfseer-calibration:latest .
 docker push <your-registry>/perfseer-calibration:latest
 ```
@@ -106,7 +140,15 @@ python nrp_calibration_pack/generate_model_sources.py \
   --data-root dataset \
   --out-dir nrp_calibration_pack \
   --subset-size 10000 \
+  --generation-workers "$(nproc)" \
   --force
+```
+
+Compress the generated pack once, then unpack the same artifact in Kubernetes
+before running profile shards:
+
+```bash
+tar -czf nrp_calibration_pack.full.tar.gz -C nrp_calibration_pack .
 ```
 
 ## Submit To NRP Nautilus
@@ -122,7 +164,8 @@ python nrp_calibration_pack/generate_model_sources.py \
   --precision-sweep fp32_ieee,tf32,bf16_amp,fp16_amp \
   --warmup 20 \
   --infer-repeats 50 \
-  --train-repeats 50
+  --train-repeats 50 \
+  --profile-dataset-dir /workspace/nrp_calibration_pack/profile_datasets
 ```
 
 For generic GPUs the default resource is `nvidia.com/gpu`. For special NRP GPU

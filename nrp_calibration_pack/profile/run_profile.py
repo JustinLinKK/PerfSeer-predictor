@@ -91,12 +91,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=10)
     parser.add_argument("--infer-repeats", type=int, default=30)
     parser.add_argument("--train-repeats", type=int, default=20)
+    parser.add_argument(
+        "--profile-dataset-dir",
+        help="Optional directory of <model_id>.json input/repeat specs from profile/make_profile_datasets.py.",
+    )
     parser.add_argument("--sample-interval", type=float, default=0.01)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--precision-config", action="append", help="Precision config(s) to profile. May be repeated or comma-separated.")
     parser.add_argument("--precision-sweep", help="Comma-separated precision config filter. Overrides manifest precision rows only by filtering them.")
     parser.add_argument("--fp8-backend", default="transformer_engine", choices=("transformer_engine", "none"))
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.warmup < 0:
+        parser.error("--warmup must be >= 0")
+    for name in ("infer_repeats", "train_repeats"):
+        if getattr(args, name) <= 0:
+            parser.error(f"--{name.replace('_', '-')} must be > 0")
+    return args
 
 
 def normalize_precision_config(value: str) -> str:
@@ -128,6 +138,61 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
+
+
+def load_profile_dataset_spec(model_id: str, profile_dataset_dir: str | None) -> dict[str, Any]:
+    if not profile_dataset_dir:
+        return {}
+    path = Path(profile_dataset_dir) / f"{model_id}.json"
+    if not path.exists():
+        raise FileNotFoundError(f"profile dataset spec not found for {model_id}: {path}")
+    return json.loads(path.read_text())
+
+
+def positive_int(value: Any, default: int, field: str) -> int:
+    if value is None:
+        return default
+    out = int(value)
+    if out <= 0:
+        raise ValueError(f"{field} must be > 0")
+    return out
+
+
+def normalize_input_specs(row: dict[str, Any], dataset_spec: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_specs = dataset_spec.get("input_specs") or row.get("input_specs")
+    if not raw_specs:
+        shape = dataset_spec.get("input_shape", row["input_shape"])
+        raw_specs = [{"name": "input0", "shape": shape, "dtype": "float32", "kind": "float"}]
+    specs: list[dict[str, Any]] = []
+    for idx, spec in enumerate(raw_specs):
+        shape = [int(dim) for dim in spec.get("shape", [])]
+        if not shape or any(dim <= 0 for dim in shape):
+            raise ValueError(f"invalid input spec shape at index {idx}: {shape!r}")
+        specs.append(
+            {
+                "name": str(spec.get("name", f"input{idx}")),
+                "shape": shape,
+                "dtype": str(spec.get("dtype", "float32")).lower(),
+                "kind": str(spec.get("kind", "float")).lower(),
+            }
+        )
+    return specs
+
+
+def make_profile_inputs(input_specs: list[dict[str, Any]], device: torch.device) -> tuple[torch.Tensor, ...]:
+    tensors: list[torch.Tensor] = []
+    for spec in input_specs:
+        shape = tuple(int(dim) for dim in spec["shape"])
+        dtype = str(spec.get("dtype", "float32")).lower()
+        kind = str(spec.get("kind", "float")).lower()
+        if dtype in {"int64", "long"} or kind in {"tokens", "token_ids"}:
+            tensors.append(torch.zeros(shape, dtype=torch.long, device=device))
+        elif kind == "adjacency":
+            base = torch.eye(shape[-1], dtype=torch.float32, device=device)
+            tensors.append(base.expand(shape).clone())
+        else:
+            tensors.append(torch.randn(shape, dtype=torch.float32, device=device))
+    return tuple(tensors)
 
 
 def load_model(model_path: Path):
@@ -535,9 +600,27 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
     model_path = models_dir / Path(row["model_file"]).name
     model, _module = load_model(model_path)
     model = model.to(device)
-    input_shape = tuple(int(dim) for dim in row["input_shape"])
-    x = torch.randn(input_shape, device=device)
-    batch_size = int(input_shape[0]) if input_shape else 1
+    dataset_spec_error: str | None = None
+    try:
+        dataset_spec = load_profile_dataset_spec(str(row["model_id"]), args.profile_dataset_dir)
+    except Exception as exc:
+        dataset_spec = {}
+        dataset_spec_error = repr(exc)
+
+    profile_config_error: str | None = None
+    try:
+        input_specs = normalize_input_specs(row, dataset_spec)
+        input_shape = tuple(int(dim) for dim in input_specs[0]["shape"])
+        batch_size = int(input_shape[0]) if input_shape else 1
+        train_repeats = positive_int(dataset_spec.get("train_repeats"), args.train_repeats, "train_repeats")
+        infer_repeats = positive_int(dataset_spec.get("infer_repeats"), args.infer_repeats, "infer_repeats")
+    except Exception as exc:
+        profile_config_error = repr(exc)
+        input_specs = [{"name": "input0", "shape": list(row["input_shape"]), "dtype": "float32", "kind": "float"}]
+        input_shape = tuple(int(dim) for dim in row["input_shape"])
+        batch_size = int(input_shape[0]) if input_shape else 1
+        train_repeats = int(args.train_repeats)
+        infer_repeats = int(args.infer_repeats)
 
     result: dict[str, Any] = {
         "model_id": row["model_id"],
@@ -546,13 +629,25 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
         "stem": row.get("original_stem", row.get("stem", row["model_id"])),
         "status": "ok",
         "input_shape": list(input_shape),
+        "input_specs": input_specs,
         "batch_size": batch_size,
         "model_file": row["model_file"],
         "label_file": row.get("label_file", f"label/label/{row['model_id']}_{precision_config}.txt"),
         "precision_config": precision_config,
         "precision": runtime.to_metadata(),
+        "profile_dataset": {
+            "source": "profile_dataset_dir" if dataset_spec else "synthetic_cli",
+            "train_repeats": train_repeats,
+            "infer_repeats": infer_repeats,
+        },
     }
     try:
+        if dataset_spec_error is not None:
+            result.update({"status": "error", "error": dataset_spec_error})
+            return result
+        if profile_config_error is not None:
+            result.update({"status": "error", "error": profile_config_error})
+            return result
         if not runtime.supported:
             result.update({"status": "unsupported_precision", "error": runtime.unsupported_reason})
             return result
@@ -565,14 +660,15 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
             )
             result["precision"]["fallback_policy"] = "record_unsupported_generated_ops"
             return result
+        inputs = make_profile_inputs(input_specs, device)
         model.eval()
 
         def infer_fn() -> torch.Tensor:
             with torch.no_grad():
                 with runtime.autocast():
-                    return model(x)
+                    return model(*inputs)
 
-        infer_label, infer_detail = timed_phase("infer", infer_fn, args.infer_repeats, args.warmup, batch_size, device, args.sample_interval)
+        infer_label, infer_detail = timed_phase("infer", infer_fn, infer_repeats, args.warmup, batch_size, device, args.sample_interval)
 
         model.train()
         trainable_params = [param for param in model.parameters() if param.requires_grad]
@@ -587,7 +683,7 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
             if optimizer is not None:
                 optimizer.zero_grad(set_to_none=True)
             with runtime.autocast():
-                out = model(x)
+                out = model(*inputs)
                 loss = F.mse_loss(out.float(), torch.zeros_like(out, dtype=torch.float32))
             if loss.requires_grad:
                 if scaler is not None and scaler.is_enabled():
@@ -602,7 +698,7 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
                     optimizer.step()
             return loss.detach()
 
-        train_label, train_detail = timed_phase("train", train_fn, args.train_repeats, args.warmup, batch_size, device, args.sample_interval)
+        train_label, train_detail = timed_phase("train", train_fn, train_repeats, args.warmup, batch_size, device, args.sample_interval)
         if scaler is not None and scaler.is_enabled():
             result["precision"]["grad_scaler_final_scale"] = float(scaler.get_scale())
         result.update(

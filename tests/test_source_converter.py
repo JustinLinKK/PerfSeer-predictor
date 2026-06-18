@@ -127,6 +127,40 @@ class SourceConverterTests(unittest.TestCase):
         self.assertEqual(set(graph.predecessors(2)), {0, 1})
         self.assertEqual(graph.nodes[2]["feature"]["memory_info"]["output_channels"], 5)
 
+    def test_noncnn_token_recurrent_and_attention_ops_convert(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = self.write_model(
+                tmp,
+                """
+                import torch
+                import torch.nn as nn
+
+                class TinySequence(nn.Module):
+                    def __init__(self):
+                        super().__init__()
+                        self.embedding = nn.Embedding(32, 8)
+                        self.gru = nn.GRU(8, 8, batch_first=True)
+                        self.norm = nn.LayerNorm(8)
+                        self.fc = nn.Linear(8, 4)
+
+                    def forward(self, tokens):
+                        x = self.embedding(tokens)
+                        x, _ = self.gru(x)
+                        scores = torch.matmul(x, x.transpose(-2, -1))
+                        probs = torch.softmax(scores, dim=-1)
+                        x = torch.matmul(probs, x)
+                        return self.fc(self.norm(x))
+                """,
+            )
+            graph = convert_source_to_networkx(
+                SourceModelSpec(source, "TinySequence", ((2, 5),), input_dtypes=("int64",))
+            )
+
+        types = [data["feature"]["type"] for _, data in graph.nodes(data=True)]
+        for expected in ("Embedding", "GRU", "Transpose", "MatMul", "Softmax", "LayerNormalization", "Gemm"):
+            self.assertIn(expected, types)
+        self.assertTrue(all(data["feature"]["memory_info"]["rank"] >= 2 for _, data in graph.nodes(data=True)))
+
     def test_cli_writes_graph_and_data(self) -> None:
         ensure_optimized_alias()
         with tempfile.TemporaryDirectory() as tmp:
