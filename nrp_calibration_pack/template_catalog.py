@@ -1,4 +1,4 @@
-"""Deterministic non-CNN template catalog for PerfSeer calibration packs."""
+"""Deterministic expanded template catalog for PerfSeer calibration packs."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import networkx as nx
 from perfseer.architecture_schema import (
     ARCHITECTURE_FAMILIES,
     ARCHITECTURE_FAMILY_QUOTAS,
-    FEATURE_SCHEMA_V2,
+    FEATURE_SCHEMA_VERSION,
     VARIANT_KINDS,
     variant_counts_for_family,
 )
@@ -64,7 +64,7 @@ class TemplateSpec:
 
     @property
     def model_stem(self) -> str:
-        return f"template_v2_{self.model_index:05d}_{self.family}_{self.variant_kind}_{self.local_index:04d}"
+        return f"template_{self.model_index:05d}_{self.family}_{self.variant_kind}_{self.local_index:04d}"
 
     @property
     def variant_signature(self) -> str:
@@ -121,7 +121,7 @@ def build_template_graph(spec: TemplateSpec) -> nx.DiGraph:
     graph = builders[spec.family](spec)
     graph.graph.update(
         {
-            "feature_schema_version": FEATURE_SCHEMA_V2,
+            "feature_schema_version": FEATURE_SCHEMA_VERSION,
             "architecture_family": spec.family,
             "modality": FAMILY_MODALITY[spec.family],
             "variant_kind": spec.variant_kind,

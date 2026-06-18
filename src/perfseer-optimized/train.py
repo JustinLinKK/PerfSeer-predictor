@@ -27,7 +27,7 @@ from .data import (
     FeatureConfig,
     LABEL_DOMAIN_VOCAB,
     NUM_TARGETS,
-    SOURCE_UNKNOWN_PRECISION_CONFIG,
+    UNKNOWN_PRECISION_CONFIG,
     TARGET_NAMES,
     PerfSeerOptimizedDataset,
     compute_norm_stats,
@@ -216,7 +216,16 @@ def build_datasets(cfg: dict[str, Any]):
     data_root = cfg["data"].get("root", "dataset")
     feature_cfg = FeatureConfig.from_dict(cfg.get("features"))
     split_unit = str(cfg["data"].get("split_unit", "pair") or "pair")
-    train_files, val_files, test_files = split_dataset(data_root, seed=seed, split_unit=split_unit)
+    hardware_filter = str(cfg["data"].get("hardware_id") or "").strip()
+    if not hardware_filter and str(feature_cfg.hardware_id or "").strip() not in {"", UNKNOWN_PRECISION_CONFIG}:
+        hardware_filter = str(feature_cfg.hardware_id).strip()
+    train_files, val_files, test_files = split_dataset(
+        data_root,
+        seed=seed,
+        split_unit=split_unit,
+        hardware_id=hardware_filter or None,
+        feature_config=feature_cfg,
+    )
     limit = int(cfg["data"].get("limit", 0) or 0)
     if limit > 0:
         train_files = train_files[:limit]
@@ -263,6 +272,7 @@ def build_datasets(cfg: dict[str, Any]):
     split_meta = {
         "seed": seed,
         "split_unit": split_unit,
+        "hardware_id_filter": hardware_filter or None,
         "train_hash": split_hash(train_files),
         "val_hash": split_hash(val_files),
         "test_hash": split_hash(test_files),
@@ -561,7 +571,7 @@ def base_metadata(
     source_precision_provenance = str(cfg.get("data", {}).get("source_precision_provenance") or "").strip()
     source_precision_confirmed = (
         bool(cfg.get("data", {}).get("source_precision_confirmed"))
-        and feature_cfg.precision_config != SOURCE_UNKNOWN_PRECISION_CONFIG
+        and feature_cfg.precision_config != UNKNOWN_PRECISION_CONFIG
     )
     return {
         "run_id": run_id,
@@ -1238,7 +1248,9 @@ def apply_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> dict[str, 
         cfg["features"]["precision_config"] = normalize_precision_config(args.precision_config)
     if args.hardware_id is not None:
         cfg.setdefault("features", {})
+        cfg.setdefault("data", {})
         cfg["features"]["hardware_id"] = str(args.hardware_id)
+        cfg["data"]["hardware_id"] = str(args.hardware_id)
     if args.seed is not None:
         cfg["seed"] = args.seed
     if args.limit is not None:
@@ -1257,12 +1269,12 @@ def apply_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> dict[str, 
         cfg.setdefault("data", {})
         cfg["data"]["source_precision_provenance"] = str(args.source_precision_provenance or "").strip()
         precision_config = normalize_precision_config(str(cfg.get("features", {}).get("precision_config", "fp32_ieee")))
-        cfg["data"]["source_precision_confirmed"] = bool(cfg["data"]["source_precision_provenance"]) and precision_config != SOURCE_UNKNOWN_PRECISION_CONFIG
+        cfg["data"]["source_precision_confirmed"] = bool(cfg["data"]["source_precision_provenance"]) and precision_config != UNKNOWN_PRECISION_CONFIG
     if args.require_source_precision_provenance:
         cfg.setdefault("data", {})
         provenance_recorded = bool(str(cfg["data"].get("source_precision_provenance") or "").strip())
         precision_config = normalize_precision_config(str(cfg.get("features", {}).get("precision_config", "fp32_ieee")))
-        cfg["data"]["source_precision_confirmed"] = provenance_recorded and precision_config != SOURCE_UNKNOWN_PRECISION_CONFIG
+        cfg["data"]["source_precision_confirmed"] = provenance_recorded and precision_config != UNKNOWN_PRECISION_CONFIG
         if not provenance_recorded:
             raise ValueError("--require-source-precision-provenance was set but source precision provenance is empty")
     return cfg

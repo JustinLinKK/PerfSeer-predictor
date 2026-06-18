@@ -20,12 +20,10 @@ from torch_geometric.data import Data, InMemoryDataset
 
 from perfseer.architecture_schema import (
     ARCHITECTURE_FAMILIES,
-    FEATURE_SCHEMA_LEGACY,
-    FEATURE_SCHEMA_V2,
+    FEATURE_SCHEMA_VERSION,
     MODALITIES,
     VARIANT_KINDS,
     feature_schema_signature,
-    is_v2_schema,
     node_types_for_schema,
 )
 from perfseer.data import ARG_KEYS, NODE_TYPES, list_pairs, parse_graph, parse_label
@@ -42,7 +40,7 @@ TARGET_NAMES: list[str] = [
     "infer_time",
 ]
 
-SOURCE_UNKNOWN_PRECISION_CONFIG = "source_domain_unknown"
+UNKNOWN_PRECISION_CONFIG = "unknown"
 DTYPE_VOCAB = ("fp32", "tf32", "bf16", "fp16", "fp8_e4m3", "fp8_e5m2", "unknown")
 TENSORCORE_MODES = ("none", "tf32", "bf16", "fp16", "fp8", "unknown")
 FP8_FORMATS = ("none", "e4m3", "e5m2", "hybrid_e4m3_e5m2", "unknown")
@@ -54,7 +52,7 @@ PRECISION_CONFIG_VOCAB = (
     "fp8_te_hybrid",
     "fp8_e4m3",
     "fp8_e5m2",
-    SOURCE_UNKNOWN_PRECISION_CONFIG,
+    UNKNOWN_PRECISION_CONFIG,
 )
 RESOURCE_REGIME_VOCAB = ("small_overhead", "memory_bound", "balanced", "compute_bound")
 LABEL_DOMAIN_VOCAB = ("unknown", "source", "precision_profile", "pseudo")
@@ -80,7 +78,7 @@ DTYPE_BYTES = {
     "fp8_e5m2": 1.0,
 }
 PRECISION_PRESETS: dict[str, dict[str, str]] = {
-    SOURCE_UNKNOWN_PRECISION_CONFIG: {
+    UNKNOWN_PRECISION_CONFIG: {
         "weight_dtype": "unknown",
         "activation_dtype": "unknown",
         "grad_dtype": "unknown",
@@ -170,7 +168,7 @@ except Exception:
 
 @dataclass(frozen=True)
 class FeatureConfig:
-    feature_schema_version: str = FEATURE_SCHEMA_LEGACY
+    feature_schema_version: str = FEATURE_SCHEMA_VERSION
     use_operator_type_onehot: bool = True
     topology: bool = False
     critical_path: bool = False
@@ -178,7 +176,7 @@ class FeatureConfig:
     include_destination_tensor: bool = False
     time_target_mode: str = "raw"
     target_mode: str = "absolute"
-    include_precision_features: bool = False
+    include_precision_features: bool = True
     include_hardware_features: bool = False
     precision_config: str = "fp32_ieee"
     hardware_id: str = "unknown"
@@ -252,18 +250,17 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
         add_node(name, True)
     for name in ["flops_ratio", "mac_ratio", "weight_ratio"]:
         add_node(name, False)
-    if is_v2_schema(cfg.feature_schema_version):
-        for name in [
-            "tensor_rank",
-            "input_numel_log1p",
-            "output_numel_log1p",
-            "input_feature_dim_log1p",
-            "output_feature_dim_log1p",
-            "sequence_length_log1p",
-            "spatial_area_log1p",
-            "graph_node_count_log1p",
-        ]:
-            add_node(name, True)
+    for name in [
+        "tensor_rank",
+        "input_numel_log1p",
+        "output_numel_log1p",
+        "input_feature_dim_log1p",
+        "output_feature_dim_log1p",
+        "sequence_length_log1p",
+        "spatial_area_log1p",
+        "graph_node_count_log1p",
+    ]:
+        add_node(name, True)
     if cfg.topology:
         for name in ["in_degree", "out_degree", "topo_index", "forward_depth", "reverse_depth"]:
             add_node(name, True)
@@ -371,15 +368,14 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             "hardware_peak_fp8_tflops",
         ]:
             add_global(name, True)
-    if is_v2_schema(cfg.feature_schema_version):
-        for family in ARCHITECTURE_FAMILIES:
-            add_global(f"architecture_family_{family}", False)
-        for modality in MODALITIES:
-            add_global(f"modality_{modality}", False)
-        for variant in VARIANT_KINDS:
-            add_global(f"variant_kind_{variant}", False)
-        for name in ["architecture_depth_bucket", "architecture_width_bucket"]:
-            add_global(name, True)
+    for family in ARCHITECTURE_FAMILIES:
+        add_global(f"architecture_family_{family}", False)
+    for modality in MODALITIES:
+        add_global(f"modality_{modality}", False)
+    for variant in VARIANT_KINDS:
+        add_global(f"variant_kind_{variant}", False)
+    for name in ["architecture_depth_bucket", "architecture_width_bucket"]:
+        add_global(name, True)
 
     return FeatureLayout(
         node_dim=len(node_names),
@@ -510,8 +506,7 @@ def normalize_precision_config(value: str) -> str:
         "fp8_te_hybrid": "fp8_te_hybrid",
         "fp8_e4m3": "fp8_e4m3",
         "fp8_e5m2": "fp8_e5m2",
-        "source_unknown": SOURCE_UNKNOWN_PRECISION_CONFIG,
-        "source_domain_unknown": SOURCE_UNKNOWN_PRECISION_CONFIG,
+        "unknown": UNKNOWN_PRECISION_CONFIG,
     }
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
@@ -528,7 +523,7 @@ def precision_config_index(value: str) -> int:
 
 def normalize_label_domain(value: str | None) -> str:
     key = str(value or "").strip().lower().replace("-", "_")
-    if key in {"source", "base", "base_label", "source_domain"}:
+    if key in {"source", "base", "base_label"}:
         return "source"
     if key in {"precision", "precision_profile", "profile", "measured", "golden"}:
         return "precision_profile"
@@ -844,6 +839,26 @@ def list_precision_pairs(data_root: str, include_base_pairs: bool = True) -> lis
     return sorted(pairs, key=lambda pair: (os.path.basename(pair[0]), os.path.basename(pair[1])))
 
 
+def filter_pairs_by_hardware(
+    pairs: Sequence[tuple[str, str]],
+    hardware_id: str | None,
+    feature_config: FeatureConfig | None = None,
+) -> list[tuple[str, str]]:
+    target = str(hardware_id or "").strip()
+    if not target:
+        return list(pairs)
+    cfg = feature_config or FeatureConfig(hardware_id=target)
+    out: list[tuple[str, str]] = []
+    for graph_path, label_path in pairs:
+        metadata = precision_metadata_for_label(label_path) or {}
+        if not metadata.get("hardware_id"):
+            continue
+        pair_cfg = feature_config_for_pair(cfg, graph_path, label_path)
+        if str(pair_cfg.hardware_id or "").strip() == target:
+            out.append((graph_path, label_path))
+    return out
+
+
 def _dtype_bytes(dtype: str) -> float:
     return DTYPE_BYTES.get((dtype or "fp32").lower(), 4.0)
 
@@ -1069,8 +1084,7 @@ def _node_raw(feat: dict, totals: dict[str, float], cfg: FeatureConfig) -> list[
             _safe_div(weight, totals["weight"]),
         ]
     )
-    if is_v2_schema(cfg.feature_schema_version):
-        out.extend(_node_shape_raw(mem))
+    out.extend(_node_shape_raw(mem))
     return [float(v) for v in out]
 
 
@@ -1241,8 +1255,7 @@ def _extract_raw(g: nx.DiGraph, cfg: FeatureConfig) -> tuple[np.ndarray, np.ndar
                 float(np.sum(topo["on_weighted"])),  # type: ignore[arg-type]
             ]
         )
-    if is_v2_schema(cfg.feature_schema_version):
-        u.extend(_graph_architecture_raw(g))
+    u.extend(_graph_architecture_raw(g))
     if cfg.include_precision_features:
         precision = _precision_settings(cfg)
         for field in ("weight_dtype", "activation_dtype", "grad_dtype", "accum_dtype", "optimizer_state_dtype"):
@@ -1535,8 +1548,13 @@ def split_dataset(
     seed: int = 42,
     ratios: tuple[float, float, float] = (0.5, 0.25, 0.25),
     split_unit: str = "pair",
+    hardware_id: str | None = None,
+    feature_config: FeatureConfig | None = None,
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
     all_pairs = list_precision_pairs(data_root)
+    all_pairs = filter_pairs_by_hardware(all_pairs, hardware_id, feature_config)
+    if hardware_id and not all_pairs:
+        raise ValueError(f"no labels found for hardware_id={hardware_id!r} under {data_root}")
     pseudo_pairs = [pair for pair in all_pairs if label_domain_for_pair(*pair) == "pseudo"]
     pairs = [pair for pair in all_pairs if label_domain_for_pair(*pair) != "pseudo"]
     unit = (split_unit or "pair").lower()

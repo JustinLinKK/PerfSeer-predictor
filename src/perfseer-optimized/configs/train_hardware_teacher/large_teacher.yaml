@@ -1,15 +1,17 @@
 run:
-  run_id: precision_distill_student_192
+  run_id: hardware_large_teacher
   out_dir: runs/optimized
   results_path: runs/results.jsonl
-  notes: Precision-aware 192-wide distilled deployment student; set distillation.teacher_ckpt_dir to the precision teacher run.
+  notes: Large scratch-trained teacher for one hardware class; override --hardware-id for each GPU.
 seed: 42
 data:
   root: dataset
+  hardware_id: rtx4090
   limit: 0
   num_workers: 0
   split_unit: graph
 features:
+  feature_schema_version: perfseer_graph_v1
   use_operator_type_onehot: true
   topology: true
   critical_path: true
@@ -18,17 +20,17 @@ features:
   time_target_mode: raw
   target_mode: absolute
   include_precision_features: true
-  include_hardware_features: true
+  include_hardware_features: false
   precision_config: fp32_ieee
-  hardware_id: source_domain_unknown
-  base_label_weight: 1.0
-  precision_label_weight: 3.0
-  pseudo_label_weight: 1.0
+  hardware_id: rtx4090
+  base_label_weight: 0.0
+  precision_label_weight: 1.0
+  pseudo_label_weight: 0.0
 model:
   name: seernet_multi
-  hidden: 192
-  num_blocks: 2
-  head_hidden: 192
+  hidden: 512
+  num_blocks: 4
+  head_hidden: 512
   metric_heads: separate
   activation: relu
   dropout: 0.05
@@ -36,21 +38,22 @@ model:
   block_norm: prenorm
   residual: gated
   residual_gate_init: 0.1
+  residual_gate_mode: vector_per_stream
   use_synmm: true
-  global_agg: synmm
-  attention_pool: false
+  global_agg: synmm_plus
+  attention_pool: true
   use_gnpb: true
   include_u_in_edge_update: true
-  mlp_z_num_linear_layers: 3
+  mlp_z_num_linear_layers: 4
 train:
   metric: all
-  epochs: 500
-  batch_size: 128
-  lr: 0.001
+  epochs: 600
+  batch_size: 96
+  lr: 0.0007
   optimizer: adamw
   weight_decay: 0.00001
-  patience: 30
-  scheduler_patience: 5
+  patience: 40
+  scheduler_patience: 6
   min_lr: 0.000001
   loss: huber_logstd
   huber_delta: 1.0
@@ -59,7 +62,7 @@ train:
   device: auto
 multi_task:
   enabled: true
-  loss_reduction: plain_sum
+  loss_reduction: pcgrad
   loss_weights:
     train_util: 1.0
     train_mem: 0.75
@@ -67,13 +70,6 @@ multi_task:
     infer_util: 1.0
     infer_mem: 0.75
     infer_time: 1.5
-distillation:
-  enabled: true
-  teacher_ckpt_dir:
-  alpha: 0.5
-  source_hard_alpha: 0.5
-  precision_hard_alpha: 1.0
-  pseudo_hard_alpha: 0.0
 calibration:
   enabled: true
   method: linear

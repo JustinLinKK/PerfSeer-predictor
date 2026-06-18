@@ -7,23 +7,9 @@ import json
 from collections import OrderedDict
 
 
-FEATURE_SCHEMA_LEGACY = "legacy_cnn_v1"
-FEATURE_SCHEMA_V2 = "template_v2_noncnn"
+FEATURE_SCHEMA_VERSION = "perfseer_graph_v1"
 
-LEGACY_NODE_TYPES: tuple[str, ...] = (
-    "Conv",
-    "Relu",
-    "BatchNormalization",
-    "Concat",
-    "AveragePool",
-    "GlobalAveragePool",
-    "Flatten",
-    "Gemm",
-    "MaxPool",
-    "Add",
-)
-
-V2_NODE_TYPES: tuple[str, ...] = (
+NODE_TYPES: tuple[str, ...] = (
     "Conv",
     "DepthwiseConv",
     "ConvTranspose",
@@ -99,28 +85,25 @@ VARIANT_MIX: tuple[tuple[str, float], ...] = (
 )
 
 
-def node_types_for_schema(feature_schema_version: str | None) -> tuple[str, ...]:
-    """Return the operator vocabulary for a feature schema."""
+def node_types_for_schema(feature_schema_version: str | None = None) -> tuple[str, ...]:
+    """Return the canonical operator vocabulary for this branch."""
 
-    if feature_schema_version == FEATURE_SCHEMA_V2:
-        return V2_NODE_TYPES
-    return LEGACY_NODE_TYPES
-
-
-def is_v2_schema(feature_schema_version: str | None) -> bool:
-    return feature_schema_version == FEATURE_SCHEMA_V2
+    version = feature_schema_version or FEATURE_SCHEMA_VERSION
+    if version != FEATURE_SCHEMA_VERSION:
+        raise ValueError(f"unsupported feature schema {version!r}; expected {FEATURE_SCHEMA_VERSION!r}")
+    return NODE_TYPES
 
 
 def feature_schema_signature(feature_schema_version: str | None) -> str:
     """Stable digest used for cache/checkpoint compatibility checks."""
 
-    version = feature_schema_version or FEATURE_SCHEMA_LEGACY
+    version = feature_schema_version or FEATURE_SCHEMA_VERSION
     payload = {
         "feature_schema_version": version,
         "node_types": node_types_for_schema(version),
-        "architecture_families": ARCHITECTURE_FAMILIES if is_v2_schema(version) else (),
-        "modalities": MODALITIES if is_v2_schema(version) else (),
-        "variant_kinds": VARIANT_KINDS if is_v2_schema(version) else (),
+        "architecture_families": ARCHITECTURE_FAMILIES,
+        "modalities": MODALITIES,
+        "variant_kinds": VARIANT_KINDS,
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha1(raw).hexdigest()[:16]

@@ -234,10 +234,7 @@ nrp_calibration_pack/profile_datasets/
 nrp_calibration_pack/selection_report.md
 nrp_calibration_pack/coverage_summary.json
 
-# Generated non-CNN/v2 calibration artifacts.
-nrp_calibration_pack_noncnn/
-nrp_calibration_pack_noncnn*/
-dataset_noncnn_10000/
-nrp_noncnn_results_*/
-perfseer_noncnn_*_pack/
-perfseer_noncnn_*_results/
+# Local calibration/profile smoke outputs.
+nrp_results_*/
+perfseer_*_pack/
+perfseer_*_results/

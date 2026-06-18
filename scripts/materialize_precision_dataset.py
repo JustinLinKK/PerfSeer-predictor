@@ -19,7 +19,7 @@ if str(SRC) not in sys.path:
 
 from perfseer.data import list_pairs  # noqa: E402
 
-SOURCE_UNKNOWN_PRECISION_CONFIG = "source_domain_unknown"
+UNKNOWN_PRECISION_CONFIG = "unknown"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -35,10 +35,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--base-data-root", help="Optional original dataset root to include alongside precision labels.")
     p.add_argument("--base-mode", choices=("skip", "copy", "symlink"), default="skip")
     p.add_argument("--source-precision-config", default="fp32_ieee", help="Precision config to assign to labels copied from --base-data-root.")
-    p.add_argument("--source-hardware-id", default="source_domain_unknown", help="Hardware id to assign to labels copied from --base-data-root.")
+    p.add_argument("--source-hardware-id", default="unknown", help="Hardware id to assign to labels copied from --base-data-root.")
     p.add_argument("--source-hardware-features-json", default="{}", help="JSON object of numeric hardware features for labels copied from --base-data-root.")
     p.add_argument("--source-precision-provenance", default="", help="Short note/path/URI proving the original source labels' precision setup.")
-    p.add_argument("--require-source-precision-provenance", action="store_true", help="Fail when source-domain labels are included without provenance.")
+    p.add_argument("--require-source-precision-provenance", action="store_true", help="Fail when optional base labels are included without provenance.")
     p.add_argument("--hardware-id", help="Override hardware id used in materialized label filenames.")
     p.add_argument("--pseudo-precision-sweep", default="", help="Comma-separated precision configs to add as pseudo rows backed by source labels for teacher distillation.")
     p.add_argument("--pseudo-hardware-id", help="Hardware id to assign to pseudo rows. Defaults to --hardware-id or --source-hardware-id.")
@@ -72,8 +72,7 @@ def normalize_precision_config(value: str) -> str:
         "fp8_te_hybrid": "fp8_te_hybrid",
         "fp8_e4m3": "fp8_e4m3",
         "fp8_e5m2": "fp8_e5m2",
-        "source_unknown": SOURCE_UNKNOWN_PRECISION_CONFIG,
-        "source_domain_unknown": SOURCE_UNKNOWN_PRECISION_CONFIG,
+        "unknown": UNKNOWN_PRECISION_CONFIG,
     }
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
@@ -109,7 +108,7 @@ def parse_precision_sweep(raw: str | None) -> list[str]:
 
 
 def is_source_precision_confirmed(precision_config: str, provenance: str) -> bool:
-    return bool(str(provenance or "").strip()) and normalize_precision_config(precision_config) != SOURCE_UNKNOWN_PRECISION_CONFIG
+    return bool(str(provenance or "").strip()) and normalize_precision_config(precision_config) != UNKNOWN_PRECISION_CONFIG
 
 
 def iter_jsonl(paths: Iterable[Path]) -> Iterable[dict[str, Any]]:
@@ -266,7 +265,7 @@ def include_base_dataset(
                 "hardware_id": source_hardware_id,
                 "precision_config": source_precision_config,
                 "profile_point_id": f"{graph_id}::{source_precision_config}",
-                "source_result_status": "source_domain",
+                "source_result_status": "base",
                 "label_domain": "source",
                 "is_base_label": True,
                 "source_precision_provenance": source_precision_provenance,
@@ -290,7 +289,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     (out_root / "label" / "label").mkdir(parents=True, exist_ok=True)
 
     source_precision = normalize_precision_config(args.source_precision_config)
-    source_hardware_id = clean_id(args.source_hardware_id, "source_domain_unknown")
+    source_hardware_id = clean_id(args.source_hardware_id, "unknown")
     source_hardware_features = parse_hardware_features(args.source_hardware_features_json)
     source_precision_provenance = str(args.source_precision_provenance or "").strip()
     source_precision_confirmed = is_source_precision_confirmed(source_precision, source_precision_provenance)
@@ -368,35 +367,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             graph_file = f"cg/cg/{model_id}.pkl"
             shutil.copy2(graph_src, out_root / graph_file)
 
-            base_label_file = str(manifest_row.get("base_label_file") or f"label/label/{model_id}.txt")
-            original_label_raw = str(manifest_row.get("original_label_path") or "")
-            original_label_path = Path(original_label_raw)
-            if base_label_file not in seen_source_labels and original_label_raw and original_label_path.is_file():
-                shutil.copy2(original_label_path, out_root / base_label_file)
-                base_label_name = Path(base_label_file).name
-                source_meta = {
-                    "graph_id": model_id,
-                    "graph_file": graph_file,
-                    "label_file": base_label_file,
-                    "label_stem": Path(base_label_name).stem,
-                    "hardware_id": source_hardware_id,
-                    "precision_config": source_precision,
-                    "profile_point_id": f"{model_id}::{source_precision}",
-                    "source_result_status": "source_domain",
-                    "label_domain": "source",
-                    "is_base_label": True,
-                    "source_precision_provenance": source_precision_provenance,
-                    "source_precision_confirmed": source_precision_confirmed,
-                    "hardware_features": source_hardware_features,
-                    "hardware": {"hardware_id": source_hardware_id, **source_hardware_features},
-                    "precision": {"precision_config": source_precision},
-                }
-                meta_fh.write(json.dumps(source_meta, sort_keys=True) + "\n")
-                source_candidates.append(source_meta)
-                seen_source_labels.add(base_label_file)
-                seen_labels.add(base_label_file)
-                bump(report["label_domain_counts"], "source")
-            report["calibration_source_labels"] += 1
+            base_label_file = ""
 
             hw_id = hardware_id_from_result(row, args.hardware_id)
             label_name = f"{model_id}_{hw_id}_{precision_config}.txt"

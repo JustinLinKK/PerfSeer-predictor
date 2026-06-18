@@ -23,12 +23,12 @@ import networkx as nx
 import numpy as np
 import torch
 
-from perfseer.architecture_schema import FEATURE_SCHEMA_LEGACY, FEATURE_SCHEMA_V2, LEGACY_NODE_TYPES, V2_NODE_TYPES
+from perfseer.architecture_schema import FEATURE_SCHEMA_VERSION, NODE_TYPES as ARCH_NODE_TYPES
 from nrp_calibration_pack.template_catalog import build_template_graph, iter_template_specs, template_family_counts
 
 
-SEED = 20260602
-DEFAULT_TEMPLATE_V2_SEED = 20260617
+SEED = 20260617
+DEFAULT_TEMPLATE_SEED = SEED
 DEFAULT_SUBSET_SIZE = 10000
 DEFAULT_PILOT_SUBSET_SIZE = 1000
 DEFAULT_PRECISION_SWEEP = ("fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid")
@@ -51,7 +51,7 @@ PRECISION_ALIASES = {
     "mxfp8": "mxfp8",
 }
 BATCH_BUCKETS = (1, 2, 4, 8, 16, 32, 64, 128, 256)
-NODE_TYPES = LEGACY_NODE_TYPES
+NODE_TYPES = ARCH_NODE_TYPES
 PURE_FAMILIES = ("mobilenet", "vggnet", "resnext", "densenet", "googlenet")
 RESERVE_FRACTION = 0.50
 PER_BATCH_RESERVE_FRACTION = 0.75
@@ -150,9 +150,8 @@ def resolve_generation_workers(value: int | None) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate NRP calibration model sources.")
-    parser.add_argument("--data-root", default="dataset")
     parser.add_argument("--out-dir", default="nrp_calibration_pack")
-    parser.add_argument("--catalog-mode", choices=("dataset", "template_v2"), default="dataset")
+    parser.add_argument("--catalog-mode", choices=("template",), default="template")
     parser.add_argument(
         "--profile-preset",
         choices=("full", "pilot"),
@@ -177,9 +176,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--force", action="store_true", help="Regenerate manifest/models/subset/report even if they already exist.")
     args = parser.parse_args(argv)
     if args.seed is None:
-        args.seed = DEFAULT_TEMPLATE_V2_SEED if args.catalog_mode == "template_v2" else SEED
-    if args.catalog_mode == "template_v2" and args.out_dir == "nrp_calibration_pack":
-        args.out_dir = "nrp_calibration_pack_noncnn"
+        args.seed = DEFAULT_TEMPLATE_SEED
     if args.subset_size is None:
         args.subset_size = DEFAULT_PILOT_SUBSET_SIZE if args.profile_preset == "pilot" else DEFAULT_SUBSET_SIZE
     try:
@@ -323,7 +320,7 @@ def record_from_graph(graph_path: Path, label_path: Path, graph: nx.DiGraph, lab
 
 
 def record_from_template_graph(graph_path: Path, label_path: Path, graph: nx.DiGraph) -> GraphRecord:
-    op_counter = {op: 0 for op in V2_NODE_TYPES}
+    op_counter = {op: 0 for op in NODE_TYPES}
     total_flops = 0.0
     total_memory = 0.0
     total_params = 0.0
@@ -367,14 +364,11 @@ def record_from_template_graph(graph_path: Path, label_path: Path, graph: nx.DiG
         infer_util=0.0,
         infer_mem=0.0,
         infer_time=max(total_flops / 2e9, 1e-6),
-        op_counts=tuple(op_counter[op] for op in V2_NODE_TYPES),
+        op_counts=tuple(op_counter[op] for op in NODE_TYPES),
     )
 
 
 def node_types_for_records(records: Iterable[GraphRecord]) -> tuple[str, ...]:
-    records = list(records)
-    if any(len(record.op_counts) == len(V2_NODE_TYPES) for record in records):
-        return V2_NODE_TYPES
     return NODE_TYPES
 
 
@@ -383,8 +377,7 @@ def op_count(record: GraphRecord, op_idx: int) -> int:
 
 
 def record_op_count_map(record: GraphRecord) -> dict[str, int]:
-    vocab = V2_NODE_TYPES if len(record.op_counts) == len(V2_NODE_TYPES) else NODE_TYPES
-    return {op: op_count(record, idx) for idx, op in enumerate(vocab)}
+    return {op: op_count(record, idx) for idx, op in enumerate(NODE_TYPES)}
 
 
 def parse_label(path: Path) -> dict[str, list[float]]:
@@ -1074,7 +1067,7 @@ def write_pack(
             "base_label_file": f"label/label/{model_id}.txt",
             "input_shape": list(result.input_shape),
             "input_specs": clean_json(result.input_specs),
-            "feature_schema_version": str(metadata.get("feature_schema_version", FEATURE_SCHEMA_LEGACY)),
+            "feature_schema_version": str(metadata.get("feature_schema_version", FEATURE_SCHEMA_VERSION)),
             "architecture_family": str(metadata.get("architecture_family", family_key(result.record.family_tuple))),
             "variant_kind": str(metadata.get("variant_kind", "source_dataset")),
             "variant_signature": str(metadata.get("variant_signature", result.record.stem)),
@@ -1165,8 +1158,7 @@ def expand_precision_rows(model_rows: Iterable[dict[str, Any]], precision_config
 
 
 def unsupported_ops(graph: nx.DiGraph) -> list[str]:
-    schema = str((getattr(graph, "graph", {}) or {}).get("feature_schema_version", FEATURE_SCHEMA_LEGACY))
-    supported = set(V2_NODE_TYPES if schema == FEATURE_SCHEMA_V2 else NODE_TYPES)
+    supported = set(NODE_TYPES)
     return sorted(
         {
             str((data.get("feature", {}) or {}).get("type", ""))
@@ -1494,12 +1486,8 @@ def main(argv: list[str] | None = None) -> None:
 
     sync_runtime_files(out_dir)
     print(f"generating with {args.generation_workers} worker(s)", flush=True)
-    if args.catalog_mode == "template_v2":
-        records = materialize_template_records(out_dir, args.subset_size, args.seed, force=args.force)
-        selected = records
-    else:
-        records = load_records(Path(args.data_root), generation_workers=args.generation_workers)
-        selected = select_smoke_subset(records, args.subset_size) if args.smoke_small else select_subset(records, args.subset_size, args.seed)
+    records = materialize_template_records(out_dir, args.subset_size, args.seed, force=args.force)
+    selected = records
     precision_sweep = parse_precision_sweep(args.precision_sweep)
     valid_count, failure_count = write_pack(
         selected,
