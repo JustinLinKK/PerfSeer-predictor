@@ -105,6 +105,7 @@ python /tmp/nrp_calibration_smoke_pack/profile/run_profile.py \
   --manifest /tmp/nrp_calibration_smoke_pack/manifest/subset_manifest.jsonl \
   --models-dir /tmp/nrp_calibration_smoke_pack/models \
   --output-dir /tmp/perfseer_calibration_smoke \
+  --hardware-id cpu_smoke \
   --num-shards 1 \
   --precision-config fp32_ieee \
   --profile-dataset-dir /tmp/nrp_calibration_smoke_pack/profile_datasets \
@@ -159,6 +160,7 @@ tar -czf nrp_calibration_pack.full.tar.gz -C nrp_calibration_pack .
   --image <your-registry>/perfseer-calibration:latest \
   --pvc <output-pvc> \
   --gpu-product NVIDIA-GeForce-RTX-4090 \
+  --hardware-id rtx4090 \
   --parallelism 4 \
   --completions 64 \
   --precision-sweep fp32_ieee,tf32,bf16_amp,fp16_amp \
@@ -185,6 +187,9 @@ The job writes:
 - `label/label/<model_id>_<precision_config>.txt`: dataset-compatible label dict for a precision-specific profile point.
 - `results_shard*.jsonl`: detailed hardware, timing, memory, and status rows.
 - `hardware_shard*.json`: detected CUDA/GPU metadata for each shard.
+
+Pass `--hardware-id` during profiling or submission to store stable hardware
+labels such as `rtx3090`, `rtx4090`, or `rtx5090` in those outputs.
 
 The label format is:
 

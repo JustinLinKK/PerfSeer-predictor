@@ -25,7 +25,12 @@ SOURCE_UNKNOWN_PRECISION_CONFIG = "source_domain_unknown"
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Materialize precision calibration results into dataset/cg + dataset/label layout.")
     p.add_argument("--pack-dir", required=True, help="Generated calibration pack directory containing subset/ and manifest/.")
-    p.add_argument("--results-dir", required=True, help="Profiler output directory containing results_shard*.jsonl.")
+    p.add_argument(
+        "--results-dir",
+        required=True,
+        action="append",
+        help="Profiler output directory containing results_shard*.jsonl. May be repeated for multi-hardware datasets.",
+    )
     p.add_argument("--out-root", required=True, help="Output dataset root.")
     p.add_argument("--base-data-root", help="Optional original dataset root to include alongside precision labels.")
     p.add_argument("--base-mode", choices=("skip", "copy", "symlink"), default="skip")
@@ -117,6 +122,12 @@ def iter_jsonl(paths: Iterable[Path]) -> Iterable[dict[str, Any]]:
                     yield json.loads(line)
 
 
+def result_dirs_from_arg(value: Any) -> list[Path]:
+    if isinstance(value, (str, os.PathLike)):
+        return [Path(value)]
+    return [Path(item) for item in value]
+
+
 def load_manifest(pack_dir: Path) -> dict[str, dict[str, Any]]:
     manifest = pack_dir / "manifest" / "subset_manifest.jsonl"
     rows: dict[str, dict[str, Any]] = {}
@@ -193,7 +204,7 @@ def rejected_row_summary(row: dict[str, Any], status: str, reason: str) -> dict[
         "graph_id": row.get("graph_id"),
         "profile_point_id": row.get("profile_point_id"),
         "precision_config": precision_config,
-        "hardware_id": row.get("hardware_id"),
+        "hardware_id": hardware_id_from_result(row),
         "fallback_policy": fallback_policy_from_result(row),
         "error": row.get("error"),
         "precision": row.get("precision", {}),
@@ -271,7 +282,7 @@ def include_base_dataset(
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
     pack_dir = Path(args.pack_dir)
-    results_dir = Path(args.results_dir)
+    results_dirs = result_dirs_from_arg(args.results_dir)
     out_root = Path(args.out_root)
     if out_root.exists() and args.force:
         shutil.rmtree(out_root)
@@ -302,7 +313,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         else (0, [])
     )
     manifest = load_manifest(pack_dir)
-    result_paths = sorted(results_dir.glob("results_shard*.jsonl"))
+    result_paths = sorted(path for results_dir in results_dirs for path in results_dir.glob("results_shard*.jsonl"))
     metadata_path = out_root / "label" / "precision_metadata.jsonl"
     rejected_path = out_root / "precision_rejected_rows.jsonl"
     report = {
@@ -314,6 +325,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "source_precision_provenance": source_precision_provenance,
         "source_precision_confirmed": source_precision_confirmed,
         "precision_labels": 0,
+        "precision_labels_by_hardware": {},
+        "precision_labels_by_config": {},
+        "label_domain_counts": {},
         "pseudo_labels": 0,
         "pseudo_precision_sweep": pseudo_precision_sweep,
         "pseudo_hardware_id": pseudo_hardware_id if pseudo_precision_sweep else "",
@@ -324,6 +338,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "fallback_policy_counts": {},
         "unsupported_fp8_rows": 0,
         "rejected_rows_file": str(rejected_path.name),
+        "result_dirs": [str(path) for path in results_dirs],
         "result_files": [str(path) for path in result_paths],
     }
     seen_labels: set[str] = {str(row.get("label_file", "")) for row in source_metadata_rows}
@@ -334,6 +349,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     with metadata_path.open("w") as meta_fh, rejected_path.open("w") as rejected_fh:
         for meta in source_metadata_rows:
             meta_fh.write(json.dumps(meta, sort_keys=True) + "\n")
+            bump(report["label_domain_counts"], "source")
         for row in iter_jsonl(result_paths):
             status = str(row.get("status", ""))
             if status != "ok":
@@ -379,6 +395,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 source_candidates.append(source_meta)
                 seen_source_labels.add(base_label_file)
                 seen_labels.add(base_label_file)
+                bump(report["label_domain_counts"], "source")
             report["calibration_source_labels"] += 1
 
             hw_id = hardware_id_from_result(row, args.hardware_id)
@@ -405,6 +422,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 "base_label_file": base_label_file,
                 "profile_point_id": row.get("profile_point_id"),
                 "source_result_status": status,
+                "label_domain": "precision_profile",
                 "hardware_features": hardware_features(row),
                 "hardware": row.get("hardware", {}),
                 "precision": row.get("precision", {}),
@@ -412,6 +430,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             meta_fh.write(json.dumps(meta, sort_keys=True) + "\n")
             accepted_precision_keys.add((model_id, hw_id, precision_config))
             report["precision_labels"] += 1
+            bump(report["precision_labels_by_hardware"], hw_id)
+            bump(report["precision_labels_by_config"], precision_config)
+            bump(report["label_domain_counts"], "precision_profile")
 
         for source_meta in source_candidates:
             graph_id = str(source_meta.get("graph_id") or "")
@@ -449,6 +470,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 }
                 meta_fh.write(json.dumps(meta, sort_keys=True) + "\n")
                 report["pseudo_labels"] += 1
+                bump(report["label_domain_counts"], "pseudo")
 
     (out_root / "precision_materialization_report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return report

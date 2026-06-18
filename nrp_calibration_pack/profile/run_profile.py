@@ -97,6 +97,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--sample-interval", type=float, default=0.01)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--hardware-id",
+        help="Stable hardware identifier to store in profiler outputs, for example rtx3090, rtx4090, or rtx5090.",
+    )
     parser.add_argument("--precision-config", action="append", help="Precision config(s) to profile. May be repeated or comma-separated.")
     parser.add_argument("--precision-sweep", help="Comma-separated precision config filter. Overrides manifest precision rows only by filtering them.")
     parser.add_argument("--fp8-backend", default="transformer_engine", choices=("transformer_engine", "none"))
@@ -206,7 +210,14 @@ def load_model(model_path: Path):
     return module.make_model(), module
 
 
-def hardware_metadata(device: torch.device) -> dict[str, Any]:
+def normalize_hardware_id(value: str | None) -> str | None:
+    if value is None:
+        return None
+    raw = value.strip().lower()
+    return raw or None
+
+
+def hardware_metadata(device: torch.device, hardware_id: str | None = None) -> dict[str, Any]:
     meta: dict[str, Any] = {
         "hostname": socket.gethostname(),
         "torch_version": torch.__version__,
@@ -214,6 +225,9 @@ def hardware_metadata(device: torch.device) -> dict[str, Any]:
         "device": str(device),
         "cuda_available": torch.cuda.is_available(),
     }
+    stable_id = normalize_hardware_id(hardware_id)
+    if stable_id:
+        meta["hardware_id"] = stable_id
     if device.type == "cuda" and torch.cuda.is_available():
         idx = device.index or 0
         props = torch.cuda.get_device_properties(idx)
@@ -633,6 +647,7 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
         "batch_size": batch_size,
         "model_file": row["model_file"],
         "label_file": row.get("label_file", f"label/label/{row['model_id']}_{precision_config}.txt"),
+        "hardware_id": normalize_hardware_id(args.hardware_id),
         "precision_config": precision_config,
         "precision": runtime.to_metadata(),
         "profile_dataset": {
@@ -741,7 +756,7 @@ def main(argv: list[str] | None = None) -> None:
             if normalize_precision_config(str(row.get("precision_config", DEFAULT_PRECISION_CONFIG))) in requested_precisions
         ]
     shard_rows = [row for idx, row in enumerate(manifest) if idx % max(args.num_shards, 1) == args.shard_index]
-    hardware = hardware_metadata(device)
+    hardware = hardware_metadata(device, args.hardware_id)
     hardware["precision_filter"] = sorted(requested_precisions) if requested_precisions is not None else None
     (output_dir / f"hardware_shard{args.shard_index}.json").write_text(json.dumps(hardware, indent=2, sort_keys=True) + "\n")
 

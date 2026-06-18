@@ -792,6 +792,8 @@ class NrpCalibrationPackTests(unittest.TestCase):
                     "1",
                     "--train-repeats",
                     "1",
+                    "--hardware-id",
+                    "rtx4090",
                     "--device",
                     "cpu",
                 ],
@@ -802,9 +804,14 @@ class NrpCalibrationPackTests(unittest.TestCase):
             label_path = tmp_path / "out" / "label" / "label" / "calib_0000_fp32_ieee.txt"
             label_exists = label_path.exists()
             parsed = parse_dataset_label(str(label_path))
+            result = json.loads((tmp_path / "out" / "results_shard0.jsonl").read_text().splitlines()[0])
+            hardware = json.loads((tmp_path / "out" / "hardware_shard0.json").read_text())
 
         self.assertTrue(label_exists)
         self.assertEqual(parsed.shape, (6,))
+        self.assertEqual(result["hardware_id"], "rtx4090")
+        self.assertEqual(result["hardware"]["hardware_id"], "rtx4090")
+        self.assertEqual(hardware["hardware_id"], "rtx4090")
 
     def test_profiler_uses_profile_dataset_specs_for_repeat_timing(self) -> None:
         graph = sequential_graph()
@@ -1071,6 +1078,78 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertEqual(precision_rows[0]["hardware_id"], "a100")
         self.assertEqual(precision_rows[0]["base_label_file"], "label/label/calib_0000.txt")
         self.assertEqual(precision_rows[0]["hardware_features"]["sm_count"], 108)
+
+    def test_materialize_precision_dataset_accepts_repeated_result_dirs(self) -> None:
+        graph = sequential_graph()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_path = tmp_path / "graph.pkl"
+            with graph_path.open("wb") as fh:
+                pickle.dump(graph, fh)
+            original_label = tmp_path / "original_stem.txt"
+            original_label.write_text("{'train': '1|2|3|4|5|6|7', 'infer': '1|2|3|4|5|6|7'}\n")
+            graph_record = record("original_stem", graph_path=str(graph_path), label_path=str(original_label))
+            write_pack([graph_record], [graph_record], tmp_path / "pack", "compile", precision_sweep=("fp32_ieee",))
+
+            result_dirs = []
+            for hardware_id, sm_count in (("rtx3090", 82), ("rtx4090", 128)):
+                results_dir = tmp_path / f"results_{hardware_id}"
+                results_dir.mkdir()
+                result_dirs.append(results_dir)
+                result_row = {
+                    "status": "ok",
+                    "model_id": "calib_0000",
+                    "graph_id": "calib_0000",
+                    "hardware_id": hardware_id,
+                    "precision_config": "fp32_ieee",
+                    "profile_point_id": f"calib_0000::{hardware_id}::fp32_ieee",
+                    "label": {"train": "1|2|3|4|5|6|7", "infer": "1|2|3|4|5|6|7"},
+                    "hardware": {
+                        "hardware_id": hardware_id,
+                        "gpu_name": f"NVIDIA {hardware_id.upper()}",
+                        "compute_capability": "8.9",
+                        "multi_processor_count": sm_count,
+                        "total_memory_mib": 24576,
+                    },
+                }
+                (results_dir / "results_shard0.jsonl").write_text(json.dumps(result_row) + "\n")
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "materialize_precision_dataset.py"),
+                    "--pack-dir",
+                    str(tmp_path / "pack"),
+                    "--results-dir",
+                    str(result_dirs[0]),
+                    "--results-dir",
+                    str(result_dirs[1]),
+                    "--out-root",
+                    str(tmp_path / "precision_dataset"),
+                    "--force",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            out_root = tmp_path / "precision_dataset"
+            label_3090 = out_root / "label" / "label" / "calib_0000_rtx3090_fp32_ieee.txt"
+            label_4090 = out_root / "label" / "label" / "calib_0000_rtx4090_fp32_ieee.txt"
+            label_3090_exists = label_3090.exists()
+            label_4090_exists = label_4090.exists()
+            metadata = [json.loads(line) for line in (out_root / "label" / "precision_metadata.jsonl").read_text().splitlines()]
+            report = json.loads((out_root / "precision_materialization_report.json").read_text())
+            precision_rows = [row for row in metadata if row.get("label_domain") == "precision_profile"]
+            label_names = {label_3090.name, label_4090.name}
+
+        self.assertTrue(label_3090_exists)
+        self.assertTrue(label_4090_exists)
+        self.assertEqual(report["precision_labels"], 2)
+        self.assertEqual(report["precision_labels_by_hardware"], {"rtx3090": 1, "rtx4090": 1})
+        self.assertEqual(report["precision_labels_by_config"], {"fp32_ieee": 2})
+        self.assertEqual(report["label_domain_counts"]["precision_profile"], 2)
+        self.assertEqual({row["hardware_id"] for row in precision_rows}, {"rtx3090", "rtx4090"})
+        self.assertEqual({Path(row["label_file"]).name for row in precision_rows}, label_names)
 
     def test_materialize_precision_dataset_tags_source_domain_labels(self) -> None:
         graph = sequential_graph()
@@ -1356,6 +1435,8 @@ class NrpCalibrationPackTests(unittest.TestCase):
                 "50",
                 "--sample-interval",
                 "0.02",
+                "--hardware-id",
+                "rtx4090",
                 "--precision-sweep",
                 "fp32_ieee,bf16_amp",
                 "--dry-run",
@@ -1378,6 +1459,7 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("--infer-repeats 50", yaml)
         self.assertIn("--train-repeats 50", yaml)
         self.assertIn("--sample-interval 0.02", yaml)
+        self.assertIn("--hardware-id rtx4090", yaml)
         self.assertIn("--precision-sweep fp32_ieee,bf16_amp", yaml)
         self.assertIn("--fp8-backend transformer_engine", yaml)
         self.assertNotIn("--train-epochs", yaml)
@@ -1407,6 +1489,11 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("--sample-interval 0.01", yaml)
         self.assertIn("--fp8-backend transformer_engine", yaml)
         self.assertNotIn("--train-epochs", yaml)
+
+    def test_root_markdown_entrypoint_is_readme_only(self) -> None:
+        root_markdown = sorted(path.name for path in ROOT.glob("*.md"))
+
+        self.assertEqual(root_markdown, ["README.md"])
 
     def test_precision_transfer_flow_dry_run_evaluates_source_and_precision_domains(self) -> None:
         result = subprocess.run(

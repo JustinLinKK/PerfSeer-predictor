@@ -238,5 +238,6 @@ nrp_calibration_pack/coverage_summary.json
 nrp_calibration_pack_noncnn/
 nrp_calibration_pack_noncnn*/
 dataset_noncnn_10000/
+nrp_noncnn_results_*/
 perfseer_noncnn_*_pack/
 perfseer_noncnn_*_results/
