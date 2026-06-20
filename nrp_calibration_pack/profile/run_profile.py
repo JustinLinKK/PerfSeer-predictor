@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import contextlib
 import importlib.util
 import json
 import os
+import resource
+import shutil
 import socket
 import subprocess
 import sys
@@ -51,6 +54,24 @@ class SampleStats:
     source: str = "none"
 
 
+def host_memory_mib() -> dict[str, float]:
+    current_kib = 0.0
+    peak_kib = 0.0
+    status_path = Path("/proc/self/status")
+    if status_path.exists():
+        for line in status_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.startswith("VmRSS:"):
+                current_kib = float(line.split()[1])
+            elif line.startswith("VmHWM:"):
+                peak_kib = float(line.split()[1])
+    if peak_kib <= 0.0:
+        maxrss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        peak_kib = maxrss / 1024.0 if sys.platform == "darwin" else maxrss
+    if current_kib <= 0.0:
+        current_kib = peak_kib
+    return {"current_mib": current_kib / 1024.0, "peak_mib": peak_kib / 1024.0}
+
+
 @dataclass
 class PrecisionRuntime:
     config: str
@@ -89,10 +110,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--shard-index", type=int, default=int(os.environ.get("JOB_COMPLETION_INDEX", "0")))
     parser.add_argument("--num-shards", type=int, default=int(os.environ.get("JOB_COMPLETIONS", "1")))
     parser.add_argument("--warmup", type=int, default=10)
+    parser.add_argument("--warmup-epochs", type=int)
+    parser.add_argument("--profile-epochs", type=int)
+    parser.add_argument("--batches-per-epoch", type=int, default=1)
     parser.add_argument("--infer-repeats", type=int, default=30)
     parser.add_argument("--train-repeats", type=int, default=20)
     parser.add_argument("--sample-interval", type=float, default=0.01)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument("--optimizer", default="sgd", choices=("sgd", "adam", "adamw"))
+    parser.add_argument("--sm-occupancy-source", default="ncu", choices=("ncu", "nvml_proxy"))
     parser.add_argument("--precision-config", action="append", help="Precision config(s) to profile. May be repeated or comma-separated.")
     parser.add_argument("--precision-sweep", help="Comma-separated precision config filter. Overrides manifest precision rows only by filtering them.")
     parser.add_argument("--fp8-backend", default="transformer_engine", choices=("transformer_engine", "none"))
@@ -174,6 +200,136 @@ def hardware_metadata(device: torch.device) -> dict[str, Any]:
         except Exception as exc:
             meta["nvidia_smi_error"] = repr(exc)
     return meta
+
+
+def ncu_executable() -> str | None:
+    return shutil.which("ncu") or shutil.which("nv-nsight-cu-cli")
+
+
+def write_ncu_probe_script(path: Path) -> None:
+    path.write_text(
+        '''
+import argparse
+import importlib.util
+import json
+import sys
+
+import torch
+import torch.nn.functional as F
+
+
+def load_model(model_path):
+    spec = importlib.util.spec_from_file_location("_ncu_probe_model", model_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["_ncu_probe_model"] = module
+    spec.loader.exec_module(module)
+    return module.make_model()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model-file", required=True)
+    parser.add_argument("--input-shape", required=True)
+    parser.add_argument("--phase", required=True, choices=("infer", "train"))
+    parser.add_argument("--optimizer", default="sgd", choices=("sgd", "adam", "adamw"))
+    args = parser.parse_args()
+    model = load_model(args.model_file).cuda()
+    x = torch.randn(tuple(json.loads(args.input_shape)), device="cuda")
+    if args.phase == "infer":
+        model.eval()
+        with torch.no_grad():
+            y = model(x)
+            torch.cuda.synchronize()
+        return
+    model.train()
+    opt_cls = {"sgd": torch.optim.SGD, "adam": torch.optim.Adam, "adamw": torch.optim.AdamW}[args.optimizer]
+    opt = opt_cls([p for p in model.parameters() if p.requires_grad], lr=1e-3)
+    opt.zero_grad(set_to_none=True)
+    y = model(x)
+    loss = F.mse_loss(y.float(), torch.zeros_like(y, dtype=torch.float32))
+    loss.backward()
+    opt.step()
+    torch.cuda.synchronize()
+
+
+if __name__ == "__main__":
+    main()
+'''.lstrip(),
+        encoding="utf-8",
+    )
+
+
+def parse_ncu_csv(stdout: str) -> dict[str, float]:
+    rows_by_kernel: dict[str, dict[str, float]] = {}
+    for row in csv.DictReader(line for line in stdout.splitlines() if line and not line.startswith("==")):
+        metric_name = (row.get("Metric Name") or row.get("Metric Name ") or "").strip()
+        raw_value = (row.get("Metric Value") or row.get("Metric Value ") or "").replace(",", "").strip()
+        if not metric_name or not raw_value or raw_value.lower() == "n/a":
+            continue
+        try:
+            value = float(raw_value)
+        except ValueError:
+            continue
+        kernel_id = row.get("ID") or row.get("Kernel Name") or str(len(rows_by_kernel))
+        bucket = rows_by_kernel.setdefault(kernel_id, {})
+        if metric_name == "sm__warps_active.avg.pct_of_peak_sustained_active":
+            bucket["occupancy"] = value
+        elif metric_name == "gpu__time_duration.sum":
+            bucket["duration"] = value
+    samples = [item for item in rows_by_kernel.values() if "occupancy" in item]
+    if not samples:
+        raise RuntimeError("ncu did not return SM occupancy samples")
+    total_duration = sum(max(item.get("duration", 0.0), 0.0) for item in samples)
+    if total_duration > 0.0:
+        avg = sum(item["occupancy"] * max(item.get("duration", 0.0), 0.0) for item in samples) / total_duration
+    else:
+        avg = sum(item["occupancy"] for item in samples) / len(samples)
+    return {
+        "avg_sm_occupancy_percent": float(avg),
+        "peak_sm_occupancy_percent": float(max(item["occupancy"] for item in samples)),
+        "kernel_count": float(len(samples)),
+    }
+
+
+def collect_ncu_occupancy(
+    row: dict[str, Any],
+    models_dir: Path,
+    output_dir: Path,
+    phase: str,
+    optimizer: str,
+) -> dict[str, Any]:
+    exe = ncu_executable()
+    if exe is None:
+        raise RuntimeError("ncu or nv-nsight-cu-cli is required for true SM occupancy labels")
+    probe = output_dir / f"_ncu_probe_{os.getpid()}_{phase}.py"
+    write_ncu_probe_script(probe)
+    model_path = models_dir / Path(row["model_file"]).name
+    cmd = [
+        exe,
+        "--csv",
+        "--target-processes",
+        "all",
+        "--metrics",
+        "sm__warps_active.avg.pct_of_peak_sustained_active,gpu__time_duration.sum",
+        "--launch-count",
+        "1",
+        sys.executable,
+        str(probe),
+        "--model-file",
+        str(model_path),
+        "--input-shape",
+        json.dumps(row["input_shape"]),
+        "--phase",
+        phase,
+        "--optimizer",
+        optimizer,
+    ]
+    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ncu failed for {phase}: {proc.stdout[-2000:]}")
+    parsed = parse_ncu_csv(proc.stdout)
+    parsed["source"] = "ncu_sm__warps_active.avg.pct_of_peak_sustained_active"
+    return parsed
 
 
 def compute_capability_tuple(device: torch.device) -> tuple[int, int]:
@@ -477,6 +633,39 @@ def label_string(time_ms_per_sample: float, stats: SampleStats) -> str:
     return "|".join(f"{value:.6g}" for value in fields)
 
 
+def phase_label_v2(
+    detail: dict[str, Any],
+    data_type: dict[str, Any],
+    occupancy: dict[str, Any],
+    optimizer: str | None = None,
+) -> dict[str, Any]:
+    sampler = detail["sampler"]
+    avg_sm_util = float(sampler.get("avg_sm_util", 0.0))
+    peak_sm_util = float(sampler.get("peak_sm_util", 0.0))
+    label = {
+        "time_1_epoch_ms": float(detail["mean_iter_ms"]),
+        "avg_device_memory_usage_mib": float(sampler.get("avg_mem_usage", 0.0)),
+        "peak_device_memory_usage_mib": float(sampler.get("peak_mem_usage", 0.0)),
+        "avg_host_memory_usage_mib": float(detail["avg_host_memory_usage_mib"]),
+        "peak_host_memory_usage_mib": float(detail["peak_host_memory_usage_mib"]),
+        "compile_time_ms": 0.0,
+        "warmup_time_ms": float(detail.get("warmup_time_ms", 0.0)),
+        "compile_warmup_time_ms": float(detail.get("warmup_time_ms", 0.0)),
+        "avg_sm_occupancy_percent": float(occupancy["avg_sm_occupancy_percent"]),
+        "peak_sm_occupancy_percent": float(occupancy["peak_sm_occupancy_percent"]),
+        "sm_occupancy_source": occupancy["source"],
+        "sm_occupancy_kernel_count": int(occupancy.get("kernel_count", 0)),
+        "avg_sm_utilization_percent": avg_sm_util,
+        "peak_sm_utilization_percent": peak_sm_util,
+        "dram_activity_percent": float(sampler.get("avg_mem_util", 0.0)),
+        "peak_dram_activity_percent": float(sampler.get("peak_mem_util", 0.0)),
+        "data_type": data_type,
+    }
+    if optimizer is not None:
+        label["optimizer"] = optimizer
+    return label
+
+
 def timed_phase(
     phase: str,
     fn: Callable[[], torch.Tensor],
@@ -489,10 +678,13 @@ def timed_phase(
     if device.type == "cuda":
         torch.cuda.synchronize(device)
         torch.cuda.reset_peak_memory_stats(device)
+    host_before = host_memory_mib()
+    warmup_t0 = time.perf_counter()
     for _ in range(warmup):
         _ = fn()
     if device.type == "cuda":
         torch.cuda.synchronize(device)
+    warmup_time_ms = (time.perf_counter() - warmup_t0) * 1000.0
 
     sampler = NvmlSampler(device.index or 0, sample_interval) if device.type == "cuda" else None
     if sampler:
@@ -511,6 +703,7 @@ def timed_phase(
             t0 = time.perf_counter()
             _ = fn()
             raw_ms.append((time.perf_counter() - t0) * 1000.0)
+    host_after = host_memory_mib()
     stats = sampler.stop() if sampler else SampleStats(source="none")
     if stats.source == "none" or stats.peak_mem_usage <= 0:
         fallback = fallback_memory_stats(device)
@@ -526,10 +719,13 @@ def timed_phase(
         "time_ms_per_sample": time_ms_per_sample,
         "raw_iter_ms": raw_ms,
         "sampler": stats.__dict__,
+        "warmup_time_ms": warmup_time_ms,
+        "avg_host_memory_usage_mib": (host_before["current_mib"] + host_after["current_mib"]) / 2.0,
+        "peak_host_memory_usage_mib": max(host_before["peak_mib"], host_after["peak_mib"]),
     }
 
 
-def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, args: argparse.Namespace) -> dict[str, Any]:
+def profile_model(row: dict[str, Any], models_dir: Path, output_dir: Path, device: torch.device, args: argparse.Namespace) -> dict[str, Any]:
     precision_config = normalize_precision_config(str(row.get("precision_config", DEFAULT_PRECISION_CONFIG)))
     runtime = precision_runtime(precision_config, device, args)
     model_path = models_dir / Path(row["model_file"]).name
@@ -576,7 +772,8 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
 
         model.train()
         trainable_params = [param for param in model.parameters() if param.requires_grad]
-        optimizer = torch.optim.SGD(trainable_params, lr=1e-3) if trainable_params else None
+        optimizer_cls = {"sgd": torch.optim.SGD, "adam": torch.optim.Adam, "adamw": torch.optim.AdamW}[args.optimizer]
+        optimizer = optimizer_cls(trainable_params, lr=1e-3) if trainable_params else None
         scaler = make_grad_scaler(device, runtime.grad_scaler_enabled)
         if scaler is not None:
             result["precision"]["grad_scaler_enabled"] = bool(scaler.is_enabled())
@@ -611,6 +808,39 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
                 "details": {"train": train_detail, "infer": infer_detail},
             }
         )
+        gradient_dtypes = sorted(
+            {str(param.grad.dtype).replace("torch.", "") for param in model.parameters() if param.grad is not None}
+        )
+        data_type = {
+            "input_dtype": str(x.dtype).replace("torch.", ""),
+            "parameter_dtypes": sorted({str(param.dtype).replace("torch.", "") for param in model.parameters()}),
+            "forward_input_dtype": str(x.dtype).replace("torch.", ""),
+            "forward_autocast_dtype": str(runtime.autocast_dtype).replace("torch.", "") if runtime.autocast_dtype is not None else None,
+            "forward_parameter_dtypes": sorted({str(param.dtype).replace("torch.", "") for param in model.parameters()}),
+            "backward_gradient_dtypes": gradient_dtypes,
+        }
+        if args.sm_occupancy_source == "ncu":
+            infer_occupancy = collect_ncu_occupancy(row, models_dir, output_dir, "infer", args.optimizer)
+            train_occupancy = collect_ncu_occupancy(row, models_dir, output_dir, "train", args.optimizer)
+        else:
+            infer_sampler = infer_detail["sampler"]
+            train_sampler = train_detail["sampler"]
+            infer_occupancy = {
+                "avg_sm_occupancy_percent": infer_sampler.get("avg_sm_util", 0.0),
+                "peak_sm_occupancy_percent": infer_sampler.get("peak_sm_util", 0.0),
+                "source": "nvml_utilization_proxy",
+                "kernel_count": 0,
+            }
+            train_occupancy = {
+                "avg_sm_occupancy_percent": train_sampler.get("avg_sm_util", 0.0),
+                "peak_sm_occupancy_percent": train_sampler.get("peak_sm_util", 0.0),
+                "source": "nvml_utilization_proxy",
+                "kernel_count": 0,
+            }
+        result["label_v2"] = {
+            "train": phase_label_v2(train_detail, data_type, train_occupancy, args.optimizer),
+            "infer": phase_label_v2(infer_detail, data_type, infer_occupancy),
+        }
     except RuntimeError as exc:
         if "out of memory" in str(exc).lower():
             result.update({"status": "oom", "error": repr(exc)})
@@ -629,11 +859,19 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
+    if args.warmup_epochs is not None:
+        args.warmup = args.warmup_epochs * max(args.batches_per_epoch, 1)
+    if args.profile_epochs is not None:
+        repeats = args.profile_epochs * max(args.batches_per_epoch, 1)
+        args.infer_repeats = repeats
+        args.train_repeats = repeats
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "label" / "label").mkdir(parents=True, exist_ok=True)
 
-    device = torch.device(args.device if torch.cuda.is_available() or args.device == "cpu" else "cpu")
+    if args.device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError("CUDA device was requested but torch.cuda.is_available() is false")
+    device = torch.device(args.device)
     if device.type == "cuda":
         torch.backends.cudnn.benchmark = True
     manifest = load_manifest(Path(args.manifest))
@@ -652,7 +890,7 @@ def main(argv: list[str] | None = None) -> None:
     results_path = output_dir / f"results_shard{args.shard_index}.jsonl"
     with results_path.open("a") as results_fh:
         for row in shard_rows:
-            result = profile_model(row, Path(args.models_dir), device, args)
+            result = profile_model(row, Path(args.models_dir), output_dir, device, args)
             result.update({"hardware": hardware, "shard_index": args.shard_index, "num_shards": args.num_shards})
             results_fh.write(json.dumps(result, sort_keys=True) + "\n")
             results_fh.flush()
@@ -660,7 +898,8 @@ def main(argv: list[str] | None = None) -> None:
                 label_path = output_dir / result["label_file"]
                 label_path.parent.mkdir(parents=True, exist_ok=True)
                 label_path.write_text(repr(result["label"]) + "\n")
-            print(f"{result['profile_point_id']}: {result['status']}", flush=True)
+            suffix = f" {result.get('error')}" if result.get("status") != "ok" and result.get("error") else ""
+            print(f"{result['profile_point_id']}: {result['status']}{suffix}", flush=True)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,2 @@
+{"graph_id": "live_test_cnn", "input_shape": [4, 3, 16, 16], "label_file": "label/label/live_test_cnn_fp32_ieee.txt", "model_file": "conv_model.py", "model_id": "live_test_cnn", "precision_config": "fp32_ieee", "profile_point_id": "live_test_cnn::fp32_ieee"}
+{"graph_id": "live_test_mlp", "input_shape": [8, 16], "label_file": "label/label/live_test_mlp_fp32_ieee.txt", "model_file": "mlp_model.py", "model_id": "live_test_mlp", "precision_config": "fp32_ieee", "profile_point_id": "live_test_mlp::fp32_ieee"}
