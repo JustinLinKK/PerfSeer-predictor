@@ -19,21 +19,26 @@ if str(SRC) not in sys.path:
 
 from perfseer.data import list_pairs  # noqa: E402
 
-SOURCE_UNKNOWN_PRECISION_CONFIG = "source_domain_unknown"
+UNKNOWN_PRECISION_CONFIG = "unknown"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Materialize precision calibration results into dataset/cg + dataset/label layout.")
     p.add_argument("--pack-dir", required=True, help="Generated calibration pack directory containing subset/ and manifest/.")
-    p.add_argument("--results-dir", required=True, help="Profiler output directory containing results_shard*.jsonl.")
+    p.add_argument(
+        "--results-dir",
+        required=True,
+        action="append",
+        help="Profiler output directory containing results_shard*.jsonl. May be repeated for multi-hardware datasets.",
+    )
     p.add_argument("--out-root", required=True, help="Output dataset root.")
     p.add_argument("--base-data-root", help="Optional original dataset root to include alongside precision labels.")
     p.add_argument("--base-mode", choices=("skip", "copy", "symlink"), default="skip")
     p.add_argument("--source-precision-config", default="fp32_ieee", help="Precision config to assign to labels copied from --base-data-root.")
-    p.add_argument("--source-hardware-id", default="source_domain_unknown", help="Hardware id to assign to labels copied from --base-data-root.")
+    p.add_argument("--source-hardware-id", default="unknown", help="Hardware id to assign to labels copied from --base-data-root.")
     p.add_argument("--source-hardware-features-json", default="{}", help="JSON object of numeric hardware features for labels copied from --base-data-root.")
     p.add_argument("--source-precision-provenance", default="", help="Short note/path/URI proving the original source labels' precision setup.")
-    p.add_argument("--require-source-precision-provenance", action="store_true", help="Fail when source-domain labels are included without provenance.")
+    p.add_argument("--require-source-precision-provenance", action="store_true", help="Fail when optional base labels are included without provenance.")
     p.add_argument("--hardware-id", help="Override hardware id used in materialized label filenames.")
     p.add_argument("--pseudo-precision-sweep", default="", help="Comma-separated precision configs to add as pseudo rows backed by source labels for teacher distillation.")
     p.add_argument("--pseudo-hardware-id", help="Hardware id to assign to pseudo rows. Defaults to --hardware-id or --source-hardware-id.")
@@ -67,11 +72,15 @@ def normalize_precision_config(value: str) -> str:
         "fp8_te_hybrid": "fp8_te_hybrid",
         "fp8_e4m3": "fp8_e4m3",
         "fp8_e5m2": "fp8_e5m2",
-        "source_unknown": SOURCE_UNKNOWN_PRECISION_CONFIG,
-        "source_domain_unknown": SOURCE_UNKNOWN_PRECISION_CONFIG,
+        "fp4": "nvfp4_te",
+        "nvfp4": "nvfp4_te",
+        "nvfp4_te": "nvfp4_te",
+        "unknown": UNKNOWN_PRECISION_CONFIG,
     }
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
+    if key == "mxfp8":
+        raise ValueError("mxfp8 is out of scope for v1; use fp8_te_hybrid or nvfp4_te")
     if key not in aliases:
         allowed = ", ".join(sorted(set(aliases.values())))
         raise ValueError(f"unknown precision config {value!r}; expected one of: {allowed}")
@@ -104,7 +113,7 @@ def parse_precision_sweep(raw: str | None) -> list[str]:
 
 
 def is_source_precision_confirmed(precision_config: str, provenance: str) -> bool:
-    return bool(str(provenance or "").strip()) and normalize_precision_config(precision_config) != SOURCE_UNKNOWN_PRECISION_CONFIG
+    return bool(str(provenance or "").strip()) and normalize_precision_config(precision_config) != UNKNOWN_PRECISION_CONFIG
 
 
 def iter_jsonl(paths: Iterable[Path]) -> Iterable[dict[str, Any]]:
@@ -115,6 +124,12 @@ def iter_jsonl(paths: Iterable[Path]) -> Iterable[dict[str, Any]]:
             for line in fh:
                 if line.strip():
                     yield json.loads(line)
+
+
+def result_dirs_from_arg(value: Any) -> list[Path]:
+    if isinstance(value, (str, os.PathLike)):
+        return [Path(value)]
+    return [Path(item) for item in value]
 
 
 def load_manifest(pack_dir: Path) -> dict[str, dict[str, Any]]:
@@ -193,7 +208,7 @@ def rejected_row_summary(row: dict[str, Any], status: str, reason: str) -> dict[
         "graph_id": row.get("graph_id"),
         "profile_point_id": row.get("profile_point_id"),
         "precision_config": precision_config,
-        "hardware_id": row.get("hardware_id"),
+        "hardware_id": hardware_id_from_result(row),
         "fallback_policy": fallback_policy_from_result(row),
         "error": row.get("error"),
         "precision": row.get("precision", {}),
@@ -209,8 +224,11 @@ def record_skip(report: dict[str, Any], row: dict[str, Any], status: str, reason
     bump_nested(report["skipped_by_status"], status, precision_config)
     if fallback_policy and fallback_policy != "none":
         bump_nested(report["fallback_policy_counts"], fallback_policy, precision_config)
-    if precision_config.startswith("fp8_") and status in {"unsupported_precision", "unsupported", "error", "oom"}:
+    if precision_config.startswith("fp8_") and status in {"unsupported_precision", "unsupported", "unsupported_low_precision_op", "error", "oom"}:
         bump(report, "unsupported_fp8_rows")
+    if precision_config.startswith("fp8_") or precision_config == "nvfp4_te":
+        if status in {"unsupported_precision", "unsupported", "unsupported_low_precision_op", "error", "oom"}:
+            bump(report, "unsupported_low_precision_rows")
     return rejected_row_summary(row, status, reason)
 
 
@@ -255,7 +273,7 @@ def include_base_dataset(
                 "hardware_id": source_hardware_id,
                 "precision_config": source_precision_config,
                 "profile_point_id": f"{graph_id}::{source_precision_config}",
-                "source_result_status": "source_domain",
+                "source_result_status": "base",
                 "label_domain": "source",
                 "is_base_label": True,
                 "source_precision_provenance": source_precision_provenance,
@@ -271,7 +289,7 @@ def include_base_dataset(
 
 def materialize(args: argparse.Namespace) -> dict[str, Any]:
     pack_dir = Path(args.pack_dir)
-    results_dir = Path(args.results_dir)
+    results_dirs = result_dirs_from_arg(args.results_dir)
     out_root = Path(args.out_root)
     if out_root.exists() and args.force:
         shutil.rmtree(out_root)
@@ -279,7 +297,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     (out_root / "label" / "label").mkdir(parents=True, exist_ok=True)
 
     source_precision = normalize_precision_config(args.source_precision_config)
-    source_hardware_id = clean_id(args.source_hardware_id, "source_domain_unknown")
+    source_hardware_id = clean_id(args.source_hardware_id, "unknown")
     source_hardware_features = parse_hardware_features(args.source_hardware_features_json)
     source_precision_provenance = str(args.source_precision_provenance or "").strip()
     source_precision_confirmed = is_source_precision_confirmed(source_precision, source_precision_provenance)
@@ -302,7 +320,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         else (0, [])
     )
     manifest = load_manifest(pack_dir)
-    result_paths = sorted(results_dir.glob("results_shard*.jsonl"))
+    result_paths = sorted(path for results_dir in results_dirs for path in results_dir.glob("results_shard*.jsonl"))
     metadata_path = out_root / "label" / "precision_metadata.jsonl"
     rejected_path = out_root / "precision_rejected_rows.jsonl"
     report = {
@@ -314,6 +332,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "source_precision_provenance": source_precision_provenance,
         "source_precision_confirmed": source_precision_confirmed,
         "precision_labels": 0,
+        "precision_labels_by_hardware": {},
+        "precision_labels_by_config": {},
+        "label_domain_counts": {},
         "pseudo_labels": 0,
         "pseudo_precision_sweep": pseudo_precision_sweep,
         "pseudo_hardware_id": pseudo_hardware_id if pseudo_precision_sweep else "",
@@ -323,7 +344,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "skipped_by_status": {},
         "fallback_policy_counts": {},
         "unsupported_fp8_rows": 0,
+        "unsupported_low_precision_rows": 0,
         "rejected_rows_file": str(rejected_path.name),
+        "result_dirs": [str(path) for path in results_dirs],
         "result_files": [str(path) for path in result_paths],
     }
     seen_labels: set[str] = {str(row.get("label_file", "")) for row in source_metadata_rows}
@@ -334,6 +357,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     with metadata_path.open("w") as meta_fh, rejected_path.open("w") as rejected_fh:
         for meta in source_metadata_rows:
             meta_fh.write(json.dumps(meta, sort_keys=True) + "\n")
+            bump(report["label_domain_counts"], "source")
         for row in iter_jsonl(result_paths):
             status = str(row.get("status", ""))
             if status != "ok":
@@ -352,34 +376,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             graph_file = f"cg/cg/{model_id}.pkl"
             shutil.copy2(graph_src, out_root / graph_file)
 
-            base_label_file = str(manifest_row.get("base_label_file") or f"label/label/{model_id}.txt")
-            original_label_raw = str(manifest_row.get("original_label_path") or "")
-            original_label_path = Path(original_label_raw)
-            if base_label_file not in seen_source_labels and original_label_raw and original_label_path.is_file():
-                shutil.copy2(original_label_path, out_root / base_label_file)
-                base_label_name = Path(base_label_file).name
-                source_meta = {
-                    "graph_id": model_id,
-                    "graph_file": graph_file,
-                    "label_file": base_label_file,
-                    "label_stem": Path(base_label_name).stem,
-                    "hardware_id": source_hardware_id,
-                    "precision_config": source_precision,
-                    "profile_point_id": f"{model_id}::{source_precision}",
-                    "source_result_status": "source_domain",
-                    "label_domain": "source",
-                    "is_base_label": True,
-                    "source_precision_provenance": source_precision_provenance,
-                    "source_precision_confirmed": source_precision_confirmed,
-                    "hardware_features": source_hardware_features,
-                    "hardware": {"hardware_id": source_hardware_id, **source_hardware_features},
-                    "precision": {"precision_config": source_precision},
-                }
-                meta_fh.write(json.dumps(source_meta, sort_keys=True) + "\n")
-                source_candidates.append(source_meta)
-                seen_source_labels.add(base_label_file)
-                seen_labels.add(base_label_file)
-            report["calibration_source_labels"] += 1
+            base_label_file = ""
 
             hw_id = hardware_id_from_result(row, args.hardware_id)
             label_name = f"{model_id}_{hw_id}_{precision_config}.txt"
@@ -405,6 +402,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 "base_label_file": base_label_file,
                 "profile_point_id": row.get("profile_point_id"),
                 "source_result_status": status,
+                "label_domain": "precision_profile",
                 "hardware_features": hardware_features(row),
                 "hardware": row.get("hardware", {}),
                 "precision": row.get("precision", {}),
@@ -412,6 +410,9 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
             meta_fh.write(json.dumps(meta, sort_keys=True) + "\n")
             accepted_precision_keys.add((model_id, hw_id, precision_config))
             report["precision_labels"] += 1
+            bump(report["precision_labels_by_hardware"], hw_id)
+            bump(report["precision_labels_by_config"], precision_config)
+            bump(report["label_domain_counts"], "precision_profile")
 
         for source_meta in source_candidates:
             graph_id = str(source_meta.get("graph_id") or "")
@@ -449,6 +450,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 }
                 meta_fh.write(json.dumps(meta, sort_keys=True) + "\n")
                 report["pseudo_labels"] += 1
+                bump(report["label_domain_counts"], "pseudo")
 
     (out_root / "precision_materialization_report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return report

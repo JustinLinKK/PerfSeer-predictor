@@ -14,7 +14,9 @@ PACK_DIR="/workspace/nrp_calibration_pack"
 WARMUP="20"
 INFER_REPEATS="50"
 TRAIN_REPEATS="50"
+PROFILE_DATASET_DIR=""
 SAMPLE_INTERVAL="0.01"
+HARDWARE_ID=""
 PRECISION_CONFIG=""
 PRECISION_SWEEP=""
 FP8_BACKEND="transformer_engine"
@@ -43,7 +45,9 @@ Options:
   --warmup N              Warmup iterations before timing each phase. Default: 20.
   --infer-repeats N       Timed inference iterations per model. Default: 50.
   --train-repeats N       Timed train-step iterations per model. Default: 50.
+  --profile-dataset-dir P Optional per-model dataset spec directory inside the container.
   --sample-interval SEC   NVML sampling interval in seconds. Default: 0.01.
+  --hardware-id VALUE     Stable hardware id to store in outputs, for example rtx3090 or rtx4090.
   --precision-config VAL  Precision config filter. May be comma-separated. Example: fp32_ieee,bf16_amp.
   --precision-sweep VAL   Alias for comma-separated precision config filter.
   --fp8-backend VALUE     FP8 backend selector. Default: transformer_engine.
@@ -66,7 +70,9 @@ while [[ $# -gt 0 ]]; do
     --warmup) WARMUP="$2"; shift 2 ;;
     --infer-repeats) INFER_REPEATS="$2"; shift 2 ;;
     --train-repeats) TRAIN_REPEATS="$2"; shift 2 ;;
+    --profile-dataset-dir) PROFILE_DATASET_DIR="$2"; shift 2 ;;
     --sample-interval) SAMPLE_INTERVAL="$2"; shift 2 ;;
+    --hardware-id) HARDWARE_ID="$2"; shift 2 ;;
     --precision-config) PRECISION_CONFIG="$2"; shift 2 ;;
     --precision-sweep) PRECISION_SWEEP="$2"; shift 2 ;;
     --fp8-backend) FP8_BACKEND="$2"; shift 2 ;;
@@ -88,6 +94,16 @@ if [[ -n "$PRECISION_CONFIG" ]]; then
 fi
 if [[ -n "$PRECISION_SWEEP" ]]; then
   PRECISION_ARGS="${PRECISION_ARGS} --precision-sweep ${PRECISION_SWEEP}"
+fi
+
+DATASET_ARGS=""
+if [[ -n "$PROFILE_DATASET_DIR" ]]; then
+  DATASET_ARGS="--profile-dataset-dir ${PROFILE_DATASET_DIR}"
+fi
+
+HARDWARE_ARGS=""
+if [[ -n "$HARDWARE_ID" ]]; then
+  HARDWARE_ARGS="--hardware-id ${HARDWARE_ID}"
 fi
 
 AFFINITY_BLOCK=""
@@ -147,7 +163,9 @@ ${AFFINITY_BLOCK}
           --warmup ${WARMUP}
           --infer-repeats ${INFER_REPEATS}
           --train-repeats ${TRAIN_REPEATS}
+          ${DATASET_ARGS}
           --sample-interval ${SAMPLE_INTERVAL}
+          ${HARDWARE_ARGS}
           ${PRECISION_ARGS}
         resources:
           requests:

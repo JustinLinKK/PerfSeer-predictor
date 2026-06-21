@@ -101,7 +101,14 @@ def build_test_dataset(args: argparse.Namespace, ckpt: dict[str, Any], norm_stat
         test_files = [by_stem[stem] for stem in test_stems if stem in by_stem]
         reconstruction_source = "checkpoint_test_stems"
     else:
-        _train, _val, test_files = split_dataset(data_root, seed=seed, split_unit=split_unit)
+        hardware_filter = str(feature_cfg.hardware_id or "").strip()
+        _train, _val, test_files = split_dataset(
+            data_root,
+            seed=seed,
+            split_unit=split_unit,
+            hardware_id=hardware_filter if hardware_filter and hardware_filter != "unknown" else None,
+            feature_config=feature_cfg,
+        )
         limit = int(args.limit if args.limit is not None else cfg.get("data", {}).get("limit", 0) or 0)
         if limit > 0:
             test_files = test_files[: max(1, limit // 2)]

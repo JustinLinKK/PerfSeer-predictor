@@ -5,6 +5,7 @@ import json
 import pickle
 import subprocess
 import sys
+import tarfile
 import tempfile
 import types
 import unittest
@@ -24,15 +25,22 @@ from nrp_calibration_pack.build_pack import (  # noqa: E402
     BATCH_BUCKETS,
     DEFAULT_PILOT_SUBSET_SIZE,
     DEFAULT_SUBSET_SIZE,
+    DEFAULT_TEMPLATE_SEED,
     DEFAULT_PRECISION_SWEEP,
     NODE_TYPES,
     GraphRecord,
     generate_model_source,
+    load_records,
+    materialize_template_records,
     parse_args as parse_pack_args,
     parse_precision_sweep,
+    resolve_generation_workers,
     select_subset,
     write_pack,
 )
+from nrp_calibration_pack.profile.generated_model_runtime import GraphModel  # noqa: E402
+from nrp_calibration_pack.template_catalog import template_family_counts  # noqa: E402
+from perfseer.architecture_schema import ARCHITECTURE_FAMILY_QUOTAS, FEATURE_SCHEMA_VERSION, NODE_TYPES as ARCH_NODE_TYPES  # noqa: E402
 from perfseer.data import parse_label as parse_dataset_label  # noqa: E402
 from perfseer_optimized.train import apply_overrides as apply_train_overrides  # noqa: E402
 from perfseer_optimized.train import parse_args as parse_train_args  # noqa: E402
@@ -448,6 +456,35 @@ def concat_graph() -> nx.DiGraph:
     return graph
 
 
+def linear_graph(width: int = 16) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    graph.graph["input_specs"] = [{"name": "input0", "shape": [1, width], "dtype": "float32", "kind": "float"}]
+    graph.add_node(
+        0,
+        feature=feature(
+            "Gemm",
+            {"linear_in_features": width, "linear_out_features": width, "linear_bias": 1},
+            {
+                "bytes": width * 2,
+                "weight_size": width * width,
+                "batch_size": 1,
+                "input_size_with_weight": width + width * width,
+                "input_size": width,
+                "output_size": width,
+                "input_features": width,
+                "output_features": width,
+                "input_channels": width,
+                "output_channels": width,
+                "input_h": 1,
+                "input_w": 1,
+                "output_h": 1,
+                "output_w": 1,
+            },
+        ),
+    )
+    return graph
+
+
 def import_generated(source: str, tmp: str):
     path = Path(tmp) / "generated.py"
     path.write_text(source)
@@ -478,13 +515,46 @@ class FakeTransformerEngine:
     def __enter__(self):
         self.old_root = sys.modules.get("transformer_engine")
         self.old_pytorch = sys.modules.get("transformer_engine.pytorch")
+        self.old_common = sys.modules.get("transformer_engine.common")
+        self.old_recipe = sys.modules.get("transformer_engine.common.recipe")
+        self.old_fp8 = sys.modules.get("transformer_engine.pytorch.fp8")
         root = types.ModuleType("transformer_engine")
         root.__path__ = []
         pytorch = types.ModuleType("transformer_engine.pytorch")
         pytorch.__package__ = "transformer_engine"
+        pytorch.__path__ = []
+        pytorch.is_fp8_available = lambda: True
+        pytorch.is_nvfp4_available = lambda: True
+        fp8 = types.ModuleType("transformer_engine.pytorch.fp8")
+        fp8.is_fp8_available = lambda: True
+        fp8.is_nvfp4_available = lambda: True
+        common = types.ModuleType("transformer_engine.common")
+        common.__path__ = []
+        recipe = types.ModuleType("transformer_engine.common.recipe")
+
+        class Format:
+            HYBRID = "HYBRID"
+            E4M3 = "E4M3"
+            E5M2 = "E5M2"
+
+        class DelayedScaling:
+            def __init__(self, fp8_format=None):
+                self.fp8_format = fp8_format
+
+        class NVFP4BlockScaling:
+            pass
+
+        recipe.Format = Format
+        recipe.DelayedScaling = DelayedScaling
+        recipe.NVFP4BlockScaling = NVFP4BlockScaling
         root.pytorch = pytorch
+        root.common = common
+        common.recipe = recipe
         sys.modules["transformer_engine"] = root
         sys.modules["transformer_engine.pytorch"] = pytorch
+        sys.modules["transformer_engine.pytorch.fp8"] = fp8
+        sys.modules["transformer_engine.common"] = common
+        sys.modules["transformer_engine.common.recipe"] = recipe
         return pytorch
 
     def __exit__(self, _exc_type, _exc, _tb):
@@ -496,6 +566,18 @@ class FakeTransformerEngine:
             sys.modules.pop("transformer_engine.pytorch", None)
         else:
             sys.modules["transformer_engine.pytorch"] = self.old_pytorch
+        if self.old_fp8 is None:
+            sys.modules.pop("transformer_engine.pytorch.fp8", None)
+        else:
+            sys.modules["transformer_engine.pytorch.fp8"] = self.old_fp8
+        if self.old_common is None:
+            sys.modules.pop("transformer_engine.common", None)
+        else:
+            sys.modules["transformer_engine.common"] = self.old_common
+        if self.old_recipe is None:
+            sys.modules.pop("transformer_engine.common.recipe", None)
+        else:
+            sys.modules["transformer_engine.common.recipe"] = self.old_recipe
 
 
 class NrpCalibrationPackTests(unittest.TestCase):
@@ -512,9 +594,68 @@ class NrpCalibrationPackTests(unittest.TestCase):
         override = parse_pack_args(["--profile-preset", "pilot", "--subset-size", "17"])
         self.assertEqual(override.subset_size, 17)
 
+    def test_template_catalog_mode_uses_canonical_defaults(self) -> None:
+        args = parse_pack_args([])
+
+        self.assertEqual(args.catalog_mode, "template")
+        self.assertEqual(args.out_dir, "nrp_calibration_pack")
+        self.assertEqual(args.seed, DEFAULT_TEMPLATE_SEED)
+        self.assertEqual(args.subset_size, DEFAULT_SUBSET_SIZE)
+        with self.assertRaises(SystemExit):
+            parse_pack_args(["--catalog-mode", "dataset"])
+
+    def test_canonical_feature_layout_uses_expanded_schema(self) -> None:
+        from perfseer_optimized.data import FeatureConfig, feature_layout
+
+        cfg = FeatureConfig()
+        layout = feature_layout(cfg)
+
+        self.assertEqual(cfg.feature_schema_version, FEATURE_SCHEMA_VERSION)
+        self.assertIn("type_Attention", layout.node_names)
+        self.assertIn("tensor_rank", layout.node_names)
+        self.assertIn("architecture_family_bert_encoder", layout.global_names)
+        self.assertIn("variant_kind_mixed_stress", layout.global_names)
+        self.assertEqual(cfg.signature(), FeatureConfig(feature_schema_version=FEATURE_SCHEMA_VERSION).signature())
+
+    def test_template_full_quota_table_is_exact(self) -> None:
+        counts = template_family_counts(DEFAULT_SUBSET_SIZE)
+
+        self.assertEqual(counts, dict(ARCHITECTURE_FAMILY_QUOTAS))
+        self.assertEqual(sum(counts.values()), 10000)
+
+    def test_generation_workers_resolve_auto_and_serial_modes(self) -> None:
+        self.assertGreaterEqual(parse_pack_args([]).generation_workers, 1)
+        self.assertGreaterEqual(resolve_generation_workers(0), 1)
+        self.assertEqual(parse_pack_args(["--generation-workers", "1"]).generation_workers, 1)
+        with self.assertRaises(SystemExit):
+            parse_pack_args(["--generation-workers", "-1"])
+
+    def test_load_records_can_parse_dataset_in_parallel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_dir = tmp_path / "cg" / "cg"
+            label_dir = tmp_path / "label" / "label"
+            graph_dir.mkdir(parents=True)
+            label_dir.mkdir(parents=True)
+            for idx in range(2):
+                stem = f"bs{idx + 1}_parallel_{idx}"
+                with (graph_dir / f"{stem}.pkl").open("wb") as fh:
+                    pickle.dump(sequential_graph(), fh)
+                (label_dir / f"{stem}.txt").write_text("{'train': '1|2|3|4|5|6|7', 'infer': '1|2|3|4|5|6|7'}\n")
+
+            records = load_records(tmp_path, generation_workers=2)
+
+        self.assertEqual([item.stem for item in records], ["bs1_parallel_0", "bs2_parallel_1"])
+        self.assertEqual([item.batch_size for item in records], [1, 2])
+
     def test_precision_sweep_rejects_ambiguous_bf32(self) -> None:
         with self.assertRaisesRegex(ValueError, "bf32 is ambiguous"):
             parse_precision_sweep("bf32")
+
+    def test_precision_sweep_accepts_nvfp4_aliases_and_rejects_mxfp8(self) -> None:
+        self.assertEqual(parse_precision_sweep("fp4,nvfp4,nvfp4_te"), ("nvfp4_te",))
+        with self.assertRaisesRegex(ValueError, "mxfp8 is out of scope"):
+            parse_precision_sweep("mxfp8")
 
     def test_default_size_selection_returns_exact_count(self) -> None:
         records = [
@@ -579,6 +720,34 @@ class NrpCalibrationPackTests(unittest.TestCase):
         for expected in ("Conv", "BatchNormalization", "Relu", "MaxPool", "AveragePool", "GlobalAveragePool", "Flatten", "Gemm"):
             self.assertIn(expected, types)
 
+    def test_template_pack_manifest_fields_and_operator_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pack_dir = tmp_path / "pack"
+            records = materialize_template_records(pack_dir, 30, DEFAULT_TEMPLATE_SEED, force=True)
+            written, failures = write_pack(records, records, pack_dir, "compile", precision_sweep=("fp32_ieee",), generation_workers=1)
+            rows = [
+                json.loads(line)
+                for line in (pack_dir / "manifest" / "subset_manifest.jsonl").read_text().splitlines()
+            ]
+            coverage = json.loads((pack_dir / "coverage_summary.json").read_text())
+
+        self.assertEqual(written, 30)
+        self.assertEqual(failures, 0)
+        self.assertEqual(len(rows), 30)
+        self.assertEqual(rows[0]["feature_schema_version"], FEATURE_SCHEMA_VERSION)
+        for field in ("architecture_family", "variant_kind", "variant_signature", "input_specs"):
+            self.assertIn(field, rows[0])
+        family_counts: dict[str, int] = {}
+        for row in rows:
+            family_counts[row["architecture_family"]] = family_counts.get(row["architecture_family"], 0) + 1
+        self.assertTrue(all(count == 2 for count in family_counts.values()))
+        self.assertEqual(set(family_counts), set(ARCHITECTURE_FAMILY_QUOTAS))
+        self.assertIn("Attention", coverage["operator_coverage"])
+        self.assertIn("GRU", coverage["operator_coverage"])
+        self.assertIn("GraphMessage", coverage["operator_coverage"])
+        self.assertEqual(set(coverage["operator_coverage"]).issubset(set(ARCH_NODE_TYPES)), True)
+
     def test_write_pack_replaces_validation_failures(self) -> None:
         bad = nx.DiGraph()
         bad.add_node(0, feature=feature("Unsupported", mem=memory_info()))
@@ -603,6 +772,42 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertEqual(failures, 1)
         self.assertIn('"stem": "good"', manifest)
         self.assertNotIn('"stem": "bad"', manifest)
+
+    def test_write_pack_parallel_generation_replaces_failures_in_order(self) -> None:
+        bad = nx.DiGraph()
+        bad.add_node(0, feature=feature("Unsupported", mem=memory_info()))
+        first_good = sequential_graph()
+        second_good = sequential_graph()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            paths = {}
+            for name, graph in (("bad", bad), ("first_good", first_good), ("second_good", second_good)):
+                path = tmp_path / f"{name}.pkl"
+                with path.open("wb") as fh:
+                    pickle.dump(graph, fh)
+                paths[name] = path
+
+            bad_record = record("bad", graph_path=str(paths["bad"]), label_path=str(tmp_path / "bad.txt"))
+            first_good_record = record("first_good", graph_path=str(paths["first_good"]), label_path=str(tmp_path / "first_good.txt"))
+            second_good_record = record("second_good", graph_path=str(paths["second_good"]), label_path=str(tmp_path / "second_good.txt"))
+            written, failures = write_pack(
+                [bad_record, first_good_record],
+                [bad_record, first_good_record, second_good_record],
+                tmp_path / "pack",
+                "compile",
+                generation_workers=2,
+            )
+            rows = [
+                json.loads(line)
+                for line in (tmp_path / "pack" / "manifest" / "subset_manifest.jsonl").read_text().splitlines()
+                if '"precision_config": "fp32_ieee"' in line
+            ]
+
+        self.assertEqual(written, 2)
+        self.assertEqual(failures, 1)
+        self.assertEqual([row["model_id"] for row in rows], ["calib_0000", "calib_0001"])
+        self.assertEqual([row["original_stem"] for row in rows], ["first_good", "second_good"])
 
     def test_write_pack_manifest_subset_graph_and_coverage_summary(self) -> None:
         graph = sequential_graph()
@@ -670,6 +875,8 @@ class NrpCalibrationPackTests(unittest.TestCase):
                     "1",
                     "--train-repeats",
                     "1",
+                    "--hardware-id",
+                    "rtx4090",
                     "--device",
                     "cpu",
                 ],
@@ -680,9 +887,185 @@ class NrpCalibrationPackTests(unittest.TestCase):
             label_path = tmp_path / "out" / "label" / "label" / "calib_0000_fp32_ieee.txt"
             label_exists = label_path.exists()
             parsed = parse_dataset_label(str(label_path))
+            result = json.loads((tmp_path / "out" / "results_shard0.jsonl").read_text().splitlines()[0])
+            hardware = json.loads((tmp_path / "out" / "hardware_shard0.json").read_text())
 
         self.assertTrue(label_exists)
         self.assertEqual(parsed.shape, (6,))
+        self.assertEqual(result["hardware_id"], "rtx4090")
+        self.assertEqual(result["hardware"]["hardware_id"], "rtx4090")
+        self.assertEqual(hardware["hardware_id"], "rtx4090")
+
+    def test_profiler_resumes_completed_labels_without_duplicate_rows(self) -> None:
+        graph = sequential_graph()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_path = tmp_path / "graph.pkl"
+            with graph_path.open("wb") as fh:
+                pickle.dump(graph, fh)
+            graph_record = record("original_stem", graph_path=str(graph_path), label_path=str(tmp_path / "original_stem.txt"))
+            write_pack([graph_record], [graph_record], tmp_path / "pack", "compile", precision_sweep=("fp32_ieee",))
+            cmd = [
+                sys.executable,
+                str(ROOT / "nrp_calibration_pack" / "profile" / "run_profile.py"),
+                "--manifest",
+                str(tmp_path / "pack" / "manifest" / "subset_manifest.jsonl"),
+                "--models-dir",
+                str(tmp_path / "pack" / "models"),
+                "--output-dir",
+                str(tmp_path / "out"),
+                "--num-shards",
+                "1",
+                "--precision-config",
+                "fp32_ieee",
+                "--warmup",
+                "0",
+                "--infer-repeats",
+                "1",
+                "--train-repeats",
+                "1",
+                "--device",
+                "cpu",
+            ]
+
+            subprocess.run(cmd, check=True, text=True, capture_output=True)
+            second = subprocess.run(cmd, check=True, text=True, capture_output=True)
+            result_lines = (tmp_path / "out" / "results_shard0.jsonl").read_text().splitlines()
+
+        self.assertEqual(len(result_lines), 1)
+        self.assertIn("resume checkpoint: 1 completed label(s)", second.stdout)
+        self.assertIn("calib_0000::fp32_ieee: skip_completed", second.stdout)
+
+    def test_profiler_uses_profile_dataset_specs_for_repeat_timing(self) -> None:
+        graph = sequential_graph()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_path = tmp_path / "graph.pkl"
+            with graph_path.open("wb") as fh:
+                pickle.dump(graph, fh)
+            graph_record = record("original_stem", graph_path=str(graph_path), label_path=str(tmp_path / "original_stem.txt"))
+            write_pack([graph_record], [graph_record], tmp_path / "pack", "compile", precision_sweep=("fp32_ieee",))
+            manifest = tmp_path / "pack" / "manifest" / "subset_manifest.jsonl"
+            profile_data_dir = tmp_path / "profile_datasets"
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "profile" / "make_profile_datasets.py"),
+                    "--manifest",
+                    str(manifest),
+                    "--output-dir",
+                    str(profile_data_dir),
+                    "--train-repeats",
+                    "2",
+                    "--infer-repeats",
+                    "3",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "profile" / "run_profile.py"),
+                    "--manifest",
+                    str(manifest),
+                    "--models-dir",
+                    str(tmp_path / "pack" / "models"),
+                    "--output-dir",
+                    str(tmp_path / "out"),
+                    "--num-shards",
+                    "1",
+                    "--precision-config",
+                    "fp32_ieee",
+                    "--warmup",
+                    "1",
+                    "--profile-dataset-dir",
+                    str(profile_data_dir),
+                    "--device",
+                    "cpu",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            label_path = tmp_path / "out" / "label" / "label" / "calib_0000_fp32_ieee.txt"
+            parsed = parse_dataset_label(str(label_path))
+            result_path = tmp_path / "out" / "results_shard0.jsonl"
+            result = json.loads(result_path.read_text().splitlines()[0])
+
+        self.assertEqual(parsed.shape, (6,))
+        self.assertEqual(result["profile_dataset"]["source"], "profile_dataset_dir")
+        self.assertEqual(result["profile_dataset"]["train_repeats"], 2)
+        self.assertEqual(result["profile_dataset"]["infer_repeats"], 3)
+        self.assertEqual(len(result["details"]["train"]["raw_iter_ms"]), 2)
+        self.assertEqual(len(result["details"]["infer"]["raw_iter_ms"]), 3)
+        self.assertNotIn("repeat_unit", result["details"]["train"])
+
+    def test_profiler_handles_template_multi_input_graph_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pack_dir = tmp_path / "pack"
+            records = materialize_template_records(pack_dir, 15, DEFAULT_TEMPLATE_SEED, force=True)
+            graph_record = next(item for item in records if item.family_tuple == ("gat_graph",))
+            write_pack([graph_record], [graph_record], pack_dir, "compile", precision_sweep=("fp32_ieee",))
+            manifest = pack_dir / "manifest" / "subset_manifest.jsonl"
+            profile_data_dir = tmp_path / "profile_datasets"
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "profile" / "make_profile_datasets.py"),
+                    "--manifest",
+                    str(manifest),
+                    "--output-dir",
+                    str(profile_data_dir),
+                    "--train-repeats",
+                    "1",
+                    "--infer-repeats",
+                    "1",
+                    "--force",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "profile" / "run_profile.py"),
+                    "--manifest",
+                    str(manifest),
+                    "--models-dir",
+                    str(pack_dir / "models"),
+                    "--output-dir",
+                    str(tmp_path / "out"),
+                    "--num-shards",
+                    "1",
+                    "--precision-config",
+                    "fp32_ieee",
+                    "--warmup",
+                    "1",
+                    "--profile-dataset-dir",
+                    str(profile_data_dir),
+                    "--device",
+                    "cpu",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            label_path = tmp_path / "out" / "label" / "label" / "calib_0000_fp32_ieee.txt"
+            parsed = parse_dataset_label(str(label_path))
+            result = json.loads((tmp_path / "out" / "results_shard0.jsonl").read_text().splitlines()[0])
+
+        self.assertEqual(parsed.shape, (6,))
+        self.assertEqual(len(result["input_specs"]), 2)
+        self.assertEqual(result["input_specs"][1]["kind"], "adjacency")
+        self.assertEqual(result["status"], "ok")
 
     def test_tf32_controls_prefer_new_fp32_precision_api(self) -> None:
         module = import_run_profile_module()
@@ -748,6 +1131,100 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("SM 8.9+", runtime.unsupported_reason or "")
         self.assertEqual(runtime.details["compute_capability"], "8.0")
 
+    def test_precision_selection_auto_and_fp4_aliases(self) -> None:
+        module = import_run_profile_module()
+
+        auto = module.precision_selection(types.SimpleNamespace(precision_sweep="auto", precision_config=None))
+        explicit = module.precision_selection(types.SimpleNamespace(precision_sweep="fp4,nvfp4,nvfp4_te", precision_config=None))
+
+        self.assertTrue(auto.auto)
+        self.assertIsNone(auto.configs)
+        self.assertFalse(explicit.auto)
+        self.assertEqual(explicit.configs, ["nvfp4_te"])
+        with self.assertRaisesRegex(ValueError, "auto cannot be combined"):
+            module.precision_selection(types.SimpleNamespace(precision_sweep="auto,fp32_ieee", precision_config=None))
+        with self.assertRaisesRegex(ValueError, "mxfp8 is out of scope"):
+            module.precision_selection(types.SimpleNamespace(precision_sweep="mxfp8", precision_config=None))
+
+    def test_auto_precision_resolution_tracks_gpu_generation(self) -> None:
+        module = import_run_profile_module()
+        args = types.SimpleNamespace(fp8_backend="transformer_engine")
+        cases = {
+            (8, 0): ["fp32_ieee", "tf32", "bf16_amp", "fp16_amp"],
+            (8, 9): ["fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid"],
+            (9, 0): ["fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid"],
+            (12, 0): ["fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid", "nvfp4_te"],
+        }
+        module.bf16_support_probe = lambda _device, _cc: (True, {"fake": True})
+
+        with FakeTransformerEngine():
+            for cc, expected in cases.items():
+                module.compute_capability_tuple = lambda _device, cc=cc: cc
+                configs, probes = module.resolve_auto_precision_configs(torch.device("cuda"), args)
+                self.assertEqual(configs, expected)
+                self.assertEqual(probes["nvfp4_te"]["details"]["compute_capability"], f"{cc[0]}.{cc[1]}")
+
+    def test_nvfp4_policy_requires_transformer_engine_probe_and_bf16(self) -> None:
+        module = import_run_profile_module()
+        module.compute_capability_tuple = lambda _device: (12, 0)
+        args = types.SimpleNamespace(fp8_backend="transformer_engine")
+
+        with FakeTransformerEngine() as te:
+            te.is_nvfp4_available = lambda: False
+            module.bf16_support_probe = lambda _device, _cc: (True, {"fake": True})
+            unavailable = module.precision_runtime("nvfp4_te", torch.device("cuda"), args)
+            te.is_nvfp4_available = lambda: True
+            module.bf16_support_probe = lambda _device, _cc: (False, {"fake": False})
+            no_bf16 = module.precision_runtime("nvfp4_te", torch.device("cuda"), args)
+
+        self.assertFalse(unavailable.supported)
+        self.assertIn("NVFP4", unavailable.unsupported_reason or "")
+        self.assertFalse(no_bf16.supported)
+        self.assertIn("BF16", no_bf16.unsupported_reason or "")
+
+    def test_generated_low_precision_op_gate_allows_te_safe_rows_only(self) -> None:
+        dense_mem = {
+            "batch_size": 32,
+            "input_size": 1024,
+            "output_size": 1024,
+            "input_features": 32,
+            "output_features": 32,
+            "input_channels": 32,
+            "output_channels": 32,
+        }
+        dense = [
+            {
+                "id": 0,
+                "type": "Gemm",
+                "args": {"linear_in_features": 32, "linear_out_features": 32, "linear_bias": 1},
+                "memory_info": dense_mem,
+                "preds": [],
+            },
+            {"id": 1, "type": "LayerNormalization", "args": {}, "memory_info": dense_mem, "preds": [0]},
+        ]
+        bad_dim = [
+            {
+                "id": 0,
+                "type": "Gemm",
+                "args": {"linear_in_features": 8, "linear_out_features": 16, "linear_bias": 1},
+                "memory_info": dense_mem,
+                "preds": [],
+            }
+        ]
+        conv = [
+            {
+                "id": 0,
+                "type": "Conv",
+                "args": {"conv_kernel_size": 3, "conv_stride": 1, "conv_padding": 1, "conv_groups": 1},
+                "memory_info": memory_info(input_channels=3, output_channels=16),
+                "preds": [],
+            }
+        ]
+
+        self.assertEqual(GraphModel(dense).low_precision_unsupported_reasons("nvfp4_te"), [])
+        self.assertIn("dimensions 8->16", GraphModel(bad_dim).low_precision_unsupported_reasons("fp8_te_hybrid")[0])
+        self.assertIn("not TE low-precision safe", GraphModel(conv).low_precision_unsupported_reasons("nvfp4_te")[0])
+
     def test_materialize_precision_dataset_writes_hardware_metadata(self) -> None:
         graph = sequential_graph()
         with tempfile.TemporaryDirectory() as tmp:
@@ -800,7 +1277,6 @@ class NrpCalibrationPackTests(unittest.TestCase):
             label_path = out_root / "label" / "label" / "calib_0000_a100_fp32_ieee.txt"
             graph_exists = (out_root / "cg" / "cg" / "calib_0000.pkl").exists()
             label_exists = label_path.exists()
-            source_label_exists = (out_root / "label" / "label" / "calib_0000.txt").exists()
             parsed_shape = parse_dataset_label(str(label_path)).shape
             metadata = [json.loads(line) for line in (out_root / "label" / "precision_metadata.jsonl").read_text().splitlines()]
             report = json.loads((out_root / "precision_materialization_report.json").read_text())
@@ -809,17 +1285,88 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertTrue(label_exists)
         self.assertEqual(parsed_shape, (6,))
         self.assertEqual(report["precision_labels"], 1)
-        self.assertEqual(report["calibration_source_labels"], 1)
+        self.assertEqual(report["calibration_source_labels"], 0)
         source_rows = [row for row in metadata if row.get("label_domain") == "source"]
         precision_rows = [row for row in metadata if row.get("label_domain") != "source"]
-        self.assertEqual(len(source_rows), 1)
+        self.assertEqual(len(source_rows), 0)
         self.assertEqual(len(precision_rows), 1)
-        self.assertTrue(source_label_exists)
         self.assertEqual(precision_rows[0]["hardware_id"], "a100")
-        self.assertEqual(precision_rows[0]["base_label_file"], "label/label/calib_0000.txt")
+        self.assertEqual(precision_rows[0]["base_label_file"], "")
         self.assertEqual(precision_rows[0]["hardware_features"]["sm_count"], 108)
 
-    def test_materialize_precision_dataset_tags_source_domain_labels(self) -> None:
+    def test_materialize_precision_dataset_accepts_repeated_result_dirs(self) -> None:
+        graph = sequential_graph()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_path = tmp_path / "graph.pkl"
+            with graph_path.open("wb") as fh:
+                pickle.dump(graph, fh)
+            original_label = tmp_path / "original_stem.txt"
+            original_label.write_text("{'train': '1|2|3|4|5|6|7', 'infer': '1|2|3|4|5|6|7'}\n")
+            graph_record = record("original_stem", graph_path=str(graph_path), label_path=str(original_label))
+            write_pack([graph_record], [graph_record], tmp_path / "pack", "compile", precision_sweep=("fp32_ieee",))
+
+            result_dirs = []
+            for hardware_id, sm_count in (("rtx3090", 82), ("rtx4090", 128)):
+                results_dir = tmp_path / f"results_{hardware_id}"
+                results_dir.mkdir()
+                result_dirs.append(results_dir)
+                result_row = {
+                    "status": "ok",
+                    "model_id": "calib_0000",
+                    "graph_id": "calib_0000",
+                    "hardware_id": hardware_id,
+                    "precision_config": "fp32_ieee",
+                    "profile_point_id": f"calib_0000::{hardware_id}::fp32_ieee",
+                    "label": {"train": "1|2|3|4|5|6|7", "infer": "1|2|3|4|5|6|7"},
+                    "hardware": {
+                        "hardware_id": hardware_id,
+                        "gpu_name": f"NVIDIA {hardware_id.upper()}",
+                        "compute_capability": "8.9",
+                        "multi_processor_count": sm_count,
+                        "total_memory_mib": 24576,
+                    },
+                }
+                (results_dir / "results_shard0.jsonl").write_text(json.dumps(result_row) + "\n")
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "materialize_precision_dataset.py"),
+                    "--pack-dir",
+                    str(tmp_path / "pack"),
+                    "--results-dir",
+                    str(result_dirs[0]),
+                    "--results-dir",
+                    str(result_dirs[1]),
+                    "--out-root",
+                    str(tmp_path / "precision_dataset"),
+                    "--force",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            out_root = tmp_path / "precision_dataset"
+            label_3090 = out_root / "label" / "label" / "calib_0000_rtx3090_fp32_ieee.txt"
+            label_4090 = out_root / "label" / "label" / "calib_0000_rtx4090_fp32_ieee.txt"
+            label_3090_exists = label_3090.exists()
+            label_4090_exists = label_4090.exists()
+            metadata = [json.loads(line) for line in (out_root / "label" / "precision_metadata.jsonl").read_text().splitlines()]
+            report = json.loads((out_root / "precision_materialization_report.json").read_text())
+            precision_rows = [row for row in metadata if row.get("label_domain") == "precision_profile"]
+            label_names = {label_3090.name, label_4090.name}
+
+        self.assertTrue(label_3090_exists)
+        self.assertTrue(label_4090_exists)
+        self.assertEqual(report["precision_labels"], 2)
+        self.assertEqual(report["precision_labels_by_hardware"], {"rtx3090": 1, "rtx4090": 1})
+        self.assertEqual(report["precision_labels_by_config"], {"fp32_ieee": 2})
+        self.assertEqual(report["label_domain_counts"]["precision_profile"], 2)
+        self.assertEqual({row["hardware_id"] for row in precision_rows}, {"rtx3090", "rtx4090"})
+        self.assertEqual({Path(row["label_file"]).name for row in precision_rows}, label_names)
+
+    def test_materialize_precision_dataset_tags_optional_base_labels(self) -> None:
         graph = sequential_graph()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -880,7 +1427,7 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertEqual(metadata[0]["source_precision_provenance"], "original-profiler-notes.md#tf32")
         self.assertEqual(metadata[0]["hardware_features"]["sm_count"], 108)
 
-    def test_materialize_precision_dataset_records_unknown_source_precision_as_unconfirmed(self) -> None:
+    def test_materialize_precision_dataset_records_unknown_base_precision_as_unconfirmed(self) -> None:
         graph = sequential_graph()
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -910,7 +1457,7 @@ class NrpCalibrationPackTests(unittest.TestCase):
                     "--base-mode",
                     "copy",
                     "--source-precision-config",
-                    "source_domain_unknown",
+                    "unknown",
                     "--source-precision-provenance",
                     "https://github.com/upuuuuuu/PerfSeer#dataset-profile",
                     "--require-source-precision-provenance",
@@ -924,9 +1471,9 @@ class NrpCalibrationPackTests(unittest.TestCase):
             metadata = [json.loads(line) for line in (out_root / "label" / "precision_metadata.jsonl").read_text().splitlines()]
             report = json.loads((out_root / "precision_materialization_report.json").read_text())
 
-        self.assertEqual(report["source_precision_config"], "source_domain_unknown")
+        self.assertEqual(report["source_precision_config"], "unknown")
         self.assertFalse(report["source_precision_confirmed"])
-        self.assertEqual(metadata[0]["precision_config"], "source_domain_unknown")
+        self.assertEqual(metadata[0]["precision_config"], "unknown")
         self.assertFalse(metadata[0]["source_precision_confirmed"])
 
     def test_materialize_precision_dataset_requires_source_precision_provenance(self) -> None:
@@ -1072,10 +1619,136 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertEqual(report["skipped_by_status"]["unsupported_precision"], {"fp8_te_hybrid": 1})
         self.assertEqual(report["fallback_policy_counts"]["record_unsupported_generated_ops"], {"fp8_te_hybrid": 1})
         self.assertEqual(report["unsupported_fp8_rows"], 1)
+        self.assertEqual(report["unsupported_low_precision_rows"], 1)
         self.assertEqual(report["rejected_rows_file"], "precision_rejected_rows.jsonl")
         self.assertEqual(len(rejected), 1)
         self.assertEqual(rejected[0]["precision_config"], "fp8_te_hybrid")
         self.assertEqual(rejected[0]["fallback_policy"], "record_unsupported_generated_ops")
+
+    def test_materialize_precision_dataset_reports_rejected_nvfp4_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pack_dir = tmp_path / "pack"
+            results_dir = tmp_path / "results"
+            pack_dir.mkdir()
+            results_dir.mkdir()
+            result_row = {
+                "status": "unsupported_low_precision_op",
+                "model_id": "calib_0000",
+                "graph_id": "calib_0000",
+                "precision_config": "nvfp4_te",
+                "profile_point_id": "calib_0000::nvfp4_te",
+                "error": "node 0 Conv is not TE low-precision safe",
+                "precision": {
+                    "precision_config": "nvfp4_te",
+                    "backend": "transformer_engine",
+                    "fallback_policy": "record_unsupported_low_precision_op",
+                },
+                "hardware": {"gpu_name": "NVIDIA GeForce RTX 5090", "compute_capability": "12.0"},
+            }
+            (results_dir / "results_shard0.jsonl").write_text(json.dumps(result_row) + "\n")
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "materialize_precision_dataset.py"),
+                    "--pack-dir",
+                    str(pack_dir),
+                    "--results-dir",
+                    str(results_dir),
+                    "--out-root",
+                    str(tmp_path / "precision_dataset"),
+                    "--force",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            out_root = tmp_path / "precision_dataset"
+            report = json.loads((out_root / "precision_materialization_report.json").read_text())
+            rejected = [json.loads(line) for line in (out_root / "precision_rejected_rows.jsonl").read_text().splitlines()]
+
+        self.assertEqual(report["precision_labels"], 0)
+        self.assertEqual(report["unsupported_low_precision_rows"], 1)
+        self.assertEqual(report["skipped_by_precision"]["nvfp4_te"], {"unsupported_low_precision_op": 1})
+        self.assertEqual(report["fallback_policy_counts"]["record_unsupported_low_precision_op"], {"nvfp4_te": 1})
+        self.assertEqual(rejected[0]["precision_config"], "nvfp4_te")
+
+    def test_source_only_tar_excludes_pkls_and_rebuilds_dataset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_path = tmp_path / "linear.pkl"
+            with graph_path.open("wb") as fh:
+                pickle.dump(linear_graph(), fh)
+            graph_record = record("bs1_linear_0", graph_path=str(graph_path), label_path=str(tmp_path / "linear.txt"))
+            pack_dir = tmp_path / "pack"
+            write_pack([graph_record], [graph_record], pack_dir, "compile", precision_sweep=("fp32_ieee",))
+
+            results_dir = tmp_path / "results_rtx5090"
+            results_dir.mkdir()
+            result_row = {
+                "status": "ok",
+                "model_id": "calib_0000",
+                "graph_id": "calib_0000",
+                "precision_config": "nvfp4_te",
+                "profile_point_id": "calib_0000::nvfp4_te",
+                "label": {"train": "1|2|3|4|5|6|7", "infer": "1|2|3|4|5|6|7"},
+                "precision": {"precision_config": "nvfp4_te", "backend": "transformer_engine"},
+                "hardware_id": "rtx5090",
+                "hardware": {"hardware_id": "rtx5090", "gpu_name": "NVIDIA GeForce RTX 5090", "compute_capability": "12.0"},
+            }
+            (results_dir / "results_shard0.jsonl").write_text(json.dumps(result_row) + "\n")
+            source_tar = tmp_path / "source_labels.tar.gz"
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "package_source_tar.py"),
+                    "--pack-dir",
+                    str(pack_dir),
+                    "--results-dir",
+                    str(results_dir),
+                    "--out",
+                    str(source_tar),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            with tarfile.open(source_tar, "r:gz") as tar:
+                names = tar.getnames()
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "rebuild_source_tar_dataset.py"),
+                    "--source-tar",
+                    str(source_tar),
+                    "--out-root",
+                    str(tmp_path / "rebuilt_dataset"),
+                    "--force",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            rebuilt = tmp_path / "rebuilt_dataset"
+            metadata = [json.loads(line) for line in (rebuilt / "label" / "precision_metadata.jsonl").read_text().splitlines()]
+            label_path = rebuilt / "label" / "label" / "calib_0000_rtx5090_nvfp4_te.txt"
+            graph_exists = (rebuilt / "cg" / "cg" / "calib_0000.pkl").exists()
+            label_exists = label_path.exists()
+            parsed_shape = parse_dataset_label(str(label_path)).shape
+
+        self.assertIn("pack/models/calib_0000.py", names)
+        self.assertIn("results/results_rtx5090/results_shard0.jsonl", names)
+        self.assertIn("replay/nrp_calibration_pack/profile/run_profile.py", names)
+        self.assertIn("replay/scripts/rebuild_source_tar_dataset.py", names)
+        self.assertFalse(any(name.endswith(".pkl") for name in names))
+        self.assertTrue(graph_exists)
+        self.assertTrue(label_exists)
+        self.assertEqual(parsed_shape, (6,))
+        self.assertEqual(metadata[0]["precision_config"], "nvfp4_te")
+        self.assertEqual(metadata[0]["hardware_id"], "rtx5090")
 
     def test_submit_script_renders_indexed_gpu_job(self) -> None:
         result = subprocess.run(
@@ -1103,6 +1776,8 @@ class NrpCalibrationPackTests(unittest.TestCase):
                 "50",
                 "--sample-interval",
                 "0.02",
+                "--hardware-id",
+                "rtx4090",
                 "--precision-sweep",
                 "fp32_ieee,bf16_amp",
                 "--dry-run",
@@ -1125,8 +1800,10 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("--infer-repeats 50", yaml)
         self.assertIn("--train-repeats 50", yaml)
         self.assertIn("--sample-interval 0.02", yaml)
+        self.assertIn("--hardware-id rtx4090", yaml)
         self.assertIn("--precision-sweep fp32_ieee,bf16_amp", yaml)
         self.assertIn("--fp8-backend transformer_engine", yaml)
+        self.assertNotIn("--train-epochs", yaml)
 
     def test_submit_script_uses_stable_default_profile_budget(self) -> None:
         result = subprocess.run(
@@ -1152,103 +1829,115 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("--train-repeats 50", yaml)
         self.assertIn("--sample-interval 0.01", yaml)
         self.assertIn("--fp8-backend transformer_engine", yaml)
+        self.assertNotIn("--train-epochs", yaml)
 
-    def test_precision_transfer_flow_dry_run_evaluates_source_and_precision_domains(self) -> None:
+    def test_source_workflow_script_renders_prepare_profile_package_jobs(self) -> None:
+        result = subprocess.run(
+            [
+                str(ROOT / "nrp_calibration_pack" / "submit_nrp_source_workflow.sh"),
+                "--namespace",
+                "test-ns",
+                "--image",
+                "example/perfseer-ngc:latest",
+                "--pvc",
+                "calibration-pvc",
+                "--gpu-product",
+                "NVIDIA-GeForce-RTX-5090",
+                "--hardware-id",
+                "rtx5090",
+                "--parallelism",
+                "2",
+                "--completions",
+                "3",
+                "--subset-size",
+                "7",
+                "--dry-run",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+        yaml = result.stdout
+        self.assertIn("name: perfseer-nrp-source-prepare-sources", yaml)
+        self.assertIn("name: perfseer-nrp-source-profile-labels", yaml)
+        self.assertIn("name: perfseer-nrp-source-package-results", yaml)
+        self.assertIn("--subset-size 7", yaml)
+        self.assertIn("--precision-sweep fp32_ieee", yaml)
+        self.assertIn("--precision-sweep auto", yaml)
+        self.assertIn("--hardware-id rtx5090", yaml)
+        self.assertIn("completionMode: Indexed", yaml)
+        self.assertIn("completions: 3", yaml)
+        self.assertIn("parallelism: 2", yaml)
+        self.assertIn("NVIDIA-GeForce-RTX-5090", yaml)
+        self.assertIn("package_source_tar.py", yaml)
+        self.assertIn("perfseer_rtx5090_source_labels.tar.gz", yaml)
+        self.assertNotIn("dataset/cg/cg", yaml)
+
+    def test_root_markdown_entrypoint_is_readme_only(self) -> None:
+        root_markdown = sorted(path.name for path in ROOT.glob("*.md"))
+
+        self.assertEqual(root_markdown, ["README.md"])
+
+    def test_hardware_filter_keeps_one_gpu_and_multiple_precisions(self) -> None:
+        from perfseer_optimized.data import FeatureConfig, feature_config_for_pair, precision_from_label_path, split_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "cg" / "cg").mkdir(parents=True)
+            (root / "label" / "label").mkdir(parents=True)
+            metadata = []
+            for graph_idx in range(2):
+                graph_id = f"calib_{graph_idx:04d}"
+                graph_file = f"cg/cg/{graph_id}.pkl"
+                with (root / graph_file).open("wb") as fh:
+                    pickle.dump(sequential_graph(), fh)
+                for hardware_id, precisions in {"rtx4090": ["fp32_ieee", "tf32"], "rtx3090": ["fp32_ieee"]}.items():
+                    for precision_config in precisions:
+                        label_name = f"{graph_id}_{hardware_id}_{precision_config}.txt"
+                        label_file = f"label/label/{label_name}"
+                        (root / label_file).write_text("{'train': '1|2|3|4|5|6|7', 'infer': '1|2|3|4|5|6|7'}\n")
+                        metadata.append(
+                            {
+                                "graph_id": graph_id,
+                                "graph_file": graph_file,
+                                "label_file": label_file,
+                                "hardware_id": hardware_id,
+                                "precision_config": precision_config,
+                                "label_domain": "precision_profile",
+                            }
+                        )
+            (root / "label" / "precision_metadata.jsonl").write_text("\n".join(json.dumps(row) for row in metadata) + "\n")
+
+            cfg = FeatureConfig(hardware_id="rtx4090", include_precision_features=True)
+            train, val, test = split_dataset(str(root), seed=3, split_unit="pair", hardware_id="rtx4090", feature_config=cfg)
+            selected = train + val + test
+
+            self.assertEqual(len(selected), 4)
+            self.assertEqual({feature_config_for_pair(cfg, gp, lp).hardware_id for gp, lp in selected}, {"rtx4090"})
+            self.assertEqual({precision_from_label_path(gp, lp) for gp, lp in selected}, {"fp32_ieee", "tf32"})
+            with self.assertRaisesRegex(ValueError, "no labels found for hardware_id='rtx5090'"):
+                split_dataset(str(root), seed=3, split_unit="pair", hardware_id="rtx5090", feature_config=FeatureConfig(hardware_id="rtx5090"))
+
+    def test_hardware_distill_flow_dry_run_trains_teacher_from_scratch(self) -> None:
         result = subprocess.run(
             [
                 sys.executable,
-                str(ROOT / "scripts" / "run_precision_transfer_flow.py"),
-                "--results-dir",
-                "/tmp/profiler_results",
-                "--source-data-root",
-                "dataset_source",
-                "--precision-data-root",
-                "dataset_precision",
-                "--source-precision-config",
-                "tf32",
-                "--source-hardware-id",
-                "a100_source",
-                "--source-precision-provenance",
-                "original-profiler-notes.md#tf32",
-                "--require-source-precision-provenance",
-                "--baseline-run-id",
-                "accuracy_baseline",
-                "--baseline-data-root",
-                "dataset_source",
-                "--source-epochs",
-                "1",
-                "--transfer-epochs",
+                str(ROOT / "scripts" / "run_hardware_distill_flow.py"),
+                "--data-root",
+                "dataset",
+                "--hardware-id",
+                "rtx4090",
+                "--teacher-epochs",
                 "1",
                 "--student-epochs",
                 "1",
+                "--split-unit",
+                "graph",
+                "--limit",
+                "32",
                 "--deploy-eval-profile",
                 "src/perfseer-optimized/configs/eval_profiles/cpu_torchscript_fp32.yaml",
-                "--split-unit",
-                "graph_signature",
-                "--check-results",
-                "--required-precision",
-                "bf16_amp",
-                "--min-eval-precision-count",
-                "bf16_amp=2",
-                "--min-eval-hardware-count",
-                "test_hardware=2",
-                "--required-label-domain",
-                "precision_profile",
-                "--min-eval-precision-labels",
-                "2",
-                "--min-precision-slices",
-                "2",
-                "--min-label-domain-slices",
-                "1",
-                "--min-batch-size-slices",
-                "2",
-                "--min-resource-regime-slices",
-                "2",
-                "--min-graph-signature-slices",
-                "2",
-                "--min-graph-family-slices",
-                "2",
-                "--min-materialized-precision-labels",
-                "10",
-                "--min-materialized-base-pairs",
-                "100",
-                "--min-materialized-source-labels",
-                "100",
-                "--min-materialized-pseudo-labels",
-                "2",
-                "--max-source-baseline-mape-delta",
-                "0.25",
-                "--max-student-mean-mape",
-                "5.0",
-                "--max-deploy-mean-mape",
-                "6.0",
-                "--max-deploy-latency-p50",
-                "2.0",
-                "--expected-deploy-runtime-backend",
-                "torchscript",
-                "--expected-deploy-runtime-backend-actual",
-                "torchscript",
-                "--require-checkpoint-files",
-                "--require-train-events",
-                "--require-unlimited-train-data",
-                "--required-train-label-domain",
-                "source,precision_profile",
-                "--min-train-precision-count",
-                "bf16_amp=2",
-                "--min-train-hardware-count",
-                "test_hardware=2",
-                "--min-train-split-count",
-                "2",
-                "--min-val-split-count",
-                "1",
-                "--min-train-test-count",
-                "1",
-                "--min-train-source-labels",
-                "2",
-                "--min-train-precision-labels",
-                "2",
-                "--require-train-checkpoint-metadata",
-                "--require-train-lineage",
                 "--dry-run",
             ],
             check=True,
@@ -1257,1807 +1946,49 @@ class NrpCalibrationPackTests(unittest.TestCase):
         )
 
         stdout = result.stdout
-        self.assertIn("# evaluate source teacher", stdout)
-        self.assertIn("--ckpt-dir runs/optimized/precision_large_teacher_source", stdout)
-        self.assertIn("--data-root dataset_source", stdout)
-        self.assertIn("# evaluate precision teacher", stdout)
-        self.assertIn("# evaluate precision student", stdout)
+        self.assertIn("# train scratch hardware teacher", stdout)
+        self.assertIn("# distill hardware student", stdout)
+        self.assertIn("# evaluate hardware teacher", stdout)
+        self.assertIn("# evaluate hardware student", stdout)
         self.assertIn("# evaluate deployment student", stdout)
-        self.assertIn("--ckpt-dir runs/optimized/precision_large_teacher_transfer", stdout)
-        self.assertIn("--ckpt-dir runs/optimized/precision_distill_student_128", stdout)
-        self.assertIn("perfseer_optimized.eval_deploy", stdout)
-        self.assertIn("--eval-profile src/perfseer-optimized/configs/eval_profiles/cpu_torchscript_fp32.yaml", stdout)
-        self.assertIn("--data-root dataset_precision", stdout)
-        self.assertEqual(stdout.count("--split-unit graph_signature"), 3)
-        self.assertIn("scripts/check_precision_transfer_results.py", stdout)
-        self.assertIn("--required-precision bf16_amp", stdout)
-        self.assertIn("--min-eval-precision-count bf16_amp=2", stdout)
-        self.assertIn("--min-eval-hardware-count test_hardware=2", stdout)
-        self.assertIn("--required-label-domain precision_profile", stdout)
-        self.assertIn("--min-eval-precision-labels 2", stdout)
-        self.assertIn("--required-split-unit graph_signature", stdout)
-        self.assertIn("--materialization-report dataset_precision/precision_materialization_report.json", stdout)
-        self.assertIn("--require-source-precision-provenance", stdout)
-        self.assertNotIn("--require-source-precision-confirmed", stdout)
-        self.assertIn("--source-precision-config tf32", stdout)
-        self.assertIn("--source-hardware-id a100_source", stdout)
-        self.assertIn("--precision-config tf32", stdout)
-        self.assertIn("--hardware-id a100_source", stdout)
-        self.assertIn("--expected-source-precision-config tf32", stdout)
-        self.assertIn("--expected-source-precision-provenance", stdout)
-        self.assertIn("original-profiler-notes.md#tf32", stdout)
-        self.assertIn("--baseline-run-id accuracy_baseline", stdout)
-        self.assertIn("--baseline-data-root dataset_source", stdout)
-        self.assertIn("--max-source-baseline-mape-delta 0.25", stdout)
-        self.assertIn("--require-deployment-eval", stdout)
-        self.assertIn("--require-deployment-metadata", stdout)
-        self.assertIn("--expected-deploy-runtime-backend torchscript", stdout)
-        self.assertIn("--expected-deploy-runtime-backend-actual torchscript", stdout)
-        self.assertIn("--require-checkpoint-files", stdout)
-        self.assertIn("--require-deployment-student-checkpoint", stdout)
-        self.assertIn("--require-train-events", stdout)
-        self.assertIn("--require-eval-train-checkpoints", stdout)
-        self.assertIn("--require-unlimited-train-data", stdout)
-        self.assertIn("--required-train-label-domain source,precision_profile", stdout)
-        self.assertIn("--min-train-precision-count bf16_amp=2", stdout)
-        self.assertIn("--min-train-hardware-count test_hardware=2", stdout)
-        self.assertIn("--min-train-split-count 2", stdout)
-        self.assertIn("--min-val-split-count 1", stdout)
-        self.assertIn("--min-train-test-count 1", stdout)
-        self.assertIn("--min-train-source-labels 2", stdout)
-        self.assertIn("--min-train-precision-labels 2", stdout)
-        self.assertIn("--require-train-checkpoint-metadata", stdout)
-        self.assertIn("--require-train-lineage", stdout)
-        self.assertIn("--require-source-train-provenance", stdout)
-        self.assertIn("--max-deploy-mean-mape 6.0", stdout)
-        self.assertIn("--max-deploy-latency-p50 2.0", stdout)
-        self.assertIn("--min-precision-slices 2", stdout)
-        self.assertIn("--min-label-domain-slices 1", stdout)
-        self.assertIn("--min-batch-size-slices 2", stdout)
-        self.assertIn("--min-resource-regime-slices 2", stdout)
-        self.assertIn("--min-graph-signature-slices 2", stdout)
-        self.assertIn("--min-graph-family-slices 2", stdout)
-        self.assertIn("--min-materialized-precision-labels 10", stdout)
-        self.assertIn("--min-materialized-base-pairs 100", stdout)
-        self.assertIn("--min-materialized-source-labels 100", stdout)
-        self.assertIn("--min-materialized-pseudo-labels 2", stdout)
-        self.assertIn("--max-student-mean-mape 5.0", stdout)
-        self.assertIn("--source-precision-provenance", stdout)
-        self.assertIn("original-profiler-notes.md#tf32", stdout)
-        self.assertIn("--require-source-precision-provenance", stdout)
+        self.assertIn("src/perfseer-optimized/configs/train_hardware_teacher/large_teacher.yaml", stdout)
+        self.assertIn("src/perfseer-optimized/configs/train_deploy_model/distill_student_128.yaml", stdout)
+        self.assertIn("--run-id hardware_large_teacher_rtx4090", stdout)
+        self.assertIn("--run-id hardware_distill_student_128_rtx4090", stdout)
+        self.assertIn("--teacher-ckpt-dir runs/optimized/hardware_large_teacher_rtx4090", stdout)
+        self.assertIn("--hardware-id rtx4090", stdout)
+        self.assertIn("--data-root dataset", stdout)
+        self.assertIn("--split-unit graph", stdout)
+        self.assertNotIn("--init-checkpoint", stdout)
+        self.assertNotIn("transfer", stdout)
 
-    def test_precision_transfer_flow_dry_run_emits_structural_validation_suite(self) -> None:
-        result = subprocess.run(
-            [
-                sys.executable,
-                str(ROOT / "scripts" / "run_precision_transfer_flow.py"),
-                "--skip-materialize",
-                "--skip-source-pretrain",
-                "--skip-source-eval",
-                "--source-data-root",
-                "dataset_source",
-                "--precision-data-root",
-                "dataset_precision",
-                "--check-results",
-                "--required-precision",
-                "bf16_amp",
-                "--required-label-domain",
-                "precision_profile",
-                "--require-train-events",
-                "--min-train-split-count",
-                "2",
-                "--structural-validation-splits",
-                "graph_signature,graph_family",
-                "--dry-run",
-            ],
-            check=True,
-            text=True,
-            capture_output=True,
-        )
-
-        stdout = result.stdout
-        self.assertIn("# structural validation split graph_signature", stdout)
-        self.assertIn("# structural validation split graph_family", stdout)
-        self.assertIn("--run-id precision_large_teacher_transfer_graph_signature", stdout)
-        self.assertIn("--run-id precision_distill_student_128_graph_signature", stdout)
-        self.assertIn("--run-id precision_large_teacher_transfer_graph_family", stdout)
-        self.assertIn("--run-id precision_distill_student_128_graph_family", stdout)
-        self.assertIn("--split-unit graph_signature", stdout)
-        self.assertIn("--split-unit graph_family", stdout)
-        self.assertIn("--transfer-run-id precision_large_teacher_transfer_graph_signature", stdout)
-        self.assertIn("--student-run-id precision_distill_student_128_graph_signature", stdout)
-        self.assertIn("--transfer-run-id precision_large_teacher_transfer_graph_family", stdout)
-        self.assertIn("--student-run-id precision_distill_student_128_graph_family", stdout)
-        self.assertIn("--required-split-unit graph_signature", stdout)
-        self.assertIn("--required-split-unit graph_family", stdout)
-        self.assertGreaterEqual(stdout.count("--skip-source"), 3)
-
-    def test_train_cli_overrides_source_precision_feature_identity(self) -> None:
+    def test_train_cli_overrides_hardware_filter_and_rejects_bad_precision(self) -> None:
         cfg = {"run": {}, "data": {}, "features": {}, "train": {}}
-        args = parse_train_args(["--precision-config", "tf32", "--hardware-id", "a100_source"])
+        args = parse_train_args(["--precision-config", "tf32", "--hardware-id", "rtx4090"])
         resolved = apply_train_overrides(cfg, args)
 
         self.assertEqual(resolved["features"]["precision_config"], "tf32")
-        self.assertEqual(resolved["features"]["hardware_id"], "a100_source")
+        self.assertEqual(resolved["features"]["hardware_id"], "rtx4090")
+        self.assertEqual(resolved["data"]["hardware_id"], "rtx4090")
 
         bad_args = parse_train_args(["--precision-config", "bf32"])
         with self.assertRaises(ValueError):
             apply_train_overrides({"run": {}, "data": {}, "features": {}, "train": {}}, bad_args)
 
-        unknown_args = parse_train_args(
-            [
-                "--precision-config",
-                "source_domain_unknown",
-                "--source-precision-provenance",
-                "https://github.com/upuuuuuu/PerfSeer#dataset-profile",
-                "--require-source-precision-provenance",
-            ]
-        )
-        unknown = apply_train_overrides({"run": {}, "data": {}, "features": {}, "train": {}}, unknown_args)
-        self.assertEqual(unknown["features"]["precision_config"], "source_domain_unknown")
-        self.assertFalse(unknown["data"]["source_precision_confirmed"])
-
-    def test_check_precision_transfer_results_accepts_complete_eval_ledger(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            report = Path(tmp) / "report.json"
-            materialization_report = Path(tmp) / "precision_materialization_report.json"
-            deployment_metadata = Path(tmp) / "deployment_metadata.json"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            rows = [
-                eval_result_row(
-                    "accuracy_baseline",
-                    "dataset_source",
-                    ["fp32_ieee"],
-                    mean_mape=1.0,
-                ),
-                train_result_row(
-                    "precision_large_teacher_source",
-                    "dataset_source",
-                    [str(source_ckpt)],
-                    source_precision_provenance="original-profiler-notes.md#tf32",
-                ),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    teacher_paths=[str(transfer_ckpt)],
-                ),
-                eval_result_row(
-                    "precision_large_teacher_source",
-                    "dataset_source",
-                    ["fp32_ieee"],
-                    batch_slices=2,
-                    resource_slices=2,
-                    graph_signature_slices=2,
-                    graph_family_slices=2,
-                    ckpt_paths=[str(source_ckpt)],
-                    mean_mape=1.04,
-                ),
-                eval_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    batch_slices=2,
-                    resource_slices=2,
-                    graph_signature_slices=2,
-                    graph_family_slices=2,
-                    ckpt_paths=[str(transfer_ckpt)],
-                ),
-                eval_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    batch_slices=2,
-                    resource_slices=2,
-                    graph_signature_slices=2,
-                    graph_family_slices=2,
-                    ckpt_paths=[str(student_ckpt)],
-                ),
-                deploy_result_row("precision_distill_student_128", "dataset_precision", str(deployment_metadata), ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-            deployment_metadata.write_text(
-                json.dumps(
-                    {
-                        "feature_config": {"precision_config": "bf16_amp"},
-                        "precision_hardware_config": {"precision_config": "bf16_amp", "hardware_id": "a100"},
-                        "feature_layout": {"global_dim": 8},
-                        "supported_precision_hardware": {
-                            "precision_configs": ["bf16_amp", "fp32_ieee"],
-                            "hardware_ids": ["a100"],
-                        },
-                        "required_inputs": {"u": {"dim": 8}},
-                    }
-                )
-                + "\n"
-            )
-            materialization_report.write_text(
-                json.dumps(
-                    {
-                        "source_precision_config": "fp32_ieee",
-                        "source_precision_confirmed": True,
-                        "source_precision_provenance": "original-profiler-notes.md#tf32",
-                        "base_pairs": 3,
-                        "source_metadata_labels": 2,
-                        "calibration_source_labels": 1,
-                        "precision_labels": 12,
-                        "pseudo_labels": 4,
-                        "unsupported_fp8_rows": 3,
-                    }
-                )
-                + "\n"
-            )
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--min-eval-precision-count",
-                    "bf16_amp=2",
-                    "--min-eval-hardware-count",
-                    "test_hardware=2",
-                    "--required-label-domain",
-                    "precision_profile",
-                    "--min-eval-precision-labels",
-                    "2",
-                    "--required-split-unit",
-                    "graph_signature",
-                    "--min-precision-slices",
-                    "2",
-                    "--min-label-domain-slices",
-                    "1",
-                    "--min-batch-size-slices",
-                    "2",
-                    "--min-resource-regime-slices",
-                    "2",
-                    "--min-graph-signature-slices",
-                    "2",
-                    "--min-graph-family-slices",
-                    "2",
-                    "--materialization-report",
-                    str(materialization_report),
-                    "--require-source-precision-confirmed",
-                    "--expected-source-precision-config",
-                    "fp32_ieee",
-                    "--expected-source-precision-provenance",
-                    "original-profiler-notes.md#tf32",
-                    "--baseline-run-id",
-                    "accuracy_baseline",
-                    "--baseline-data-root",
-                    "dataset_source",
-                    "--max-source-baseline-mape-delta",
-                    "0.1",
-                    "--min-materialized-precision-labels",
-                    "10",
-                    "--min-materialized-base-pairs",
-                    "3",
-                    "--min-materialized-source-labels",
-                    "3",
-                    "--min-materialized-pseudo-labels",
-                    "4",
-                    "--require-deployment-eval",
-                    "--require-deployment-metadata",
-                    "--expected-deploy-runtime-backend",
-                    "torchscript",
-                    "--expected-deploy-runtime-backend-actual",
-                    "torchscript",
-                    "--max-deploy-mean-mape",
-                    "6.0",
-                    "--max-deploy-latency-p50",
-                    "2.0",
-                    "--require-checkpoint-files",
-                    "--require-deployment-student-checkpoint",
-                    "--require-train-events",
-                    "--require-eval-train-checkpoints",
-                    "--required-train-label-domain",
-                    "source,precision_profile",
-                    "--min-train-precision-count",
-                    "bf16_amp=2",
-                    "--min-train-hardware-count",
-                    "test_hardware=2",
-                    "--min-train-split-count",
-                    "2",
-                    "--min-val-split-count",
-                    "1",
-                    "--min-train-test-count",
-                    "1",
-                    "--min-train-source-labels",
-                    "2",
-                    "--min-train-precision-labels",
-                    "2",
-                    "--require-unlimited-train-data",
-                    "--require-train-checkpoint-metadata",
-                    "--require-train-lineage",
-                    "--require-source-train-provenance",
-                    "--require-source-train-precision-confirmed",
-                    "--report-out",
-                    str(report),
-                ],
-                check=True,
-                text=True,
-                capture_output=True,
-            )
-            saved_report = json.loads(report.read_text())
-
-        self.assertIn("precision transfer result check passed", result.stdout)
-        self.assertTrue(saved_report["ok"])
-        self.assertEqual(saved_report["required_split_unit"], "graph_signature")
-        self.assertTrue(saved_report["checkpoint_files_required"])
-        self.assertTrue(saved_report["training_required"])
-        self.assertTrue(saved_report["eval_train_checkpoints_required"])
-        self.assertTrue(saved_report["unlimited_train_data_required"])
-        self.assertEqual(saved_report["required_train_label_domains"], ["source", "precision_profile"])
-        self.assertEqual(
-            saved_report["min_train_label_counts"],
-            {"precision_profile": 2, "pseudo": 0, "source": 2},
-        )
-        self.assertEqual(saved_report["min_train_precision_counts"], {"bf16_amp": 2})
-        self.assertEqual(saved_report["min_train_hardware_counts"], {"test_hardware": 2})
-        self.assertEqual(saved_report["min_train_split_counts"], {"train": 2, "val": 1, "test": 1})
-        self.assertFalse(saved_report["source_precision_provenance_required"])
-        self.assertTrue(saved_report["source_precision_confirmed_required"])
-        self.assertTrue(saved_report["source_train_provenance_required"])
-        self.assertTrue(saved_report["source_train_precision_confirmed_required"])
-        self.assertTrue(saved_report["train_checkpoint_metadata_required"])
-        self.assertTrue(saved_report["train_lineage_required"])
-        self.assertEqual(saved_report["runs"]["baseline"]["run_id"], "accuracy_baseline")
-        self.assertEqual(saved_report["baseline_comparison"]["baseline_mean_mape"], 1.0)
-        self.assertEqual(saved_report["baseline_comparison"]["source_mean_mape"], 1.04)
-        self.assertAlmostEqual(saved_report["baseline_comparison"]["delta"], 0.04)
-        self.assertEqual(saved_report["baseline_comparison"]["max_delta"], 0.1)
-        self.assertEqual(
-            saved_report["min_slice_counts"],
-            {
-                "batch_size": 2,
-                "graph_family": 2,
-                "graph_signature": 2,
-                "label_domain": 1,
-                "precision": 2,
-                "resource_regime": 2,
-            },
-        )
-        self.assertEqual(saved_report["min_eval_precision_counts"], {"bf16_amp": 2})
-        self.assertEqual(saved_report["min_eval_hardware_counts"], {"test_hardware": 2})
-        self.assertEqual(saved_report["required_label_domains"], ["precision_profile"])
-        self.assertEqual(
-            saved_report["min_eval_label_counts"],
-            {"precision_profile": 2, "pseudo": 0, "source": 0},
-        )
-        self.assertEqual(saved_report["materialization"]["source_precision_config"], "fp32_ieee")
-        self.assertTrue(saved_report["materialization"]["source_precision_confirmed"])
-        self.assertEqual(saved_report["materialization"]["base_pairs"], 3)
-        self.assertEqual(saved_report["materialization"]["source_metadata_labels"], 2)
-        self.assertEqual(saved_report["materialization"]["calibration_source_labels"], 1)
-        self.assertEqual(saved_report["materialization"]["source_labels_total"], 3)
-        self.assertEqual(saved_report["materialization"]["precision_labels"], 12)
-        self.assertEqual(saved_report["materialization"]["pseudo_labels"], 4)
-        self.assertTrue(saved_report["deployment_required"])
-        self.assertTrue(saved_report["deployment_student_checkpoint_required"])
-        self.assertEqual(saved_report["deployment_student_checkpoint"]["student_ckpt_paths"], [str(student_ckpt)])
-        self.assertEqual(saved_report["deployment_student_checkpoint"]["deployment_ckpt_paths"], [str(student_ckpt)])
-        self.assertEqual(saved_report["deployment"]["runtime_backend"], "torchscript")
-        self.assertEqual(saved_report["deployment"]["deployment_metadata"], str(deployment_metadata))
-        self.assertEqual(
-            saved_report["eval_train_checkpoints"]["source_teacher"]["eval_ckpt_paths"],
-            [str(source_ckpt)],
-        )
-        self.assertEqual(
-            saved_report["eval_train_checkpoints"]["precision_teacher"]["train_checkpoints"],
-            [str(transfer_ckpt)],
-        )
-        self.assertEqual(
-            saved_report["eval_train_checkpoints"]["precision_student"]["eval_ckpt_paths"],
-            [str(student_ckpt)],
-        )
-        self.assertEqual(
-            saved_report["training"]["precision_teacher"]["split_label_domain_counts"]["train"],
-            {"precision_profile": 2, "source": 2},
-        )
-        self.assertEqual(
-            saved_report["training"]["precision_student"]["split_label_domain_counts"]["train"],
-            {"precision_profile": 2, "source": 2},
-        )
-        self.assertEqual(
-            saved_report["training"]["precision_teacher"]["split_precision_config_counts"]["train"],
-            {"bf16_amp": 2, "fp32_ieee": 2},
-        )
-        self.assertEqual(
-            saved_report["training"]["precision_student"]["split_precision_config_counts"]["train"],
-            {"bf16_amp": 2, "fp32_ieee": 2},
-        )
-        self.assertEqual(
-            saved_report["training"]["precision_teacher"]["split_hardware_id_counts"]["train"],
-            {"test_hardware": 4},
-        )
-        self.assertEqual(saved_report["training"]["precision_teacher"]["split_unit"], "graph_signature")
-        self.assertEqual(saved_report["training"]["precision_teacher"]["train_count"], 4)
-        self.assertEqual(saved_report["training"]["precision_teacher"]["val_count"], 1)
-        self.assertEqual(saved_report["training"]["precision_teacher"]["test_count"], 1)
-        self.assertEqual(saved_report["training"]["precision_teacher"]["test_hash"], "eval-test-hash")
-        self.assertEqual(
-            saved_report["training"]["precision_student"]["split_hardware_id_counts"]["train"],
-            {"test_hardware": 4},
-        )
-        self.assertEqual(saved_report["training"]["precision_student"]["split_unit"], "graph_signature")
-        self.assertEqual(saved_report["training"]["precision_student"]["train_count"], 4)
-        self.assertEqual(saved_report["training"]["precision_student"]["val_count"], 1)
-        self.assertEqual(saved_report["training"]["precision_student"]["test_count"], 1)
-        self.assertEqual(saved_report["training"]["precision_student"]["test_hash"], "eval-test-hash")
-        self.assertEqual(saved_report["training"]["source_teacher"]["data_root"], "dataset_source")
-        self.assertTrue(saved_report["training"]["source_teacher"]["source_precision_confirmed"])
-        self.assertEqual(saved_report["training"]["source_teacher"]["source_precision_provenance"], "original-profiler-notes.md#tf32")
-        self.assertEqual(saved_report["training"]["source_teacher"]["checkpoint_metadata_count"], 1)
-        self.assertEqual(
-            saved_report["training"]["source_teacher"]["checkpoint_source_precision"]["provenance"],
-            "original-profiler-notes.md#tf32",
-        )
-        self.assertEqual(saved_report["training"]["precision_teacher"]["init_checkpoint"], str(source_ckpt))
-        self.assertEqual(saved_report["training"]["precision_teacher"]["checkpoint_initialization_paths"], [str(source_ckpt)])
-        self.assertEqual(saved_report["training"]["precision_student"]["teacher_ckpt_dir"], str(Path(tmp)))
-        self.assertEqual(saved_report["training"]["precision_student"]["checkpoint_distillation_teacher_kinds"], ["multi"])
-        self.assertEqual(saved_report["train_lineage"]["transfer_init_checkpoint"], str(source_ckpt))
-        self.assertEqual(saved_report["train_lineage"]["student_checkpoint_teacher_paths"], [str(transfer_ckpt)])
-        self.assertEqual(saved_report["runs"]["precision_student"]["precision_configs"], ["bf16_amp", "fp32_ieee"])
-        self.assertEqual(saved_report["runs"]["precision_student"]["precision_config_counts"], {"bf16_amp": 8, "fp32_ieee": 8})
-        self.assertEqual(saved_report["runs"]["precision_student"]["hardware_id_counts"], {"test_hardware": 8})
-        self.assertEqual(saved_report["runs"]["precision_student"]["label_domains"], ["precision_profile"])
-        self.assertEqual(saved_report["runs"]["precision_student"]["label_domain_counts"], {"precision_profile": 8})
-        self.assertEqual(saved_report["runs"]["precision_student"]["split_unit"], "graph_signature")
-        self.assertEqual(saved_report["runs"]["precision_student"]["graph_families"], ["family_slice_0", "family_slice_1"])
-
-    def test_check_precision_transfer_results_allows_unknown_source_precision_with_provenance(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            report = Path(tmp) / "report.json"
-            materialization_report = Path(tmp) / "precision_materialization_report.json"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            provenance = "SOURCE_PRECISION_PROVENANCE.md#unknown"
-            rows = [
-                train_result_row(
-                    "precision_large_teacher_source",
-                    "dataset_source",
-                    [str(source_ckpt)],
-                    precision_config="source_domain_unknown",
-                    source_precision_provenance=provenance,
-                    source_precision_confirmed=False,
-                ),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    teacher_paths=[str(transfer_ckpt)],
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-            materialization_report.write_text(
-                json.dumps(
-                    {
-                        "source_precision_config": "source_domain_unknown",
-                        "source_precision_confirmed": False,
-                        "source_precision_provenance": provenance,
-                        "base_pairs": 3,
-                        "source_metadata_labels": 2,
-                        "calibration_source_labels": 1,
-                        "precision_labels": 12,
-                        "pseudo_labels": 0,
-                    }
-                )
-                + "\n"
-            )
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--materialization-report",
-                    str(materialization_report),
-                    "--require-source-precision-provenance",
-                    "--expected-source-precision-config",
-                    "source_domain_unknown",
-                    "--expected-source-precision-provenance",
-                    provenance,
-                    "--require-train-events",
-                    "--require-source-train-provenance",
-                    "--require-train-checkpoint-metadata",
-                    "--report-out",
-                    str(report),
-                ],
-                check=True,
-                text=True,
-                capture_output=True,
-            )
-            saved_report = json.loads(report.read_text())
-
-        self.assertIn("precision transfer result check passed", result.stdout)
-        self.assertTrue(saved_report["source_precision_provenance_required"])
-        self.assertFalse(saved_report["source_precision_confirmed_required"])
-        self.assertTrue(saved_report["source_train_provenance_required"])
-        self.assertFalse(saved_report["source_train_precision_confirmed_required"])
-        self.assertFalse(saved_report["materialization"]["source_precision_confirmed"])
-        self.assertFalse(saved_report["training"]["source_teacher"]["source_precision_confirmed"])
-        self.assertFalse(saved_report["training"]["source_teacher"]["checkpoint_source_precision"]["confirmed"])
-        self.assertEqual(saved_report["training"]["source_teacher"]["source_precision_provenance"], provenance)
-
-    def test_check_precision_transfer_results_rejects_source_baseline_regression(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                {
-                    "event": "eval_complete",
-                    "run_id": "accuracy_baseline",
-                    "data_root": "dataset_source",
-                    "mean_mape": 1.0,
-                    "num_test_graphs": 8,
-                },
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], mean_mape=1.3),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--baseline-run-id",
-                    "accuracy_baseline",
-                    "--max-source-baseline-mape-delta",
-                    "0.1",
-                    "--required-precision",
-                    "bf16_amp",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("source_teacher mean_mape delta vs baseline 0.3 exceeds threshold 0.1", result.stdout)
-        self.assertNotIn("baseline metrics_by_precision", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_missing_train_events(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-train-events",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("missing source_teacher train row", result.stdout)
-        self.assertIn("missing precision_teacher train row", result.stdout)
-        self.assertIn("missing precision_student train row", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_missing_source_train_provenance(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            rows = [
-                train_result_row("precision_large_teacher_source", "dataset_source", [str(source_ckpt)]),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-checkpoint-files",
-                    "--require-train-events",
-                    "--require-source-train-provenance",
-                    "--require-source-train-precision-confirmed",
-                    "--expected-source-precision-config",
-                    "fp32_ieee",
-                    "--expected-source-precision-provenance",
-                    "original-profiler-notes.md#tf32",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("source_teacher train source precision is not confirmed", result.stdout)
-        self.assertIn("source_teacher train source precision provenance is empty", result.stdout)
-        self.assertIn("source_teacher train source precision provenance does not match expected value", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_bad_train_checkpoint_metadata(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            rows = [
-                train_result_row(
-                    "precision_large_teacher_source",
-                    "dataset_source",
-                    [str(source_ckpt)],
-                    source_precision_provenance="original-profiler-notes.md#tf32",
-                    checkpoint_source_precision={
-                        "precision_config": "bf16_amp",
-                        "hardware_id": "test_hardware",
-                        "provenance": "",
-                        "confirmed": False,
-                    },
-                ),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                    checkpoint_initialization={"path": str(student_ckpt), "strict": True},
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    checkpoint_distillation_teacher={"kind": "none", "count": 0, "paths": []},
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-checkpoint-files",
-                    "--require-train-events",
-                    "--require-source-train-provenance",
-                    "--require-source-train-precision-confirmed",
-                    "--require-train-checkpoint-metadata",
-                    "--expected-source-precision-config",
-                    "fp32_ieee",
-                    "--expected-source-precision-provenance",
-                    "original-profiler-notes.md#tf32",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("source_teacher checkpoint source precision is not confirmed", result.stdout)
-        self.assertIn("source_teacher checkpoint source precision provenance is empty", result.stdout)
-        self.assertIn("source_teacher checkpoint precision_config 'bf16_amp' does not match expected 'fp32_ieee'", result.stdout)
-        self.assertIn("source_teacher checkpoint source precision provenance does not match expected value", result.stdout)
-        self.assertIn("precision_teacher checkpoint initialization path", result.stdout)
-        self.assertIn("does not match train init_checkpoint", result.stdout)
-        self.assertIn("precision_student checkpoint distillation_teacher metadata is missing", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_broken_train_lineage(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            unrelated_ckpt = Path(tmp) / "unrelated_seernet_multi.pt"
-            wrong_teacher = Path(tmp) / "wrong_teacher.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt, unrelated_ckpt, wrong_teacher):
-                ckpt.write_bytes(b"checkpoint")
-            rows = [
-                train_result_row(
-                    "precision_large_teacher_source",
-                    "dataset_source",
-                    [str(source_ckpt)],
-                    source_precision_provenance="original-profiler-notes.md#tf32",
-                ),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(unrelated_ckpt),
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp) / "not_transfer_dir"),
-                    teacher_paths=[str(wrong_teacher)],
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-train-events",
-                    "--require-train-checkpoint-metadata",
-                    "--require-train-lineage",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("train lineage precision_teacher init_checkpoint", result.stdout)
-        self.assertIn("is not listed in source_teacher train checkpoints", result.stdout)
-        self.assertIn("train lineage precision_teacher checkpoint initialization path", result.stdout)
-        self.assertIn("train lineage precision_student teacher_ckpt_dir", result.stdout)
-        self.assertIn("does not match precision_teacher output/checkpoint directory", result.stdout)
-        self.assertIn("train lineage precision_student checkpoint teacher path", result.stdout)
-        self.assertIn("is not listed in precision_teacher train checkpoints", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_eval_train_checkpoint_mismatch(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            transfer_eval_ckpt = Path(tmp) / "transfer_eval_other.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, transfer_eval_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            rows = [
-                train_result_row("precision_large_teacher_source", "dataset_source", [str(source_ckpt)]),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    teacher_paths=[str(transfer_ckpt)],
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_eval_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-train-events",
-                    "--require-eval-train-checkpoints",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("eval/train checkpoint linkage precision_teacher eval checkpoint", result.stdout)
-        self.assertIn("is not listed in precision_teacher train checkpoints", result.stdout)
-        self.assertIn("eval/train checkpoint linkage precision_teacher train checkpoint", result.stdout)
-        self.assertIn("is not listed in precision_teacher eval checkpoints", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_missing_train_label_domain(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            source_only_counts = {"train": {"source": 4}, "val": {"source": 1}, "test": {"source": 1}}
-            rows = [
-                train_result_row("precision_large_teacher_source", "dataset_source", [str(source_ckpt)]),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                    split_label_domain_counts=source_only_counts,
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    teacher_paths=[str(transfer_ckpt)],
-                    split_label_domain_counts=source_only_counts,
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-train-events",
-                    "--required-train-label-domain",
-                    "source,precision_profile",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("precision_teacher train split missing required label-domain 'precision_profile'", result.stdout)
-        self.assertIn("precision_student train split missing required label-domain 'precision_profile'", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_low_train_label_domain_count(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            low_precision_counts = {
-                "train": {"source": 4, "precision_profile": 1},
-                "val": {"precision_profile": 1},
-                "test": {"precision_profile": 1},
-            }
-            rows = [
-                train_result_row("precision_large_teacher_source", "dataset_source", [str(source_ckpt)]),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                    split_label_domain_counts=low_precision_counts,
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    teacher_paths=[str(transfer_ckpt)],
-                    split_label_domain_counts=low_precision_counts,
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--min-train-precision-labels",
-                    "2",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "precision_teacher train split label-domain 'precision_profile' count 1 is below required 2",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_student train split label-domain 'precision_profile' count 1 is below required 2",
-            result.stdout,
-        )
-
-    def test_check_precision_transfer_results_rejects_low_train_precision_config_count(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            low_bf16_counts = {
-                "train": {"bf16_amp": 1, "fp32_ieee": 4},
-                "val": {"bf16_amp": 1},
-                "test": {"bf16_amp": 1},
-            }
-            rows = [
-                train_result_row("precision_large_teacher_source", "dataset_source", [str(source_ckpt)]),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                    split_precision_config_counts=low_bf16_counts,
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    teacher_paths=[str(transfer_ckpt)],
-                    split_precision_config_counts=low_bf16_counts,
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--min-train-precision-count",
-                    "bf16_amp=2",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "precision_teacher train split precision_config 'bf16_amp' count 1 is below required 2",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_student train split precision_config 'bf16_amp' count 1 is below required 2",
-            result.stdout,
-        )
-
-    def test_check_precision_transfer_results_rejects_low_train_hardware_id_count(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            low_hardware_counts = {
-                "train": {"a100": 1, "rtx3090": 4},
-                "val": {"a100": 1},
-                "test": {"a100": 1},
-            }
-            rows = [
-                train_result_row("precision_large_teacher_source", "dataset_source", [str(source_ckpt)]),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                    split_hardware_id_counts=low_hardware_counts,
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    teacher_paths=[str(transfer_ckpt)],
-                    split_hardware_id_counts=low_hardware_counts,
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--min-train-hardware-count",
-                    "a100=2",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "precision_teacher train split hardware_id 'a100' count 1 is below required 2",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_student train split hardware_id 'a100' count 1 is below required 2",
-            result.stdout,
-        )
-
-    def test_check_precision_transfer_results_rejects_train_split_metadata_mismatch(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            rows = [
-                train_result_row("precision_large_teacher_source", "dataset_source", [str(source_ckpt)]),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    init_checkpoint=str(source_ckpt),
-                    split_unit="pair",
-                    train_count=1,
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    teacher_ckpt_dir=str(Path(tmp)),
-                    teacher_paths=[str(transfer_ckpt)],
-                    split_unit="pair",
-                    train_count=1,
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-split-unit",
-                    "graph_signature",
-                    "--require-train-events",
-                    "--min-train-split-count",
-                    "2",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "precision_teacher train split_unit 'pair' does not match required 'graph_signature'",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_teacher train train_count 1 is below required 2",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_student train split_unit 'pair' does not match required 'graph_signature'",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_student train train_count 1 is below required 2",
-            result.stdout,
-        )
-
-    def test_check_precision_transfer_results_rejects_limited_train_data(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            source_ckpt = Path(tmp) / "source_seernet_multi.pt"
-            transfer_ckpt = Path(tmp) / "transfer_seernet_multi.pt"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            for ckpt in (source_ckpt, transfer_ckpt, student_ckpt):
-                ckpt.write_bytes(b"checkpoint")
-            rows = [
-                train_result_row("precision_large_teacher_source", "dataset_source", [str(source_ckpt)], limit=32),
-                train_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    [str(transfer_ckpt)],
-                    limit=32,
-                    init_checkpoint=str(source_ckpt),
-                ),
-                train_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    [str(student_ckpt)],
-                    limit=32,
-                    teacher_ckpt_dir=str(Path(tmp)),
-                ),
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(source_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(transfer_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-checkpoint-files",
-                    "--require-unlimited-train-data",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("source_teacher train data.limit 32 is not unlimited", result.stdout)
-        self.assertIn("precision_teacher train data.limit 32 is not unlimited", result.stdout)
-        self.assertIn("precision_student train data.limit 32 is not unlimited", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_unconfirmed_source_precision_report(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            materialization_report = Path(tmp) / "precision_materialization_report.json"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-            materialization_report.write_text(
-                json.dumps(
-                    {
-                        "source_precision_config": "fp32_ieee",
-                        "source_precision_confirmed": False,
-                        "source_precision_provenance": "",
-                        "base_pairs": 0,
-                        "source_metadata_labels": 0,
-                        "calibration_source_labels": 0,
-                        "precision_labels": 0,
-                        "pseudo_labels": 0,
-                    }
-                )
-                + "\n"
-            )
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--materialization-report",
-                    str(materialization_report),
-                    "--require-source-precision-confirmed",
-                    "--min-materialized-precision-labels",
-                    "1",
-                    "--min-materialized-base-pairs",
-                    "1",
-                    "--min-materialized-source-labels",
-                    "1",
-                    "--min-materialized-pseudo-labels",
-                    "1",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("materialization report source precision is not confirmed", result.stdout)
-        self.assertIn("materialization report source precision provenance is empty", result.stdout)
-        self.assertIn("materialization report precision_labels 0 is below required 1", result.stdout)
-        self.assertIn("materialization report base_pairs 0 is below required 1", result.stdout)
-        self.assertIn("materialization report source labels 0 is below required 1", result.stdout)
-        self.assertIn("materialization report pseudo_labels 0 is below required 1", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_missing_deployment_metadata(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            missing_metadata = Path(tmp) / "missing_deployment_metadata.json"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                deploy_result_row("precision_distill_student_128", "dataset_precision", str(missing_metadata)),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-deployment-eval",
-                    "--require-deployment-metadata",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("deployment metadata file is missing", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_deployment_student_checkpoint_mismatch(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            student_ckpt = Path(tmp) / "student_seernet_multi.pt"
-            deployment_ckpt = Path(tmp) / "other_student_seernet_multi.pt"
-            student_ckpt.write_bytes(b"student")
-            deployment_ckpt.write_bytes(b"deployment")
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(student_ckpt)]),
-                deploy_result_row("precision_distill_student_128", "dataset_precision", "", ckpt_paths=[str(deployment_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-deployment-eval",
-                    "--require-deployment-student-checkpoint",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("deployment checkpoint linkage deployment_student checkpoint", result.stdout)
-        self.assertIn("is not listed in precision_student eval checkpoints", result.stdout)
-        self.assertIn("deployment checkpoint linkage precision_student checkpoint", result.stdout)
-        self.assertIn("is not listed in deployment_student eval checkpoints", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_missing_precision_label_domain(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    label_domains=["source"],
-                ),
-                eval_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    label_domains=["source"],
-                ),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--required-label-domain",
-                    "precision_profile",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("precision_teacher missing required label-domain slice(s): precision_profile", result.stdout)
-        self.assertIn("precision_student missing required label-domain slice(s): precision_profile", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_low_eval_label_domain_count(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    label_domains=["precision_profile"],
-                    label_domain_counts={"precision_profile": 1},
-                ),
-                eval_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    label_domains=["precision_profile"],
-                    label_domain_counts={"precision_profile": 1},
-                ),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--required-label-domain",
-                    "precision_profile",
-                    "--min-eval-precision-labels",
-                    "2",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "precision_teacher eval label-domain 'precision_profile' count 1 is below required 2",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_student eval label-domain 'precision_profile' count 1 is below required 2",
-            result.stdout,
-        )
-
-    def test_check_precision_transfer_results_rejects_low_eval_precision_config_count(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    precision_config_counts={"fp32_ieee": 8, "bf16_amp": 1},
-                ),
-                eval_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    precision_config_counts={"fp32_ieee": 8, "bf16_amp": 1},
-                ),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--min-eval-precision-count",
-                    "bf16_amp=2",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "precision_teacher eval precision_config 'bf16_amp' count 1 is below required 2",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_student eval precision_config 'bf16_amp' count 1 is below required 2",
-            result.stdout,
-        )
-
-    def test_check_precision_transfer_results_rejects_low_eval_hardware_id_count(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    hardware_id_counts={"a100": 1, "rtx3090": 8},
-                ),
-                eval_result_row(
-                    "precision_distill_student_128",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    hardware_id_counts={"a100": 1, "rtx3090": 8},
-                ),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--min-eval-hardware-count",
-                    "a100=2",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn(
-            "precision_teacher eval hardware_id 'a100' count 1 is below required 2",
-            result.stdout,
-        )
-        self.assertIn(
-            "precision_student eval hardware_id 'a100' count 1 is below required 2",
-            result.stdout,
-        )
-
-    def test_check_precision_transfer_results_rejects_missing_checkpoint_files(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            missing_ckpt = Path(tmp) / "missing_seernet_multi.pt"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], ckpt_paths=[str(missing_ckpt)]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(missing_ckpt)]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], ckpt_paths=[str(missing_ckpt)]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--require-checkpoint-files",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("checkpoint file is missing", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_insufficient_slice_counts(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--min-label-domain-slices",
-                    "2",
-                    "--min-batch-size-slices",
-                    "2",
-                    "--min-resource-regime-slices",
-                    "2",
-                    "--min-graph-signature-slices",
-                    "2",
-                    "--min-graph-family-slices",
-                    "2",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("metrics_by_label_domain has 1 slice(s), below required 2", result.stdout)
-        self.assertIn("metrics_by_batch_size has 1 slice(s), below required 2", result.stdout)
-        self.assertIn("metrics_by_resource_regime has 1 slice(s), below required 2", result.stdout)
-        self.assertIn("metrics_by_graph_signature has 1 slice(s), below required 2", result.stdout)
-        self.assertIn("metrics_by_graph_family has 1 slice(s), below required 2", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_missing_required_split_unit(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], split_unit=None),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], split_unit=None),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], split_unit=None),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--required-split-unit",
-                    "graph_signature",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("split_unit None does not match required 'graph_signature'", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_missing_split_hash_evidence(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], test_hash=None),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"], test_hash=None),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], test_hash=None),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--required-split-unit",
-                    "graph_signature",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("source_teacher test_hash is missing", result.stdout)
-        self.assertIn("precision_teacher test_hash is missing", result.stdout)
-        self.assertIn("precision_student test_hash is missing", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_checkpoint_split_hash_mismatch(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"], checkpoint_test_hash="eval-test-hash"),
-                eval_result_row(
-                    "precision_large_teacher_transfer",
-                    "dataset_precision",
-                    ["fp32_ieee", "bf16_amp"],
-                    checkpoint_test_hash="different-checkpoint-hash",
-                ),
-                eval_result_row("precision_distill_student_128", "dataset_precision", ["fp32_ieee", "bf16_amp"], checkpoint_test_hash="eval-test-hash"),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                    "--required-split-unit",
-                    "graph_signature",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("precision_teacher test_hash 'eval-test-hash' does not match checkpoint_test_hash 'different-checkpoint-hash'", result.stdout)
-
-    def test_check_precision_transfer_results_rejects_missing_student_eval(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            results = Path(tmp) / "results.jsonl"
-            rows = [
-                eval_result_row("precision_large_teacher_source", "dataset_source", ["fp32_ieee"]),
-                eval_result_row("precision_large_teacher_transfer", "dataset_precision", ["fp32_ieee", "bf16_amp"]),
-            ]
-            results.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-
-            result = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "scripts" / "check_precision_transfer_results.py"),
-                    "--results",
-                    str(results),
-                    "--source-data-root",
-                    "dataset_source",
-                    "--precision-data-root",
-                    "dataset_precision",
-                    "--required-precision",
-                    "bf16_amp",
-                ],
-                text=True,
-                capture_output=True,
-            )
-
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("missing precision_student eval row", result.stdout)
+    def test_nvfp4_precision_features_use_fp4_encoding(self) -> None:
+        from perfseer_optimized.data import FeatureConfig, precision_config_index, precision_hardware_config
+
+        cfg = FeatureConfig(precision_config="fp4", include_precision_features=True)
+        resolved = precision_hardware_config(cfg)["resolved_precision"]
+
+        self.assertEqual(precision_config_index("nvfp4"), precision_config_index("nvfp4_te"))
+        self.assertEqual(resolved["weight_dtype"], "fp4_e2m1")
+        self.assertEqual(resolved["activation_dtype"], "fp4_e2m1")
+        self.assertEqual(resolved["grad_dtype"], "fp4_e2m1")
+        self.assertEqual(resolved["tensorcore_mode"], "fp4")
+        self.assertEqual(resolved["fp4_format"], "nvfp4_e2m1")
+        with self.assertRaisesRegex(ValueError, "mxfp8 is out of scope"):
+            precision_config_index("mxfp8")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760" role="img" aria-labelledby="title desc">
+  <title id="title">PerfSeer hardware teacher and distilled student model pair</title>
+  <desc id="desc">End-to-end structure diagram for the scratch hardware teacher and default distilled student workflow.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263238"/>
+    </marker>
+    <linearGradient id="teacherGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e8f4ff"/>
+      <stop offset="100%" stop-color="#d6eaf8"/>
+    </linearGradient>
+    <linearGradient id="studentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#eaf8ef"/>
+      <stop offset="100%" stop-color="#d8f0df"/>
+    </linearGradient>
+    <style>
+      .bg { fill: #f8faf7; }
+      .panel { stroke: #455a64; stroke-width: 2; rx: 8; ry: 8; }
+      .box { fill: #ffffff; stroke: #607d8b; stroke-width: 1.5; rx: 6; ry: 6; }
+      .note { fill: #fff8e1; stroke: #b08900; stroke-width: 1.4; rx: 6; ry: 6; }
+      .distill { fill: #f4ecff; stroke: #7e57c2; stroke-width: 1.7; rx: 8; ry: 8; }
+      .title { font: 700 28px Arial, sans-serif; fill: #1f2a30; }
+      .subtitle { font: 400 15px Arial, sans-serif; fill: #455a64; }
+      .h2 { font: 700 18px Arial, sans-serif; fill: #1f2a30; }
+      .h3 { font: 700 15px Arial, sans-serif; fill: #263238; }
+      .txt { font: 400 13px Arial, sans-serif; fill: #263238; }
+      .small { font: 400 12px Arial, sans-serif; fill: #455a64; }
+      .mono { font: 400 12px "DejaVu Sans Mono", Consolas, monospace; fill: #37474f; }
+      .arrow { stroke: #263238; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .thin { stroke: #78909c; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #7e57c2; stroke-width: 2; fill: none; stroke-dasharray: 7 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1280" height="760"/>
+  <text class="title" x="46" y="46">Hardware teacher / distilled student pair</text>
+  <text class="subtitle" x="48" y="72">Default runner pair: hardware_large_teacher_&lt;hardware-id&gt; -> hardware_distill_student_128_&lt;hardware-id&gt;</text>
+
+  <rect class="panel" x="42" y="112" width="238" height="326" fill="#eef5f2"/>
+  <text class="h2" x="62" y="145">Training data</text>
+  <rect class="box" x="62" y="168" width="198" height="70"/>
+  <text class="h3" x="78" y="194">Graph tensors</text>
+  <text class="txt" x="78" y="216">node x, edge_attr, edge_index</text>
+  <rect class="box" x="62" y="252" width="198" height="76"/>
+  <text class="h3" x="78" y="278">Global features u</text>
+  <text class="txt" x="78" y="300">topology, critical path,</text>
+  <text class="txt" x="78" y="318">destination tensor features</text>
+  <rect class="box" x="62" y="342" width="198" height="72"/>
+  <text class="h3" x="78" y="368">Precision slice</text>
+  <text class="txt" x="78" y="390">precision_config=fp32_ieee</text>
+  <text class="txt" x="78" y="408">hardware_id override per GPU</text>
+
+  <rect class="panel" x="340" y="102" width="330" height="420" fill="url(#teacherGrad)"/>
+  <text class="h2" x="365" y="137">Teacher: hardware_large_teacher</text>
+  <text class="small" x="365" y="160">scratch-trained per hardware class</text>
+  <rect class="box" x="365" y="184" width="280" height="56"/>
+  <text class="h3" x="385" y="208">Input encoders</text>
+  <text class="txt" x="385" y="229">node, edge, global -> hidden 512</text>
+  <rect class="box" x="365" y="258" width="280" height="92"/>
+  <text class="h3" x="385" y="282">4 x SeerBlock</text>
+  <text class="txt" x="385" y="304">prenorm gated residual streams</text>
+  <text class="txt" x="385" y="324">edge/node/global/GNPB updates</text>
+  <text class="txt" x="385" y="344">z MLP uses 4 linear layers</text>
+  <rect class="box" x="365" y="368" width="280" height="68"/>
+  <text class="h3" x="385" y="392">Graph pooling</text>
+  <text class="txt" x="385" y="414">SynMMPlus + attention graph pool</text>
+  <rect class="box" x="365" y="454" width="280" height="46"/>
+  <text class="h3" x="385" y="482">6 separate metric heads</text>
+
+  <rect class="distill" x="735" y="176" width="206" height="218"/>
+  <text class="h2" x="764" y="210">Distillation</text>
+  <rect class="box" x="760" y="232" width="156" height="46"/>
+  <text class="h3" x="775" y="260">Teacher predictions</text>
+  <rect class="box" x="760" y="292" width="156" height="46"/>
+  <text class="h3" x="779" y="320">Hard labels</text>
+  <text class="small" x="756" y="361">alpha=0.5</text>
+  <text class="small" x="756" y="380">precision_hard_alpha=1.0</text>
+
+  <rect class="panel" x="1000" y="102" width="238" height="420" fill="url(#studentGrad)"/>
+  <text class="h2" x="1024" y="137">Student: distill 128</text>
+  <text class="small" x="1024" y="160">default deployment candidate</text>
+  <rect class="box" x="1024" y="184" width="190" height="56"/>
+  <text class="h3" x="1040" y="208">Input encoders</text>
+  <text class="txt" x="1040" y="229">hidden 128</text>
+  <rect class="box" x="1024" y="258" width="190" height="92"/>
+  <text class="h3" x="1040" y="282">2 x SeerBlock</text>
+  <text class="txt" x="1040" y="304">prenorm gated residual</text>
+  <text class="txt" x="1040" y="324">GNPB enabled</text>
+  <text class="txt" x="1040" y="344">z MLP: 3 linear layers</text>
+  <rect class="box" x="1024" y="368" width="190" height="68"/>
+  <text class="h3" x="1040" y="392">Graph pooling</text>
+  <text class="txt" x="1040" y="414">SynMM, no attention pool</text>
+  <rect class="box" x="1024" y="454" width="190" height="46"/>
+  <text class="h3" x="1040" y="482">6 metric heads</text>
+
+  <rect class="note" x="340" y="570" width="330" height="96"/>
+  <text class="h3" x="360" y="599">Teacher checkpoint</text>
+  <text class="mono" x="360" y="624">runs/optimized/</text>
+  <text class="mono" x="360" y="644">hardware_large_teacher_&lt;gpu&gt;/</text>
+  <text class="mono" x="360" y="664">seernet_multi.pt</text>
+
+  <rect class="note" x="1000" y="570" width="238" height="96"/>
+  <text class="h3" x="1018" y="599">Student artifact</text>
+  <text class="mono" x="1018" y="624">hardware_distill_</text>
+  <text class="mono" x="1018" y="644">student_128_&lt;gpu&gt;/</text>
+  <text class="small" x="1018" y="664">192-wide variant is a sibling config.</text>
+
+  <path class="arrow" d="M 280 275 C 305 275, 315 275, 340 275"/>
+  <path class="arrow" d="M 670 286 C 700 286, 710 286, 735 286"/>
+  <path class="arrow" d="M 941 286 C 963 286, 976 286, 1000 286"/>
+  <path class="thin" d="M 505 522 L 505 570"/>
+  <path class="dash" d="M 670 618 C 730 618, 744 340, 760 258"/>
+  <path class="thin" d="M 1119 522 L 1119 570"/>
+
+  <text class="small" x="302" y="262">filtered graph split</text>
+  <text class="small" x="692" y="272">checkpoint logits</text>
+  <text class="small" x="948" y="272">mixed loss</text>
+
+  <rect class="box" x="74" y="515" width="1018" height="28" opacity="0.96"/>
+  <text class="small" x="92" y="534">Targets: train_util, train_mem, train_time, infer_util, infer_mem, infer_time. Calibration is enabled with a linear post-fit for both teacher and student runs.</text>
+</svg>

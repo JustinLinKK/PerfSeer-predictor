@@ -7,6 +7,8 @@ from pathlib import Path
 
 
 if __package__ is None or __package__ == "":
+    package_dir = str(Path(__file__).resolve().parent)
+    sys.path = [item for item in sys.path if item != package_dir]
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from nrp_calibration_pack.build_pack import main  # noqa: E402
