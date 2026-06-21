@@ -117,6 +117,9 @@ python /tmp/nrp_calibration_smoke_pack/profile/run_profile.py \
 
 This profiles two tiny selected models on CPU and writes labels under
 `/tmp/perfseer_calibration_smoke/label/label/`.
+Rerunning the same profiler command resumes by default: completed labels listed
+in `results_shard<I>.jsonl` are skipped, and incomplete interrupted profile
+points are retried. Pass `--no-resume` to intentionally regenerate a shard.
 
 ## Build Image
 
@@ -190,6 +193,8 @@ The job writes:
 
 Pass `--hardware-id` during profiling or submission to store stable hardware
 labels such as `rtx3090`, `rtx4090`, or `rtx5090` in those outputs.
+If a profiling job is interrupted or restarted, use the same output directory
+and shard arguments; the profiler will continue from the last completed label.
 
 The label format is:
 

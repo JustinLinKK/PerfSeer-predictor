@@ -185,6 +185,12 @@ python nrp_calibration_pack/profile/run_profile.py \
   --num-shards <N> \
   --shard-index <I>
 ```
+Profiling resumes by default. If a job is paused, interrupted, evicted, or
+restarted with the same `--output-dir`, `--num-shards`, and `--shard-index`,
+`run_profile.py` scans `results_shard<I>.jsonl` plus the corresponding label
+files and skips profile points whose labels are already complete. Use
+`--no-resume` only when you intentionally want to reprofile a shard from the
+beginning.
 
 Repeat on RTX 3090 and RTX 5090 by changing only `--output-dir`,
 `--hardware-id`, and the actual hardware/node affinity:

@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="820" viewBox="0 0 1120 820" role="img" aria-labelledby="title desc">
+  <title id="title">PerfSeer hardware distilled student 128 structure</title>
+  <desc id="desc">Detailed SVG structure diagram for the hardware_distill_student_128 SeerNetMulti configuration.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263238"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fbf8; }
+      .box { fill: #ffffff; stroke: #546e7a; stroke-width: 1.5; rx: 7; ry: 7; }
+      .block { fill: #eaf8ef; stroke: #3f7f50; stroke-width: 1.8; rx: 8; ry: 8; }
+      .distill { fill: #f4ecff; stroke: #7e57c2; stroke-width: 1.7; rx: 8; ry: 8; }
+      .head { fill: #fff7e6; stroke: #b77b00; stroke-width: 1.5; rx: 6; ry: 6; }
+      .title { font: 700 28px Arial, sans-serif; fill: #1f2a30; }
+      .subtitle { font: 400 14px Arial, sans-serif; fill: #455a64; }
+      .h2 { font: 700 17px Arial, sans-serif; fill: #263238; }
+      .txt { font: 400 13px Arial, sans-serif; fill: #263238; }
+      .small { font: 400 12px Arial, sans-serif; fill: #455a64; }
+      .mono { font: 400 12px "DejaVu Sans Mono", Consolas, monospace; fill: #37474f; }
+      .arrow { stroke: #263238; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .thin { stroke: #607d8b; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #7e57c2; stroke-width: 2; fill: none; stroke-dasharray: 7 5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1120" height="820"/>
+  <text class="title" x="44" y="48">Student structure: hardware_distill_student_128</text>
+  <text class="subtitle" x="46" y="73">SeerNetMulti, hidden=128, head_hidden=128, num_blocks=2, metric_heads=separate</text>
+
+  <rect class="box" x="54" y="116" width="224" height="178"/>
+  <text class="h2" x="76" y="146">Graph input</text>
+  <text class="txt" x="76" y="174">Same graph feature schema</text>
+  <text class="txt" x="76" y="198">precision features enabled</text>
+  <text class="txt" x="76" y="222">hardware filter per run</text>
+  <text class="txt" x="76" y="246">target_mode=absolute</text>
+  <text class="txt" x="76" y="270">time_target_mode=raw</text>
+
+  <rect class="box" x="342" y="108" width="248" height="78"/>
+  <text class="h2" x="365" y="139">Input encoders</text>
+  <text class="txt" x="365" y="164">Linear node/edge/global -> 128</text>
+
+  <rect class="box" x="342" y="216" width="248" height="78"/>
+  <text class="h2" x="365" y="247">Initial z stream</text>
+  <text class="txt" x="365" y="272">SoftmaxNodeAgg(v) -> z_graph</text>
+
+  <rect class="block" x="650" y="108" width="402" height="356"/>
+  <text class="h2" x="676" y="140">2 repeated SeerBlocks</text>
+  <text class="small" x="676" y="162">prenorm, dropout=0.05, gated residual, scalar_per_stream gates</text>
+
+  <rect class="box" x="682" y="186" width="338" height="54"/>
+  <text class="h2" x="700" y="209">Edge update</text>
+  <text class="txt" x="700" y="230">MLP_e([e, v_src, v_dst, u_graph]) -> e_new</text>
+
+  <rect class="box" x="682" y="258" width="338" height="54"/>
+  <text class="h2" x="700" y="281">Node update</text>
+  <text class="txt" x="700" y="302">MLP_v([mean(e_new), v + z, u_node]) -> v_new</text>
+
+  <rect class="box" x="682" y="330" width="338" height="54"/>
+  <text class="h2" x="700" y="354">GNPB z update</text>
+  <text class="txt" x="700" y="376">SoftmaxNodeAgg + MLP_z, 3 linear layers</text>
+
+  <rect class="box" x="682" y="402" width="338" height="42"/>
+  <text class="h2" x="700" y="429">Graph/global update: SynMM -> MLP_u</text>
+
+  <rect class="distill" x="54" y="352" width="536" height="116"/>
+  <text class="h2" x="76" y="384">Distillation signal</text>
+  <text class="txt" x="76" y="412">Teacher checkpoint directory feeds converted teacher predictions in student target space.</text>
+  <text class="txt" x="76" y="438">Loss mixes hard labels and teacher outputs: alpha=0.5, precision_hard_alpha=1.0.</text>
+
+  <rect class="box" x="342" y="548" width="248" height="74"/>
+  <text class="h2" x="365" y="579">Graph representation</text>
+  <text class="txt" x="365" y="604">u stream from final block</text>
+
+  <rect class="head" x="650" y="548" width="402" height="156"/>
+  <text class="h2" x="676" y="580">Separate metric heads</text>
+  <text class="txt" x="676" y="608">6 independent MLP heads, each hidden=128 -> 1</text>
+  <text class="txt" x="676" y="636">train_util, train_mem, train_time</text>
+  <text class="txt" x="676" y="660">infer_util, infer_mem, infer_time</text>
+  <text class="txt" x="676" y="688">Linear calibration is enabled after training.</text>
+
+  <rect class="box" x="54" y="548" width="224" height="128"/>
+  <text class="h2" x="76" y="579">Training policy</text>
+  <text class="txt" x="76" y="606">epochs=500, batch=128</text>
+  <text class="txt" x="76" y="630">AdamW lr=0.001</text>
+  <text class="txt" x="76" y="654">multi-task plain_sum loss</text>
+  <text class="small" x="76" y="674">192 variant changes width to 192.</text>
+
+  <path class="arrow" d="M 278 155 C 306 155, 314 147, 342 147"/>
+  <path class="thin" d="M 466 186 L 466 216"/>
+  <path class="arrow" d="M 590 147 C 616 147, 626 147, 650 147"/>
+  <path class="arrow" d="M 590 255 C 620 255, 626 236, 650 236"/>
+  <path class="dash" d="M 322 352 C 380 312, 520 297, 650 286"/>
+  <path class="arrow" d="M 851 464 L 851 548"/>
+  <path class="arrow" d="M 590 585 C 618 585, 628 626, 650 626"/>
+
+  <text class="mono" x="54" y="756">config: src/perfseer-optimized/configs/train_deploy_model/distill_student_128.yaml</text>
+</svg>

@@ -47,6 +47,12 @@ python nrp_calibration_pack/profile/run_profile.py \
   --shard-index <I>
 ```
 
+Profiling has a built-in checkpoint: rerun the same command with the same
+`--output-dir`, `--num-shards`, and `--shard-index` to continue after a pause,
+manual interrupt, or job eviction. The profiler skips rows only when both the
+completed result row and label file already exist; any half-finished row is
+retried. Use `--no-resume` to start a shard over.
+
 Use a separate result directory for each hardware ID, such as
 `nrp_results_rtx3090`, `nrp_results_rtx4090`, and `nrp_results_rtx5090`.
 

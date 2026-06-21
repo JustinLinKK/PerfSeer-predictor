@@ -52,6 +52,13 @@ class SampleStats:
 
 
 @dataclass
+class ResumeCheckpoint:
+    completed_profile_points: set[str]
+    malformed_rows: int = 0
+    incomplete_rows: int = 0
+
+
+@dataclass
 class PrecisionRuntime:
     config: str
     device_type: str
@@ -104,6 +111,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--precision-config", action="append", help="Precision config(s) to profile. May be repeated or comma-separated.")
     parser.add_argument("--precision-sweep", help="Comma-separated precision config filter. Overrides manifest precision rows only by filtering them.")
     parser.add_argument("--fp8-backend", default="transformer_engine", choices=("transformer_engine", "none"))
+    resume_group = parser.add_mutually_exclusive_group()
+    resume_group.add_argument(
+        "--resume",
+        dest="resume",
+        action="store_true",
+        default=True,
+        help="Skip profile points that already have a completed result row and label file. Enabled by default.",
+    )
+    resume_group.add_argument(
+        "--no-resume",
+        dest="resume",
+        action="store_false",
+        help="Reprofile all rows for this shard even if previous outputs exist.",
+    )
     args = parser.parse_args(argv)
     if args.warmup < 0:
         parser.error("--warmup must be >= 0")
@@ -142,6 +163,55 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
             if line.strip():
                 rows.append(json.loads(line))
     return rows
+
+
+def profile_point_id(row: dict[str, Any]) -> str:
+    precision_config = normalize_precision_config(str(row.get("precision_config", DEFAULT_PRECISION_CONFIG)))
+    return str(row.get("profile_point_id", f"{row['model_id']}::{precision_config}"))
+
+
+def label_file_for_row(row: dict[str, Any], precision_config: str) -> str:
+    return str(row.get("label_file", f"label/label/{row['model_id']}_{precision_config}.txt"))
+
+
+def write_text_atomic(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}")
+    with tmp_path.open("w") as fh:
+        fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
+    tmp_path.replace(path)
+
+
+def load_resume_checkpoint(output_dir: Path, results_path: Path) -> ResumeCheckpoint:
+    checkpoint = ResumeCheckpoint(completed_profile_points=set())
+    if not results_path.exists():
+        return checkpoint
+    with results_path.open("r") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                checkpoint.malformed_rows += 1
+                continue
+            profile_id = str(row.get("profile_point_id") or "")
+            label_file = str(row.get("label_file") or "")
+            label_path = output_dir / label_file if label_file else None
+            has_label = label_path is not None and label_path.is_file() and label_path.stat().st_size > 0
+            if row.get("status") == "ok" and isinstance(row.get("label"), dict) and profile_id and has_label:
+                checkpoint.completed_profile_points.add(profile_id)
+            elif row.get("status") == "ok":
+                checkpoint.incomplete_rows += 1
+    return checkpoint
+
+
+def append_result_row(results_fh, result: dict[str, Any]) -> None:
+    results_fh.write(json.dumps(result, sort_keys=True) + "\n")
+    results_fh.flush()
+    os.fsync(results_fh.fileno())
 
 
 def load_profile_dataset_spec(model_id: str, profile_dataset_dir: str | None) -> dict[str, Any]:
@@ -639,14 +709,14 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
     result: dict[str, Any] = {
         "model_id": row["model_id"],
         "graph_id": row.get("graph_id", row["model_id"]),
-        "profile_point_id": row.get("profile_point_id", f"{row['model_id']}::{precision_config}"),
+        "profile_point_id": profile_point_id(row),
         "stem": row.get("original_stem", row.get("stem", row["model_id"])),
         "status": "ok",
         "input_shape": list(input_shape),
         "input_specs": input_specs,
         "batch_size": batch_size,
         "model_file": row["model_file"],
-        "label_file": row.get("label_file", f"label/label/{row['model_id']}_{precision_config}.txt"),
+        "label_file": label_file_for_row(row, precision_config),
         "hardware_id": normalize_hardware_id(args.hardware_id),
         "precision_config": precision_config,
         "precision": runtime.to_metadata(),
@@ -761,17 +831,37 @@ def main(argv: list[str] | None = None) -> None:
     (output_dir / f"hardware_shard{args.shard_index}.json").write_text(json.dumps(hardware, indent=2, sort_keys=True) + "\n")
 
     results_path = output_dir / f"results_shard{args.shard_index}.jsonl"
-    with results_path.open("a") as results_fh:
-        for row in shard_rows:
-            result = profile_model(row, Path(args.models_dir), device, args)
-            result.update({"hardware": hardware, "shard_index": args.shard_index, "num_shards": args.num_shards})
-            results_fh.write(json.dumps(result, sort_keys=True) + "\n")
-            results_fh.flush()
-            if result.get("status") == "ok":
-                label_path = output_dir / result["label_file"]
-                label_path.parent.mkdir(parents=True, exist_ok=True)
-                label_path.write_text(repr(result["label"]) + "\n")
-            print(f"{result['profile_point_id']}: {result['status']}", flush=True)
+    resume_checkpoint = load_resume_checkpoint(output_dir, results_path) if args.resume else ResumeCheckpoint(set())
+    if args.resume:
+        print(
+            "resume checkpoint: "
+            f"{len(resume_checkpoint.completed_profile_points)} completed label(s), "
+            f"{resume_checkpoint.incomplete_rows} incomplete ok row(s), "
+            f"{resume_checkpoint.malformed_rows} malformed row(s)",
+            flush=True,
+        )
+    try:
+        with results_path.open("a") as results_fh:
+            for row in shard_rows:
+                point_id = profile_point_id(row)
+                if args.resume and point_id in resume_checkpoint.completed_profile_points:
+                    print(f"{point_id}: skip_completed", flush=True)
+                    continue
+                result = profile_model(row, Path(args.models_dir), device, args)
+                result.update({"hardware": hardware, "shard_index": args.shard_index, "num_shards": args.num_shards})
+                if result.get("status") == "ok":
+                    label_path = output_dir / result["label_file"]
+                    write_text_atomic(label_path, repr(result["label"]) + "\n")
+                    resume_checkpoint.completed_profile_points.add(str(result["profile_point_id"]))
+                append_result_row(results_fh, result)
+                print(f"{result['profile_point_id']}: {result['status']}", flush=True)
+    except KeyboardInterrupt:
+        print(
+            "\nInterrupted. Rerun the same command to resume from the last completed label.",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise SystemExit(130)
 
 
 if __name__ == "__main__":

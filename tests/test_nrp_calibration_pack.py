@@ -815,6 +815,46 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertEqual(result["hardware"]["hardware_id"], "rtx4090")
         self.assertEqual(hardware["hardware_id"], "rtx4090")
 
+    def test_profiler_resumes_completed_labels_without_duplicate_rows(self) -> None:
+        graph = sequential_graph()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_path = tmp_path / "graph.pkl"
+            with graph_path.open("wb") as fh:
+                pickle.dump(graph, fh)
+            graph_record = record("original_stem", graph_path=str(graph_path), label_path=str(tmp_path / "original_stem.txt"))
+            write_pack([graph_record], [graph_record], tmp_path / "pack", "compile", precision_sweep=("fp32_ieee",))
+            cmd = [
+                sys.executable,
+                str(ROOT / "nrp_calibration_pack" / "profile" / "run_profile.py"),
+                "--manifest",
+                str(tmp_path / "pack" / "manifest" / "subset_manifest.jsonl"),
+                "--models-dir",
+                str(tmp_path / "pack" / "models"),
+                "--output-dir",
+                str(tmp_path / "out"),
+                "--num-shards",
+                "1",
+                "--precision-config",
+                "fp32_ieee",
+                "--warmup",
+                "0",
+                "--infer-repeats",
+                "1",
+                "--train-repeats",
+                "1",
+                "--device",
+                "cpu",
+            ]
+
+            subprocess.run(cmd, check=True, text=True, capture_output=True)
+            second = subprocess.run(cmd, check=True, text=True, capture_output=True)
+            result_lines = (tmp_path / "out" / "results_shard0.jsonl").read_text().splitlines()
+
+        self.assertEqual(len(result_lines), 1)
+        self.assertIn("resume checkpoint: 1 completed label(s)", second.stdout)
+        self.assertIn("calib_0000::fp32_ieee: skip_completed", second.stdout)
+
     def test_profiler_uses_profile_dataset_specs_for_repeat_timing(self) -> None:
         graph = sequential_graph()
         with tempfile.TemporaryDirectory() as tmp:
