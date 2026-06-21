@@ -72,10 +72,15 @@ def normalize_precision_config(value: str) -> str:
         "fp8_te_hybrid": "fp8_te_hybrid",
         "fp8_e4m3": "fp8_e4m3",
         "fp8_e5m2": "fp8_e5m2",
+        "fp4": "nvfp4_te",
+        "nvfp4": "nvfp4_te",
+        "nvfp4_te": "nvfp4_te",
         "unknown": UNKNOWN_PRECISION_CONFIG,
     }
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
+    if key == "mxfp8":
+        raise ValueError("mxfp8 is out of scope for v1; use fp8_te_hybrid or nvfp4_te")
     if key not in aliases:
         allowed = ", ".join(sorted(set(aliases.values())))
         raise ValueError(f"unknown precision config {value!r}; expected one of: {allowed}")
@@ -219,8 +224,11 @@ def record_skip(report: dict[str, Any], row: dict[str, Any], status: str, reason
     bump_nested(report["skipped_by_status"], status, precision_config)
     if fallback_policy and fallback_policy != "none":
         bump_nested(report["fallback_policy_counts"], fallback_policy, precision_config)
-    if precision_config.startswith("fp8_") and status in {"unsupported_precision", "unsupported", "error", "oom"}:
+    if precision_config.startswith("fp8_") and status in {"unsupported_precision", "unsupported", "unsupported_low_precision_op", "error", "oom"}:
         bump(report, "unsupported_fp8_rows")
+    if precision_config.startswith("fp8_") or precision_config == "nvfp4_te":
+        if status in {"unsupported_precision", "unsupported", "unsupported_low_precision_op", "error", "oom"}:
+            bump(report, "unsupported_low_precision_rows")
     return rejected_row_summary(row, status, reason)
 
 
@@ -336,6 +344,7 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "skipped_by_status": {},
         "fallback_policy_counts": {},
         "unsupported_fp8_rows": 0,
+        "unsupported_low_precision_rows": 0,
         "rejected_rows_file": str(rejected_path.name),
         "result_dirs": [str(path) for path in results_dirs],
         "result_files": [str(path) for path in result_paths],

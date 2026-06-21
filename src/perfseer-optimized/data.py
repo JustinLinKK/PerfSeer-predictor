@@ -41,9 +41,10 @@ TARGET_NAMES: list[str] = [
 ]
 
 UNKNOWN_PRECISION_CONFIG = "unknown"
-DTYPE_VOCAB = ("fp32", "tf32", "bf16", "fp16", "fp8_e4m3", "fp8_e5m2", "unknown")
-TENSORCORE_MODES = ("none", "tf32", "bf16", "fp16", "fp8", "unknown")
+DTYPE_VOCAB = ("fp32", "tf32", "bf16", "fp16", "fp8_e4m3", "fp8_e5m2", "fp4_e2m1", "unknown")
+TENSORCORE_MODES = ("none", "tf32", "bf16", "fp16", "fp8", "fp4", "unknown")
 FP8_FORMATS = ("none", "e4m3", "e5m2", "hybrid_e4m3_e5m2", "unknown")
+FP4_FORMATS = ("none", "nvfp4_e2m1", "unknown")
 PRECISION_CONFIG_VOCAB = (
     "fp32_ieee",
     "tf32",
@@ -52,6 +53,7 @@ PRECISION_CONFIG_VOCAB = (
     "fp8_te_hybrid",
     "fp8_e4m3",
     "fp8_e5m2",
+    "nvfp4_te",
     UNKNOWN_PRECISION_CONFIG,
 )
 RESOURCE_REGIME_VOCAB = ("small_overhead", "memory_bound", "balanced", "compute_bound")
@@ -76,6 +78,7 @@ DTYPE_BYTES = {
     "fp16": 2.0,
     "fp8_e4m3": 1.0,
     "fp8_e5m2": 1.0,
+    "fp4_e2m1": 0.5,
 }
 PRECISION_PRESETS: dict[str, dict[str, str]] = {
     UNKNOWN_PRECISION_CONFIG: {
@@ -86,6 +89,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "unknown",
         "tensorcore_mode": "unknown",
         "fp8_format": "unknown",
+        "fp4_format": "unknown",
     },
     "fp32_ieee": {
         "weight_dtype": "fp32",
@@ -95,6 +99,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "none",
         "fp8_format": "none",
+        "fp4_format": "none",
     },
     "tf32": {
         "weight_dtype": "fp32",
@@ -104,6 +109,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "tf32",
         "fp8_format": "none",
+        "fp4_format": "none",
     },
     "bf16_amp": {
         "weight_dtype": "fp32",
@@ -113,6 +119,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "bf16",
         "fp8_format": "none",
+        "fp4_format": "none",
     },
     "fp16_amp": {
         "weight_dtype": "fp32",
@@ -122,6 +129,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "fp16",
         "fp8_format": "none",
+        "fp4_format": "none",
     },
     "fp8_te_hybrid": {
         "weight_dtype": "fp8_e4m3",
@@ -131,6 +139,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "fp8",
         "fp8_format": "hybrid_e4m3_e5m2",
+        "fp4_format": "none",
     },
     "fp8_e4m3": {
         "weight_dtype": "fp8_e4m3",
@@ -140,6 +149,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "fp8",
         "fp8_format": "e4m3",
+        "fp4_format": "none",
     },
     "fp8_e5m2": {
         "weight_dtype": "fp8_e5m2",
@@ -149,6 +159,17 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "fp8",
         "fp8_format": "e5m2",
+        "fp4_format": "none",
+    },
+    "nvfp4_te": {
+        "weight_dtype": "fp4_e2m1",
+        "activation_dtype": "fp4_e2m1",
+        "grad_dtype": "fp4_e2m1",
+        "accum_dtype": "fp32",
+        "optimizer_state_dtype": "fp32",
+        "tensorcore_mode": "fp4",
+        "fp8_format": "none",
+        "fp4_format": "nvfp4_e2m1",
     },
 }
 
@@ -187,6 +208,7 @@ class FeatureConfig:
     optimizer_state_dtype: str = ""
     tensorcore_mode: str = ""
     fp8_format: str = ""
+    fp4_format: str = ""
     compute_capability: float = 0.0
     architecture_id: float = 0.0
     sm_count: float = 0.0
@@ -346,6 +368,8 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             add_global(f"tensorcore_mode_{mode}", False)
         for fp8_format in FP8_FORMATS:
             add_global(f"fp8_format_{fp8_format}", False)
+        for fp4_format in FP4_FORMATS:
+            add_global(f"fp4_format_{fp4_format}", False)
         for name in [
             "estimated_activation_bytes_log1p",
             "estimated_weight_bytes_log1p",
@@ -438,7 +462,11 @@ def _onehot(value: str, vocab: Sequence[str]) -> list[float]:
 
 
 def _precision_settings(cfg: FeatureConfig) -> dict[str, str]:
-    preset = PRECISION_PRESETS.get((cfg.precision_config or "fp32_ieee").lower(), PRECISION_PRESETS["fp32_ieee"])
+    try:
+        precision_key = normalize_precision_config(cfg.precision_config or "fp32_ieee")
+    except ValueError:
+        precision_key = UNKNOWN_PRECISION_CONFIG
+    preset = PRECISION_PRESETS.get(precision_key, PRECISION_PRESETS["fp32_ieee"])
     settings = dict(preset)
     for field in (
         "weight_dtype",
@@ -448,6 +476,7 @@ def _precision_settings(cfg: FeatureConfig) -> dict[str, str]:
         "optimizer_state_dtype",
         "tensorcore_mode",
         "fp8_format",
+        "fp4_format",
     ):
         value = getattr(cfg, field)
         if value:
@@ -473,6 +502,7 @@ def precision_hardware_config(cfg: FeatureConfig) -> dict[str, Any]:
         "optimizer_state_dtype",
         "tensorcore_mode",
         "fp8_format",
+        "fp4_format",
         "compute_capability",
         "architecture_id",
         "sm_count",
@@ -506,10 +536,15 @@ def normalize_precision_config(value: str) -> str:
         "fp8_te_hybrid": "fp8_te_hybrid",
         "fp8_e4m3": "fp8_e4m3",
         "fp8_e5m2": "fp8_e5m2",
+        "fp4": "nvfp4_te",
+        "nvfp4": "nvfp4_te",
+        "nvfp4_te": "nvfp4_te",
         "unknown": UNKNOWN_PRECISION_CONFIG,
     }
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
+    if key == "mxfp8":
+        raise ValueError("mxfp8 is out of scope for v1; use fp8_te_hybrid or nvfp4_te")
     return aliases.get(key, key)
 
 
@@ -809,7 +844,9 @@ def list_precision_pairs(data_root: str, include_base_pairs: bool = True) -> lis
         for fname in os.listdir(cg_dir)
         if fname.endswith(".pkl")
     }
-    precision_suffix = re.compile(r"^(?P<stem>.+)_(?P<precision>fp32_ieee|tf32|bf16_amp|fp16_amp|fp8_te_hybrid|fp8_e4m3|fp8_e5m2)\.txt$")
+    precision_suffix = re.compile(
+        r"^(?P<stem>.+)_(?P<precision>fp32_ieee|tf32|bf16_amp|fp16_amp|fp8_te_hybrid|fp8_e4m3|fp8_e5m2|nvfp4_te)\.txt$"
+    )
     for fname in sorted(os.listdir(label_dir)):
         match = precision_suffix.match(fname)
         if not match:
@@ -1262,6 +1299,7 @@ def _extract_raw(g: nx.DiGraph, cfg: FeatureConfig) -> tuple[np.ndarray, np.ndar
             u.extend(_onehot(precision[field], DTYPE_VOCAB))
         u.extend(_onehot(precision["tensorcore_mode"], TENSORCORE_MODES))
         u.extend(_onehot(precision["fp8_format"], FP8_FORMATS))
+        u.extend(_onehot(precision["fp4_format"], FP4_FORMATS))
         activation_bytes = _scaled_bytes(totals["mac"], precision["activation_dtype"])
         weight_bytes = _scaled_bytes(totals["weight"], precision["weight_dtype"])
         grad_bytes = _scaled_bytes(totals["weight"], precision["grad_dtype"])

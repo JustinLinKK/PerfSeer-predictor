@@ -137,7 +137,7 @@ python nrp_calibration_pack/generate_model_sources.py \
   --subset-size 10000 \
   --seed 20260617 \
   --out-dir nrp_calibration_pack \
-  --precision-sweep fp32_ieee,tf32,bf16_amp,fp16_amp,fp8_te_hybrid \
+  --precision-sweep fp32_ieee \
   --validation-mode compile \
   --generation-workers "$(nproc)" \
   --force
@@ -157,7 +157,7 @@ python nrp_calibration_pack/profile/make_profile_datasets.py \
 
 Acceptance gates:
 
-- `nrp_calibration_pack/manifest/subset_manifest.jsonl` has 50,000 rows.
+- `nrp_calibration_pack/manifest/subset_manifest.jsonl` has 10,000 source rows.
 - Family quotas match the table above.
 - Every row has architecture, variant, input spec, schema, precision, and model
   path metadata.
@@ -166,17 +166,23 @@ Acceptance gates:
 ## Create Hardware Labels
 
 Profile the exact same pack once per hardware class. Each result root must
-contain only one hardware ID.
+contain only one hardware ID. Use `--precision-sweep auto` for the NRP/NGC
+workflow: the profiler expands the source manifest after CUDA device selection.
+Base precisions run wherever supported, FP8 runs only when Transformer Engine
+and Ada/Hopper/Blackwell-class hardware probes pass, and `nvfp4_te` runs only
+when Transformer Engine reports NVFP4 on Blackwell-class hardware. `fp4` and
+`nvfp4` are accepted input aliases for canonical `nvfp4_te`; `mxfp8` is out of
+scope for v1.
 
-Example for RTX 4090:
+Example for RTX 5090:
 
 ```bash
 python nrp_calibration_pack/profile/run_profile.py \
   --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
   --models-dir nrp_calibration_pack/models \
-  --output-dir nrp_results_rtx4090 \
-  --hardware-id rtx4090 \
-  --precision-sweep fp32_ieee,tf32,bf16_amp,fp16_amp,fp8_te_hybrid \
+  --output-dir nrp_results_rtx5090 \
+  --hardware-id rtx5090 \
+  --precision-sweep auto \
   --profile-dataset-dir nrp_calibration_pack/profile_datasets \
   --device cuda \
   --warmup 20 \
@@ -192,8 +198,16 @@ files and skips profile points whose labels are already complete. Use
 `--no-resume` only when you intentionally want to reprofile a shard from the
 beginning.
 
-Repeat on RTX 3090 and RTX 5090 by changing only `--output-dir`,
-`--hardware-id`, and the actual hardware/node affinity:
+Low-precision v1 is intentionally explicit. Dense, norm, and generated
+attention rows can be rewritten to Transformer Engine modules when they satisfy
+the TE shape-alignment gate: FP8 uses 16-wide feature and leading-dimension
+alignment, while NVFP4 uses 32-wide feature alignment and a leading dimension of
+at least 32. Conv, RNN, graph, message-passing, undersized, and other unsupported
+mixes are recorded as `unsupported_low_precision_op` instead of falling back to
+FP32.
+
+Repeat on each hardware class by changing only `--output-dir`, `--hardware-id`,
+and the actual hardware/node affinity:
 
 ```text
 nrp_results_rtx3090  -> --hardware-id rtx3090
@@ -201,7 +215,52 @@ nrp_results_rtx4090  -> --hardware-id rtx4090
 nrp_results_rtx5090  -> --hardware-id rtx5090
 ```
 
-Materialize one combined dataset:
+## Source-First Nautilus Workflow
+
+Build the profiling image from the repository root. The Dockerfile uses the
+verified NGC PyTorch 26.03 Transformer Engine image by default:
+
+```bash
+docker build -f nrp_calibration_pack/Dockerfile -t <registry>/perfseer-ngc:latest .
+docker push <registry>/perfseer-ngc:latest
+```
+
+Render the three PVC-backed jobs:
+
+```bash
+./nrp_calibration_pack/submit_nrp_source_workflow.sh \
+  --namespace <namespace> \
+  --image <registry>/perfseer-ngc:latest \
+  --pvc <output-pvc> \
+  --gpu-product NVIDIA-GeForce-RTX-5090 \
+  --hardware-id rtx5090 \
+  --parallelism 4 \
+  --completions 64 \
+  --dry-run
+```
+
+Submit stages in order with `--stage prepare`, then `--stage profile`, then
+`--stage package`. The package stage writes
+`perfseer_<hardware_id>_source_labels.tar.gz`, containing `models/*.py`,
+manifests, profile specs, labels, hardware JSON, result JSONL, rejected rows,
+coverage reports, provenance, and a `replay/` copy of the profiler/runtime
+scripts. It excludes generated PKLs, caches, and checkpoints so the download
+stays small.
+
+For audit or reproducibility, rebuild the graph PKLs from the source tarball:
+
+```bash
+python scripts/rebuild_source_tar_dataset.py \
+  --source-tar perfseer_rtx5090_source_labels.tar.gz \
+  --out-root dataset_rtx5090_rebuilt \
+  --force
+```
+
+This reconstructs `dataset_rtx5090_rebuilt/cg/cg/*.pkl` from the generated
+Python source constants, writes accepted labels under `label/label/`, and
+preserves rejected rows in `precision_rejected_rows.jsonl`.
+
+To materialize local explicit result roots into one combined dataset:
 
 ```bash
 python scripts/materialize_precision_dataset.py \
@@ -214,8 +273,21 @@ python scripts/materialize_precision_dataset.py \
 ```
 
 Only `status == "ok"` rows become training labels. Unsupported, OOM, and error
-rows are written to `precision_rejected_rows.jsonl`. FP8 rows are expected there
-until real FP8 GraphModel support is implemented.
+rows are written to `precision_rejected_rows.jsonl`.
+
+The full training path is:
+
+1. `generate_model_sources.py` writes deterministic Python model sources,
+   manifests, coverage reports, and optional local graph PKLs.
+2. `run_profile.py` imports each source model on the target GPU, resolves
+   `--precision-sweep auto`, profiles train/infer timing, and writes labels plus
+   hardware and precision metadata.
+3. `package_source_tar.py` downloads only sources, labels, results, and metadata.
+4. `rebuild_source_tar_dataset.py` regenerates `dataset/cg/cg/*.pkl` from the
+   source pack during audit, or `materialize_precision_dataset.py` materializes
+   local profiler roots directly.
+5. Hardware-filtered teacher/student training reads `precision_metadata.jsonl`
+   and splits only labels matching `--hardware-id`.
 
 ## Train One Model Per Hardware
 
@@ -264,8 +336,10 @@ python -m py_compile \
   nrp_calibration_pack/profile/generated_model_runtime.py \
   nrp_calibration_pack/profile/make_profile_datasets.py \
   nrp_calibration_pack/profile/run_profile.py \
+  nrp_calibration_pack/package_source_tar.py \
   nrp_calibration_pack/template_catalog.py \
   scripts/materialize_precision_dataset.py \
+  scripts/rebuild_source_tar_dataset.py \
   scripts/run_hardware_distill_flow.py \
   src/perfseer/architecture_schema.py \
   src/perfseer-optimized/data.py \

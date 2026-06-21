@@ -22,6 +22,9 @@ import torch.nn.functional as F
 
 MI_B = 1024.0 * 1024.0
 DEFAULT_PRECISION_CONFIG = "fp32_ieee"
+BASE_AUTO_PRECISIONS = ("fp32_ieee", "tf32", "bf16_amp", "fp16_amp")
+FP8_PRECISIONS = {"fp8_te_hybrid", "fp8_e4m3", "fp8_e5m2"}
+TE_LOW_PRECISIONS = FP8_PRECISIONS | {"nvfp4_te"}
 PRECISION_ALIASES = {
     "fp32": "fp32_ieee",
     "float32": "fp32_ieee",
@@ -37,6 +40,9 @@ PRECISION_ALIASES = {
     "fp8_te_hybrid": "fp8_te_hybrid",
     "fp8_e4m3": "fp8_e4m3",
     "fp8_e5m2": "fp8_e5m2",
+    "fp4": "nvfp4_te",
+    "nvfp4": "nvfp4_te",
+    "nvfp4_te": "nvfp4_te",
 }
 
 
@@ -59,6 +65,12 @@ class ResumeCheckpoint:
 
 
 @dataclass
+class PrecisionSelection:
+    auto: bool
+    configs: list[str] | None = None
+
+
+@dataclass
 class PrecisionRuntime:
     config: str
     device_type: str
@@ -69,8 +81,20 @@ class PrecisionRuntime:
     unsupported_reason: str | None = None
     fallback_policy: str = "none"
     details: dict[str, Any] | None = None
+    te_recipe: Any | None = None
+    te_recipe_name: str | None = None
+    model_dtype: torch.dtype | None = None
+    input_dtype: torch.dtype | None = None
 
     def autocast(self):
+        if self.te_recipe is not None:
+            import transformer_engine.pytorch as te
+
+            autocast = getattr(te, "fp8_autocast", None) or getattr(te, "autocast")
+            try:
+                return autocast(enabled=True, fp8_recipe=self.te_recipe)
+            except TypeError:
+                return autocast(enabled=True, recipe=self.te_recipe)
         if self.autocast_dtype is None:
             return contextlib.nullcontext()
         return torch.amp.autocast(self.device_type, dtype=self.autocast_dtype)
@@ -84,6 +108,9 @@ class PrecisionRuntime:
             "fallback_policy": self.fallback_policy,
             "autocast_dtype": str(self.autocast_dtype).replace("torch.", "") if self.autocast_dtype is not None else None,
             "grad_scaler_enabled": self.grad_scaler_enabled,
+            "te_recipe": self.te_recipe_name,
+            "model_dtype": str(self.model_dtype).replace("torch.", "") if self.model_dtype is not None else None,
+            "input_dtype": str(self.input_dtype).replace("torch.", "") if self.input_dtype is not None else None,
             "details": self.details or {},
         }
 
@@ -109,7 +136,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Stable hardware identifier to store in profiler outputs, for example rtx3090, rtx4090, or rtx5090.",
     )
     parser.add_argument("--precision-config", action="append", help="Precision config(s) to profile. May be repeated or comma-separated.")
-    parser.add_argument("--precision-sweep", help="Comma-separated precision config filter. Overrides manifest precision rows only by filtering them.")
+    parser.add_argument(
+        "--precision-sweep",
+        help="Comma-separated precision config filter, or auto to resolve from the current GPU/Transformer Engine environment.",
+    )
     parser.add_argument("--fp8-backend", default="transformer_engine", choices=("transformer_engine", "none"))
     resume_group = parser.add_mutually_exclusive_group()
     resume_group.add_argument(
@@ -138,13 +168,32 @@ def normalize_precision_config(value: str) -> str:
     key = value.strip().lower().replace("-", "_")
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
+    if key == "mxfp8":
+        raise ValueError("mxfp8 is out of scope for v1; use fp8_te_hybrid or nvfp4_te")
     if key not in PRECISION_ALIASES:
         allowed = ", ".join(sorted(PRECISION_ALIASES))
         raise ValueError(f"unknown precision_config {value!r}; expected one of: {allowed}")
     return PRECISION_ALIASES[key]
 
 
-def precision_filter(args: argparse.Namespace) -> set[str] | None:
+def transformer_engine_availability(te_module: Any, name: str) -> bool | None:
+    fn = getattr(te_module, name, None)
+    if not callable(fn):
+        try:
+            from transformer_engine.pytorch import fp8 as fp8_module
+
+            fn = getattr(fp8_module, name, None)
+        except Exception:
+            fn = None
+    if not callable(fn):
+        return None
+    result = fn()
+    if isinstance(result, tuple):
+        return bool(result[0])
+    return bool(result)
+
+
+def precision_selection(args: argparse.Namespace) -> PrecisionSelection:
     raw: list[str] = []
     if args.precision_sweep:
         raw.extend(part.strip() for part in args.precision_sweep.split(",") if part.strip())
@@ -152,8 +201,46 @@ def precision_filter(args: argparse.Namespace) -> set[str] | None:
         for item in args.precision_config:
             raw.extend(part.strip() for part in item.split(",") if part.strip())
     if not raw:
-        return None
-    return {normalize_precision_config(item) for item in raw}
+        return PrecisionSelection(auto=False, configs=None)
+    if any(item.strip().lower().replace("-", "_") == "auto" for item in raw):
+        if len(raw) != 1:
+            raise ValueError("--precision-sweep auto cannot be combined with explicit precision configs")
+        return PrecisionSelection(auto=True)
+    configs: list[str] = []
+    for item in raw:
+        precision = normalize_precision_config(item)
+        if precision not in configs:
+            configs.append(precision)
+    return PrecisionSelection(auto=False, configs=configs)
+
+
+def unique_model_rows(manifest: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in manifest:
+        model_id = str(row.get("model_id") or row.get("graph_id") or "")
+        if not model_id or model_id in seen:
+            continue
+        rows.append(row)
+        seen.add(model_id)
+    return rows
+
+
+def with_precision_row(row: dict[str, Any], precision_config: str, index: int) -> dict[str, Any]:
+    expanded = dict(row)
+    expanded["precision_config"] = precision_config
+    expanded["precision_config_index"] = index
+    expanded["label_file"] = f"label/label/{row['model_id']}_{precision_config}.txt"
+    expanded["profile_point_id"] = f"{row['model_id']}::{precision_config}"
+    return expanded
+
+
+def expand_manifest_precisions(manifest: list[dict[str, Any]], precision_configs: list[str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in unique_model_rows(manifest):
+        for index, precision_config in enumerate(precision_configs):
+            rows.append(with_precision_row(row, precision_config, index))
+    return rows
 
 
 def load_manifest(path: Path) -> list[dict[str, Any]]:
@@ -253,7 +340,11 @@ def normalize_input_specs(row: dict[str, Any], dataset_spec: dict[str, Any]) -> 
     return specs
 
 
-def make_profile_inputs(input_specs: list[dict[str, Any]], device: torch.device) -> tuple[torch.Tensor, ...]:
+def make_profile_inputs(
+    input_specs: list[dict[str, Any]],
+    device: torch.device,
+    float_dtype: torch.dtype | None = None,
+) -> tuple[torch.Tensor, ...]:
     tensors: list[torch.Tensor] = []
     for spec in input_specs:
         shape = tuple(int(dim) for dim in spec["shape"])
@@ -265,7 +356,7 @@ def make_profile_inputs(input_specs: list[dict[str, Any]], device: torch.device)
             base = torch.eye(shape[-1], dtype=torch.float32, device=device)
             tensors.append(base.expand(shape).clone())
         else:
-            tensors.append(torch.randn(shape, dtype=torch.float32, device=device))
+            tensors.append(torch.randn(shape, dtype=float_dtype or torch.float32, device=device))
     return tuple(tensors)
 
 
@@ -497,7 +588,7 @@ def precision_runtime(config: str, device: torch.device, args: argparse.Namespac
             unsupported_reason=None if supported else "FP16 AMP profiling is enabled only for CUDA devices",
             details=details,
         )
-    if config in {"fp8_te_hybrid", "fp8_e4m3", "fp8_e5m2"}:
+    if config in FP8_PRECISIONS:
         details["tf32_controls"] = set_tf32_controls(False)
         details["fp8_recipe"] = (
             "hybrid E4M3 forward/E5M2 backward"
@@ -517,7 +608,8 @@ def precision_runtime(config: str, device: torch.device, args: argparse.Namespac
                 details=details,
             )
         try:
-            import transformer_engine.pytorch as te  # noqa: F401
+            import transformer_engine.pytorch as te
+            from transformer_engine.common import recipe
 
             details["transformer_engine_available"] = True
         except Exception as exc:
@@ -532,17 +624,111 @@ def precision_runtime(config: str, device: torch.device, args: argparse.Namespac
                 fallback_policy="record_unsupported",
                 details=details,
             )
-        supported = device.type == "cuda" and cc >= (8, 9)
+        try:
+            details["transformer_engine_fp8_available"] = transformer_engine_availability(te, "is_fp8_available")
+        except Exception as exc:
+            details["transformer_engine_fp8_available_error"] = repr(exc)
+            details["transformer_engine_fp8_available"] = None
+        format_map = {
+            "fp8_te_hybrid": recipe.Format.HYBRID,
+            "fp8_e4m3": recipe.Format.E4M3,
+            "fp8_e5m2": recipe.Format.E5M2,
+        }
+        te_fp8_available = details.get("transformer_engine_fp8_available")
+        supported = device.type == "cuda" and cc >= (8, 9) and te_fp8_available is not False
+        unsupported_reason = None
+        if not supported:
+            if device.type != "cuda" or cc < (8, 9):
+                unsupported_reason = "FP8 Transformer Engine profiling requires Ada-or-newer CUDA hardware (SM 8.9+)"
+            else:
+                unsupported_reason = "Transformer Engine reports FP8 is not available"
         return PrecisionRuntime(
             config=config,
             device_type=device.type,
             backend="transformer_engine",
             supported=supported,
-            unsupported_reason=None if supported else "FP8 Transformer Engine profiling requires Ada-or-newer CUDA hardware (SM 8.9+)",
+            unsupported_reason=unsupported_reason,
             fallback_policy="record_unsupported_generated_ops",
+            te_recipe=recipe.DelayedScaling(fp8_format=format_map[config]),
+            te_recipe_name=f"DelayedScaling({config})",
+            model_dtype=torch.bfloat16,
+            input_dtype=torch.bfloat16,
+            details=details,
+        )
+    if config == "nvfp4_te":
+        details["tf32_controls"] = set_tf32_controls(False)
+        details["fp4_recipe"] = "NVFP4 block scaling"
+        details["nvfp4_te_min_compute_capability"] = "10.0"
+        details["nvfp4_te_device_policy"] = "probe Transformer Engine backend, require Blackwell-class hardware, and use BF16 inputs"
+        if args.fp8_backend != "transformer_engine":
+            return PrecisionRuntime(
+                config=config,
+                device_type=device.type,
+                backend=args.fp8_backend,
+                supported=False,
+                unsupported_reason="Transformer Engine backend disabled",
+                fallback_policy="record_unsupported",
+                details=details,
+            )
+        try:
+            import transformer_engine.pytorch as te
+            from transformer_engine.common import recipe
+
+            details["transformer_engine_available"] = True
+        except Exception as exc:
+            details["transformer_engine_available"] = False
+            details["transformer_engine_import_error"] = repr(exc)
+            return PrecisionRuntime(
+                config=config,
+                device_type=device.type,
+                backend="transformer_engine",
+                supported=False,
+                unsupported_reason="Transformer Engine is not available",
+                fallback_policy="record_unsupported",
+                details=details,
+            )
+        try:
+            details["transformer_engine_nvfp4_available"] = transformer_engine_availability(te, "is_nvfp4_available")
+        except Exception as exc:
+            details["transformer_engine_nvfp4_available_error"] = repr(exc)
+            details["transformer_engine_nvfp4_available"] = None
+        bf16_supported, bf16_probe = bf16_support_probe(device, cc)
+        details["bf16_probe"] = bf16_probe
+        te_nvfp4_available = details.get("transformer_engine_nvfp4_available")
+        supported = device.type == "cuda" and cc >= (10, 0) and bf16_supported and te_nvfp4_available is not False
+        unsupported_reason = None
+        if not supported:
+            if device.type != "cuda" or cc < (10, 0):
+                unsupported_reason = "NVFP4 Transformer Engine profiling requires Blackwell-class CUDA hardware (SM 10.0+)"
+            elif not bf16_supported:
+                unsupported_reason = "NVFP4 Transformer Engine profiling requires BF16 inputs/gradients"
+            else:
+                unsupported_reason = "Transformer Engine reports NVFP4 is not available"
+        return PrecisionRuntime(
+            config=config,
+            device_type=device.type,
+            backend="transformer_engine",
+            supported=supported,
+            unsupported_reason=unsupported_reason,
+            fallback_policy="record_unsupported_generated_ops",
+            te_recipe=recipe.NVFP4BlockScaling(),
+            te_recipe_name="NVFP4BlockScaling",
+            model_dtype=torch.bfloat16,
+            input_dtype=torch.bfloat16,
             details=details,
         )
     raise ValueError(config)
+
+
+def resolve_auto_precision_configs(device: torch.device, args: argparse.Namespace) -> tuple[list[str], dict[str, Any]]:
+    configs: list[str] = []
+    probes: dict[str, Any] = {}
+    for config in (*BASE_AUTO_PRECISIONS, "fp8_te_hybrid", "nvfp4_te"):
+        runtime = precision_runtime(config, device, args)
+        probes[config] = runtime.to_metadata()
+        if runtime.supported:
+            configs.append(config)
+    return configs, probes
 
 
 class NvmlSampler:
@@ -736,16 +922,29 @@ def profile_model(row: dict[str, Any], models_dir: Path, device: torch.device, a
         if not runtime.supported:
             result.update({"status": "unsupported_precision", "error": runtime.unsupported_reason})
             return result
-        if precision_config.startswith("fp8_"):
-            result.update(
-                {
-                    "status": "unsupported_precision",
-                    "error": "Generated GraphModel ops are not yet rewritten to Transformer Engine FP8 modules",
-                }
+        if precision_config in TE_LOW_PRECISIONS:
+            enable_te = getattr(model, "enable_transformer_engine", None)
+            if not callable(enable_te):
+                result.update(
+                    {
+                        "status": "unsupported_low_precision_op",
+                        "error": "model does not expose generated GraphModel Transformer Engine rewrite hooks",
+                    }
+                )
+                result["precision"]["fallback_policy"] = "record_unsupported_low_precision_op"
+                return result
+            reasons = enable_te(
+                precision_config,
+                params_dtype=runtime.model_dtype or torch.bfloat16,
+                device=device,
             )
-            result["precision"]["fallback_policy"] = "record_unsupported_generated_ops"
-            return result
-        inputs = make_profile_inputs(input_specs, device)
+            if reasons:
+                result.update({"status": "unsupported_low_precision_op", "error": "; ".join(str(item) for item in reasons)})
+                result["precision"]["fallback_policy"] = "record_unsupported_low_precision_op"
+                result["precision"]["unsupported_low_precision_reasons"] = reasons
+                return result
+            result["precision"]["generated_runtime"] = "transformer_engine"
+        inputs = make_profile_inputs(input_specs, device, runtime.input_dtype)
         model.eval()
 
         def infer_fn() -> torch.Tensor:
@@ -818,16 +1017,22 @@ def main(argv: list[str] | None = None) -> None:
     if device.type == "cuda":
         torch.backends.cudnn.benchmark = True
     manifest = load_manifest(Path(args.manifest))
-    requested_precisions = precision_filter(args)
+    try:
+        selection = precision_selection(args)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    auto_probe_details = None
+    requested_precisions = selection.configs
+    if selection.auto:
+        requested_precisions, auto_probe_details = resolve_auto_precision_configs(device, args)
     if requested_precisions is not None:
-        manifest = [
-            row
-            for row in manifest
-            if normalize_precision_config(str(row.get("precision_config", DEFAULT_PRECISION_CONFIG))) in requested_precisions
-        ]
+        manifest = expand_manifest_precisions(manifest, requested_precisions)
     shard_rows = [row for idx, row in enumerate(manifest) if idx % max(args.num_shards, 1) == args.shard_index]
     hardware = hardware_metadata(device, args.hardware_id)
-    hardware["precision_filter"] = sorted(requested_precisions) if requested_precisions is not None else None
+    hardware["precision_filter"] = list(requested_precisions) if requested_precisions is not None else None
+    hardware["precision_filter_auto"] = selection.auto
+    if auto_probe_details is not None:
+        hardware["precision_auto_probe"] = auto_probe_details
     (output_dir / f"hardware_shard{args.shard_index}.json").write_text(json.dumps(hardware, indent=2, sort_keys=True) + "\n")
 
     results_path = output_dir / f"results_shard{args.shard_index}.jsonl"

@@ -47,8 +47,9 @@ PRECISION_ALIASES = {
     "fp8_te_hybrid": "fp8_te_hybrid",
     "fp8_e4m3": "fp8_e4m3",
     "fp8_e5m2": "fp8_e5m2",
-    "nvfp4": "nvfp4",
-    "mxfp8": "mxfp8",
+    "fp4": "nvfp4_te",
+    "nvfp4": "nvfp4_te",
+    "nvfp4_te": "nvfp4_te",
 }
 BATCH_BUCKETS = (1, 2, 4, 8, 16, 32, 64, 128, 256)
 NODE_TYPES = ARCH_NODE_TYPES
@@ -207,6 +208,8 @@ def normalize_precision_config(value: str) -> str:
     key = value.strip().lower().replace("-", "_")
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
+    if key == "mxfp8":
+        raise ValueError("mxfp8 is out of scope for v1; use fp8_te_hybrid or nvfp4_te")
     if key not in PRECISION_ALIASES:
         allowed = ", ".join(sorted(PRECISION_ALIASES))
         raise ValueError(f"unknown precision_config {value!r}; expected one of: {allowed}")

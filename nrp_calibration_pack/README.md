@@ -17,7 +17,9 @@ target hardware while preserving the current dataset label format.
 - `profile/run_profile.py`: NRP runtime profiler for train and inference labels.
 - `profile/make_profile_datasets.py`: creates per-model input/repeat specs for label generation.
 - `submit_nrp_calibration.sh`: one-click Kubernetes Indexed Job launcher.
-- `Dockerfile`: optional image recipe for shipping the pack.
+- `submit_nrp_source_workflow.sh`: three-stage source-first Nautilus workflow renderer.
+- `package_source_tar.py`: packages sources, labels, results, and metadata without large PKLs.
+- `Dockerfile`: NGC PyTorch/Transformer Engine image recipe for profiling the repo.
 
 ## Generate The Local Source Pack
 
@@ -49,12 +51,14 @@ precision sweep:
 fp32_ieee, tf32, bf16_amp, fp16_amp, fp8_te_hybrid
 ```
 
-Use `--profile-preset pilot --precision-sweep fp32_ieee,bf16_amp` for a smaller
-pilot pack, or `--precision-sweep fp32_ieee` for local CPU smoke tests. `bf32`
-is intentionally rejected because it is ambiguous; choose `tf32` or `bf16_amp`.
+For the source-first NRP workflow, generate only `--precision-sweep fp32_ieee`
+and let `profile/run_profile.py --precision-sweep auto` expand precisions on the
+actual GPU. `bf32` is intentionally rejected because it is ambiguous; choose
+`tf32` or `bf16_amp`. Canonical FP4 is stored as `nvfp4_te`; `fp4` and `nvfp4`
+are accepted CLI aliases, and `mxfp8` is intentionally out of scope for v1.
 Each profiler result row records the actual precision recipe metadata, including
 the TF32 control API family/effective state, BF16 support probe, FP16 GradScaler
-state, FP8 backend policy, and unsupported/fallback status where applicable.
+state, Transformer Engine FP8/NVFP4 policy, and unsupported/fallback status.
 
 The generator writes three handoff artifacts:
 
@@ -126,51 +130,40 @@ points are retried. Pass `--no-resume` to intentionally regenerate a shard.
 From the repository root:
 
 ```bash
-python nrp_calibration_pack/generate_model_sources.py --force
-python nrp_calibration_pack/profile/make_profile_datasets.py \
-  --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
-  --output-dir nrp_calibration_pack/profile_datasets \
-  --train-repeats 50 \
-  --infer-repeats 50 \
-  --force
-docker build -f nrp_calibration_pack/Dockerfile -t <your-registry>/perfseer-calibration:latest .
-docker push <your-registry>/perfseer-calibration:latest
+docker build -f nrp_calibration_pack/Dockerfile -t <your-registry>/perfseer-ngc:latest .
+docker push <your-registry>/perfseer-ngc:latest
 ```
 
-## Generate the dataset
+The Dockerfile defaults to the verified NGC PyTorch 26.03 image with
+Transformer Engine 2.13. The Nautilus prepare job generates the source pack on
+the PVC, so the image carries repo code rather than a prebuilt local pack.
+
+## Generate The Source Pack Locally
 
 ```bash
 python nrp_calibration_pack/generate_model_sources.py \
-  --data-root dataset \
   --out-dir nrp_calibration_pack \
   --subset-size 10000 \
+  --precision-sweep fp32_ieee \
   --generation-workers "$(nproc)" \
   --force
-```
-
-Compress the generated pack once, then unpack the same artifact in Kubernetes
-before running profile shards:
-
-```bash
-tar -czf nrp_calibration_pack.full.tar.gz -C nrp_calibration_pack .
 ```
 
 ## Submit To NRP Nautilus
 
 ```bash
-./nrp_calibration_pack/submit_nrp_calibration.sh \
+./nrp_calibration_pack/submit_nrp_source_workflow.sh \
   --namespace <namespace> \
-  --image <your-registry>/perfseer-calibration:latest \
+  --image <your-registry>/perfseer-ngc:latest \
   --pvc <output-pvc> \
-  --gpu-product NVIDIA-GeForce-RTX-4090 \
-  --hardware-id rtx4090 \
+  --gpu-product NVIDIA-GeForce-RTX-5090 \
+  --hardware-id rtx5090 \
   --parallelism 4 \
   --completions 64 \
-  --precision-sweep fp32_ieee,tf32,bf16_amp,fp16_amp \
   --warmup 20 \
   --infer-repeats 50 \
   --train-repeats 50 \
-  --profile-dataset-dir /workspace/nrp_calibration_pack/profile_datasets
+  --dry-run
 ```
 
 For generic GPUs the default resource is `nvidia.com/gpu`. For special NRP GPU
@@ -178,7 +171,15 @@ resources, pass `--gpu-resource`, for example `--gpu-resource nvidia.com/a100`.
 The `--gpu-product` argument is rendered as node affinity on
 `nvidia.com/gpu.product`.
 
-Use `--dry-run` to print the rendered YAML before submission.
+Use `--dry-run` to print the prepare/profile/package YAML. For real submission,
+run one stage at a time with `--stage prepare`, wait for completion, then
+`--stage profile`, then `--stage package`. The profile stage uses
+`--precision-sweep auto`: base precisions run wherever supported, FP8 requires
+Transformer Engine plus Ada/Hopper/Blackwell-class hardware, and `nvfp4_te`
+requires Transformer Engine NVFP4 on Blackwell-class hardware. The generated
+runtime only enables TE low precision for dense, norm, and attention rows that
+also satisfy the shape gate: FP8 needs 16-wide feature/leading alignment, and
+NVFP4 needs 32-wide feature alignment with leading dimension at least 32.
 
 For the full golden-data procedure, including how the reverse-engineered source
 models are trained and inferred during profiling, see `GOLDEN_DATA_GUIDE.md`.
@@ -190,11 +191,22 @@ The job writes:
 - `label/label/<model_id>_<precision_config>.txt`: dataset-compatible label dict for a precision-specific profile point.
 - `results_shard*.jsonl`: detailed hardware, timing, memory, and status rows.
 - `hardware_shard*.json`: detected CUDA/GPU metadata for each shard.
+- `perfseer_<hardware_id>_source_labels.tar.gz`: source-only package from the package stage, including a small `replay/` script bundle.
 
 Pass `--hardware-id` during profiling or submission to store stable hardware
 labels such as `rtx3090`, `rtx4090`, or `rtx5090` in those outputs.
 If a profiling job is interrupted or restarted, use the same output directory
 and shard arguments; the profiler will continue from the last completed label.
+
+For reproducibility audits, rebuild `dataset/cg/cg/*.pkl` from the source-only
+tarball instead of downloading generated PKLs:
+
+```bash
+python scripts/rebuild_source_tar_dataset.py \
+  --source-tar perfseer_rtx5090_source_labels.tar.gz \
+  --out-root dataset_rtx5090_rebuilt \
+  --force
+```
 
 The label format is:
 

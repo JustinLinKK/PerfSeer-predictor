@@ -5,6 +5,7 @@ import json
 import pickle
 import subprocess
 import sys
+import tarfile
 import tempfile
 import types
 import unittest
@@ -37,6 +38,7 @@ from nrp_calibration_pack.build_pack import (  # noqa: E402
     select_subset,
     write_pack,
 )
+from nrp_calibration_pack.profile.generated_model_runtime import GraphModel  # noqa: E402
 from nrp_calibration_pack.template_catalog import template_family_counts  # noqa: E402
 from perfseer.architecture_schema import ARCHITECTURE_FAMILY_QUOTAS, FEATURE_SCHEMA_VERSION, NODE_TYPES as ARCH_NODE_TYPES  # noqa: E402
 from perfseer.data import parse_label as parse_dataset_label  # noqa: E402
@@ -454,6 +456,35 @@ def concat_graph() -> nx.DiGraph:
     return graph
 
 
+def linear_graph(width: int = 16) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    graph.graph["input_specs"] = [{"name": "input0", "shape": [1, width], "dtype": "float32", "kind": "float"}]
+    graph.add_node(
+        0,
+        feature=feature(
+            "Gemm",
+            {"linear_in_features": width, "linear_out_features": width, "linear_bias": 1},
+            {
+                "bytes": width * 2,
+                "weight_size": width * width,
+                "batch_size": 1,
+                "input_size_with_weight": width + width * width,
+                "input_size": width,
+                "output_size": width,
+                "input_features": width,
+                "output_features": width,
+                "input_channels": width,
+                "output_channels": width,
+                "input_h": 1,
+                "input_w": 1,
+                "output_h": 1,
+                "output_w": 1,
+            },
+        ),
+    )
+    return graph
+
+
 def import_generated(source: str, tmp: str):
     path = Path(tmp) / "generated.py"
     path.write_text(source)
@@ -484,13 +515,46 @@ class FakeTransformerEngine:
     def __enter__(self):
         self.old_root = sys.modules.get("transformer_engine")
         self.old_pytorch = sys.modules.get("transformer_engine.pytorch")
+        self.old_common = sys.modules.get("transformer_engine.common")
+        self.old_recipe = sys.modules.get("transformer_engine.common.recipe")
+        self.old_fp8 = sys.modules.get("transformer_engine.pytorch.fp8")
         root = types.ModuleType("transformer_engine")
         root.__path__ = []
         pytorch = types.ModuleType("transformer_engine.pytorch")
         pytorch.__package__ = "transformer_engine"
+        pytorch.__path__ = []
+        pytorch.is_fp8_available = lambda: True
+        pytorch.is_nvfp4_available = lambda: True
+        fp8 = types.ModuleType("transformer_engine.pytorch.fp8")
+        fp8.is_fp8_available = lambda: True
+        fp8.is_nvfp4_available = lambda: True
+        common = types.ModuleType("transformer_engine.common")
+        common.__path__ = []
+        recipe = types.ModuleType("transformer_engine.common.recipe")
+
+        class Format:
+            HYBRID = "HYBRID"
+            E4M3 = "E4M3"
+            E5M2 = "E5M2"
+
+        class DelayedScaling:
+            def __init__(self, fp8_format=None):
+                self.fp8_format = fp8_format
+
+        class NVFP4BlockScaling:
+            pass
+
+        recipe.Format = Format
+        recipe.DelayedScaling = DelayedScaling
+        recipe.NVFP4BlockScaling = NVFP4BlockScaling
         root.pytorch = pytorch
+        root.common = common
+        common.recipe = recipe
         sys.modules["transformer_engine"] = root
         sys.modules["transformer_engine.pytorch"] = pytorch
+        sys.modules["transformer_engine.pytorch.fp8"] = fp8
+        sys.modules["transformer_engine.common"] = common
+        sys.modules["transformer_engine.common.recipe"] = recipe
         return pytorch
 
     def __exit__(self, _exc_type, _exc, _tb):
@@ -502,6 +566,18 @@ class FakeTransformerEngine:
             sys.modules.pop("transformer_engine.pytorch", None)
         else:
             sys.modules["transformer_engine.pytorch"] = self.old_pytorch
+        if self.old_fp8 is None:
+            sys.modules.pop("transformer_engine.pytorch.fp8", None)
+        else:
+            sys.modules["transformer_engine.pytorch.fp8"] = self.old_fp8
+        if self.old_common is None:
+            sys.modules.pop("transformer_engine.common", None)
+        else:
+            sys.modules["transformer_engine.common"] = self.old_common
+        if self.old_recipe is None:
+            sys.modules.pop("transformer_engine.common.recipe", None)
+        else:
+            sys.modules["transformer_engine.common.recipe"] = self.old_recipe
 
 
 class NrpCalibrationPackTests(unittest.TestCase):
@@ -575,6 +651,11 @@ class NrpCalibrationPackTests(unittest.TestCase):
     def test_precision_sweep_rejects_ambiguous_bf32(self) -> None:
         with self.assertRaisesRegex(ValueError, "bf32 is ambiguous"):
             parse_precision_sweep("bf32")
+
+    def test_precision_sweep_accepts_nvfp4_aliases_and_rejects_mxfp8(self) -> None:
+        self.assertEqual(parse_precision_sweep("fp4,nvfp4,nvfp4_te"), ("nvfp4_te",))
+        with self.assertRaisesRegex(ValueError, "mxfp8 is out of scope"):
+            parse_precision_sweep("mxfp8")
 
     def test_default_size_selection_returns_exact_count(self) -> None:
         records = [
@@ -1050,6 +1131,100 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("SM 8.9+", runtime.unsupported_reason or "")
         self.assertEqual(runtime.details["compute_capability"], "8.0")
 
+    def test_precision_selection_auto_and_fp4_aliases(self) -> None:
+        module = import_run_profile_module()
+
+        auto = module.precision_selection(types.SimpleNamespace(precision_sweep="auto", precision_config=None))
+        explicit = module.precision_selection(types.SimpleNamespace(precision_sweep="fp4,nvfp4,nvfp4_te", precision_config=None))
+
+        self.assertTrue(auto.auto)
+        self.assertIsNone(auto.configs)
+        self.assertFalse(explicit.auto)
+        self.assertEqual(explicit.configs, ["nvfp4_te"])
+        with self.assertRaisesRegex(ValueError, "auto cannot be combined"):
+            module.precision_selection(types.SimpleNamespace(precision_sweep="auto,fp32_ieee", precision_config=None))
+        with self.assertRaisesRegex(ValueError, "mxfp8 is out of scope"):
+            module.precision_selection(types.SimpleNamespace(precision_sweep="mxfp8", precision_config=None))
+
+    def test_auto_precision_resolution_tracks_gpu_generation(self) -> None:
+        module = import_run_profile_module()
+        args = types.SimpleNamespace(fp8_backend="transformer_engine")
+        cases = {
+            (8, 0): ["fp32_ieee", "tf32", "bf16_amp", "fp16_amp"],
+            (8, 9): ["fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid"],
+            (9, 0): ["fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid"],
+            (12, 0): ["fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid", "nvfp4_te"],
+        }
+        module.bf16_support_probe = lambda _device, _cc: (True, {"fake": True})
+
+        with FakeTransformerEngine():
+            for cc, expected in cases.items():
+                module.compute_capability_tuple = lambda _device, cc=cc: cc
+                configs, probes = module.resolve_auto_precision_configs(torch.device("cuda"), args)
+                self.assertEqual(configs, expected)
+                self.assertEqual(probes["nvfp4_te"]["details"]["compute_capability"], f"{cc[0]}.{cc[1]}")
+
+    def test_nvfp4_policy_requires_transformer_engine_probe_and_bf16(self) -> None:
+        module = import_run_profile_module()
+        module.compute_capability_tuple = lambda _device: (12, 0)
+        args = types.SimpleNamespace(fp8_backend="transformer_engine")
+
+        with FakeTransformerEngine() as te:
+            te.is_nvfp4_available = lambda: False
+            module.bf16_support_probe = lambda _device, _cc: (True, {"fake": True})
+            unavailable = module.precision_runtime("nvfp4_te", torch.device("cuda"), args)
+            te.is_nvfp4_available = lambda: True
+            module.bf16_support_probe = lambda _device, _cc: (False, {"fake": False})
+            no_bf16 = module.precision_runtime("nvfp4_te", torch.device("cuda"), args)
+
+        self.assertFalse(unavailable.supported)
+        self.assertIn("NVFP4", unavailable.unsupported_reason or "")
+        self.assertFalse(no_bf16.supported)
+        self.assertIn("BF16", no_bf16.unsupported_reason or "")
+
+    def test_generated_low_precision_op_gate_allows_te_safe_rows_only(self) -> None:
+        dense_mem = {
+            "batch_size": 32,
+            "input_size": 1024,
+            "output_size": 1024,
+            "input_features": 32,
+            "output_features": 32,
+            "input_channels": 32,
+            "output_channels": 32,
+        }
+        dense = [
+            {
+                "id": 0,
+                "type": "Gemm",
+                "args": {"linear_in_features": 32, "linear_out_features": 32, "linear_bias": 1},
+                "memory_info": dense_mem,
+                "preds": [],
+            },
+            {"id": 1, "type": "LayerNormalization", "args": {}, "memory_info": dense_mem, "preds": [0]},
+        ]
+        bad_dim = [
+            {
+                "id": 0,
+                "type": "Gemm",
+                "args": {"linear_in_features": 8, "linear_out_features": 16, "linear_bias": 1},
+                "memory_info": dense_mem,
+                "preds": [],
+            }
+        ]
+        conv = [
+            {
+                "id": 0,
+                "type": "Conv",
+                "args": {"conv_kernel_size": 3, "conv_stride": 1, "conv_padding": 1, "conv_groups": 1},
+                "memory_info": memory_info(input_channels=3, output_channels=16),
+                "preds": [],
+            }
+        ]
+
+        self.assertEqual(GraphModel(dense).low_precision_unsupported_reasons("nvfp4_te"), [])
+        self.assertIn("dimensions 8->16", GraphModel(bad_dim).low_precision_unsupported_reasons("fp8_te_hybrid")[0])
+        self.assertIn("not TE low-precision safe", GraphModel(conv).low_precision_unsupported_reasons("nvfp4_te")[0])
+
     def test_materialize_precision_dataset_writes_hardware_metadata(self) -> None:
         graph = sequential_graph()
         with tempfile.TemporaryDirectory() as tmp:
@@ -1444,10 +1619,136 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertEqual(report["skipped_by_status"]["unsupported_precision"], {"fp8_te_hybrid": 1})
         self.assertEqual(report["fallback_policy_counts"]["record_unsupported_generated_ops"], {"fp8_te_hybrid": 1})
         self.assertEqual(report["unsupported_fp8_rows"], 1)
+        self.assertEqual(report["unsupported_low_precision_rows"], 1)
         self.assertEqual(report["rejected_rows_file"], "precision_rejected_rows.jsonl")
         self.assertEqual(len(rejected), 1)
         self.assertEqual(rejected[0]["precision_config"], "fp8_te_hybrid")
         self.assertEqual(rejected[0]["fallback_policy"], "record_unsupported_generated_ops")
+
+    def test_materialize_precision_dataset_reports_rejected_nvfp4_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pack_dir = tmp_path / "pack"
+            results_dir = tmp_path / "results"
+            pack_dir.mkdir()
+            results_dir.mkdir()
+            result_row = {
+                "status": "unsupported_low_precision_op",
+                "model_id": "calib_0000",
+                "graph_id": "calib_0000",
+                "precision_config": "nvfp4_te",
+                "profile_point_id": "calib_0000::nvfp4_te",
+                "error": "node 0 Conv is not TE low-precision safe",
+                "precision": {
+                    "precision_config": "nvfp4_te",
+                    "backend": "transformer_engine",
+                    "fallback_policy": "record_unsupported_low_precision_op",
+                },
+                "hardware": {"gpu_name": "NVIDIA GeForce RTX 5090", "compute_capability": "12.0"},
+            }
+            (results_dir / "results_shard0.jsonl").write_text(json.dumps(result_row) + "\n")
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "materialize_precision_dataset.py"),
+                    "--pack-dir",
+                    str(pack_dir),
+                    "--results-dir",
+                    str(results_dir),
+                    "--out-root",
+                    str(tmp_path / "precision_dataset"),
+                    "--force",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            out_root = tmp_path / "precision_dataset"
+            report = json.loads((out_root / "precision_materialization_report.json").read_text())
+            rejected = [json.loads(line) for line in (out_root / "precision_rejected_rows.jsonl").read_text().splitlines()]
+
+        self.assertEqual(report["precision_labels"], 0)
+        self.assertEqual(report["unsupported_low_precision_rows"], 1)
+        self.assertEqual(report["skipped_by_precision"]["nvfp4_te"], {"unsupported_low_precision_op": 1})
+        self.assertEqual(report["fallback_policy_counts"]["record_unsupported_low_precision_op"], {"nvfp4_te": 1})
+        self.assertEqual(rejected[0]["precision_config"], "nvfp4_te")
+
+    def test_source_only_tar_excludes_pkls_and_rebuilds_dataset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            graph_path = tmp_path / "linear.pkl"
+            with graph_path.open("wb") as fh:
+                pickle.dump(linear_graph(), fh)
+            graph_record = record("bs1_linear_0", graph_path=str(graph_path), label_path=str(tmp_path / "linear.txt"))
+            pack_dir = tmp_path / "pack"
+            write_pack([graph_record], [graph_record], pack_dir, "compile", precision_sweep=("fp32_ieee",))
+
+            results_dir = tmp_path / "results_rtx5090"
+            results_dir.mkdir()
+            result_row = {
+                "status": "ok",
+                "model_id": "calib_0000",
+                "graph_id": "calib_0000",
+                "precision_config": "nvfp4_te",
+                "profile_point_id": "calib_0000::nvfp4_te",
+                "label": {"train": "1|2|3|4|5|6|7", "infer": "1|2|3|4|5|6|7"},
+                "precision": {"precision_config": "nvfp4_te", "backend": "transformer_engine"},
+                "hardware_id": "rtx5090",
+                "hardware": {"hardware_id": "rtx5090", "gpu_name": "NVIDIA GeForce RTX 5090", "compute_capability": "12.0"},
+            }
+            (results_dir / "results_shard0.jsonl").write_text(json.dumps(result_row) + "\n")
+            source_tar = tmp_path / "source_labels.tar.gz"
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "nrp_calibration_pack" / "package_source_tar.py"),
+                    "--pack-dir",
+                    str(pack_dir),
+                    "--results-dir",
+                    str(results_dir),
+                    "--out",
+                    str(source_tar),
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            with tarfile.open(source_tar, "r:gz") as tar:
+                names = tar.getnames()
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "rebuild_source_tar_dataset.py"),
+                    "--source-tar",
+                    str(source_tar),
+                    "--out-root",
+                    str(tmp_path / "rebuilt_dataset"),
+                    "--force",
+                ],
+                check=True,
+                text=True,
+                capture_output=True,
+            )
+            rebuilt = tmp_path / "rebuilt_dataset"
+            metadata = [json.loads(line) for line in (rebuilt / "label" / "precision_metadata.jsonl").read_text().splitlines()]
+            label_path = rebuilt / "label" / "label" / "calib_0000_rtx5090_nvfp4_te.txt"
+            graph_exists = (rebuilt / "cg" / "cg" / "calib_0000.pkl").exists()
+            label_exists = label_path.exists()
+            parsed_shape = parse_dataset_label(str(label_path)).shape
+
+        self.assertIn("pack/models/calib_0000.py", names)
+        self.assertIn("results/results_rtx5090/results_shard0.jsonl", names)
+        self.assertIn("replay/nrp_calibration_pack/profile/run_profile.py", names)
+        self.assertIn("replay/scripts/rebuild_source_tar_dataset.py", names)
+        self.assertFalse(any(name.endswith(".pkl") for name in names))
+        self.assertTrue(graph_exists)
+        self.assertTrue(label_exists)
+        self.assertEqual(parsed_shape, (6,))
+        self.assertEqual(metadata[0]["precision_config"], "nvfp4_te")
+        self.assertEqual(metadata[0]["hardware_id"], "rtx5090")
 
     def test_submit_script_renders_indexed_gpu_job(self) -> None:
         result = subprocess.run(
@@ -1529,6 +1830,49 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("--sample-interval 0.01", yaml)
         self.assertIn("--fp8-backend transformer_engine", yaml)
         self.assertNotIn("--train-epochs", yaml)
+
+    def test_source_workflow_script_renders_prepare_profile_package_jobs(self) -> None:
+        result = subprocess.run(
+            [
+                str(ROOT / "nrp_calibration_pack" / "submit_nrp_source_workflow.sh"),
+                "--namespace",
+                "test-ns",
+                "--image",
+                "example/perfseer-ngc:latest",
+                "--pvc",
+                "calibration-pvc",
+                "--gpu-product",
+                "NVIDIA-GeForce-RTX-5090",
+                "--hardware-id",
+                "rtx5090",
+                "--parallelism",
+                "2",
+                "--completions",
+                "3",
+                "--subset-size",
+                "7",
+                "--dry-run",
+            ],
+            check=True,
+            text=True,
+            capture_output=True,
+        )
+
+        yaml = result.stdout
+        self.assertIn("name: perfseer-nrp-source-prepare-sources", yaml)
+        self.assertIn("name: perfseer-nrp-source-profile-labels", yaml)
+        self.assertIn("name: perfseer-nrp-source-package-results", yaml)
+        self.assertIn("--subset-size 7", yaml)
+        self.assertIn("--precision-sweep fp32_ieee", yaml)
+        self.assertIn("--precision-sweep auto", yaml)
+        self.assertIn("--hardware-id rtx5090", yaml)
+        self.assertIn("completionMode: Indexed", yaml)
+        self.assertIn("completions: 3", yaml)
+        self.assertIn("parallelism: 2", yaml)
+        self.assertIn("NVIDIA-GeForce-RTX-5090", yaml)
+        self.assertIn("package_source_tar.py", yaml)
+        self.assertIn("perfseer_rtx5090_source_labels.tar.gz", yaml)
+        self.assertNotIn("dataset/cg/cg", yaml)
 
     def test_root_markdown_entrypoint_is_readme_only(self) -> None:
         root_markdown = sorted(path.name for path in ROOT.glob("*.md"))
@@ -1630,6 +1974,21 @@ class NrpCalibrationPackTests(unittest.TestCase):
         bad_args = parse_train_args(["--precision-config", "bf32"])
         with self.assertRaises(ValueError):
             apply_train_overrides({"run": {}, "data": {}, "features": {}, "train": {}}, bad_args)
+
+    def test_nvfp4_precision_features_use_fp4_encoding(self) -> None:
+        from perfseer_optimized.data import FeatureConfig, precision_config_index, precision_hardware_config
+
+        cfg = FeatureConfig(precision_config="fp4", include_precision_features=True)
+        resolved = precision_hardware_config(cfg)["resolved_precision"]
+
+        self.assertEqual(precision_config_index("nvfp4"), precision_config_index("nvfp4_te"))
+        self.assertEqual(resolved["weight_dtype"], "fp4_e2m1")
+        self.assertEqual(resolved["activation_dtype"], "fp4_e2m1")
+        self.assertEqual(resolved["grad_dtype"], "fp4_e2m1")
+        self.assertEqual(resolved["tensorcore_mode"], "fp4")
+        self.assertEqual(resolved["fp4_format"], "nvfp4_e2m1")
+        with self.assertRaisesRegex(ValueError, "mxfp8 is out of scope"):
+            precision_config_index("mxfp8")
 
 
 if __name__ == "__main__":

@@ -79,6 +79,44 @@ def convert_source_to_networkx(spec: SourceModelSpec) -> nx.DiGraph:
     return _fx_to_networkx(traced)
 
 
+def convert_generated_source_to_networkx(source_path: str | Path, metadata: dict[str, Any] | None = None) -> nx.DiGraph:
+    """Rebuild an NRP generated compute graph directly from source constants."""
+
+    module = _import_source(Path(source_path).expanduser().resolve())
+    node_specs = getattr(module, "NODE_SPECS", None)
+    if not isinstance(node_specs, list):
+        raise ValueError(f"{source_path} does not expose generated NODE_SPECS")
+    graph = graph_from_generated_node_specs(node_specs)
+    graph.graph.update(metadata or {})
+    input_specs = getattr(module, "INPUT_SPECS", None)
+    if input_specs is not None and "input_specs" not in graph.graph:
+        graph.graph["input_specs"] = input_specs
+    model_id = getattr(module, "MODEL_ID", None)
+    if model_id is not None and "model_id" not in graph.graph:
+        graph.graph["model_id"] = str(model_id)
+    return graph
+
+
+def graph_from_generated_node_specs(node_specs: Sequence[dict[str, Any]]) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    for raw in node_specs:
+        spec = dict(raw)
+        node_id = int(spec["id"])
+        feature = {
+            "type": str(spec["type"]),
+            "args": dict(spec.get("args", {})),
+            "memory_info": dict(spec.get("memory_info", {})),
+            "flops": int(float(spec.get("flops", 0) or 0)),
+            "arith_intensity": float(spec.get("arith_intensity", 0.0) or 0.0),
+        }
+        graph.add_node(node_id, feature=feature)
+        for pred in spec.get("preds", []):
+            graph.add_edge(int(pred), node_id)
+    if graph.number_of_nodes() == 0:
+        raise UnsupportedOpError("generated source NODE_SPECS contained no nodes")
+    return graph
+
+
 def convert_source_to_pyg_data(
     spec: SourceModelSpec,
     ckpt_path: str | Path | None = None,
