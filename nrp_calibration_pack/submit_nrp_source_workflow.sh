@@ -20,6 +20,9 @@ WARMUP="20"
 INFER_REPEATS="50"
 TRAIN_REPEATS="50"
 SAMPLE_INTERVAL="0.01"
+OPTIMIZER="sgd"
+SM_OCCUPANCY_SOURCE="nvml_proxy"
+BOOTSTRAP_COMMAND=""
 DRY_RUN="0"
 
 usage() {
@@ -52,6 +55,10 @@ Options:
   --infer-repeats N       Timed inference iterations per model. Default: 50.
   --train-repeats N       Timed train-step iterations per model. Default: 50.
   --sample-interval SEC   NVML sampling interval. Default: 0.01.
+  --optimizer VALUE       Training optimizer for profiling labels. Default: sgd.
+  --sm-occupancy-source VALUE
+                          SM occupancy source: ncu or nvml_proxy. Default: nvml_proxy.
+  --bootstrap-command CMD Optional shell command run before each stage command.
   --dry-run               Print rendered YAML without submitting.
 EOF
 }
@@ -77,6 +84,9 @@ while [[ $# -gt 0 ]]; do
     --infer-repeats) INFER_REPEATS="$2"; shift 2 ;;
     --train-repeats) TRAIN_REPEATS="$2"; shift 2 ;;
     --sample-interval) SAMPLE_INTERVAL="$2"; shift 2 ;;
+    --optimizer) OPTIMIZER="$2"; shift 2 ;;
+    --sm-occupancy-source) SM_OCCUPANCY_SOURCE="$2"; shift 2 ;;
+    --bootstrap-command) BOOTSTRAP_COMMAND="$2"; shift 2 ;;
     --dry-run) DRY_RUN="1"; shift ;;
     --help|-h) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage; exit 2 ;;
@@ -97,6 +107,13 @@ PACK_DIR="${WORKFLOW_DIR}/pack"
 PROFILE_DATASET_DIR="${PACK_DIR}/profile_datasets"
 RESULTS_DIR="${WORKFLOW_DIR}/results/${HARDWARE_ID}"
 PACKAGE_PATH="${WORKFLOW_DIR}/perfseer_${HARDWARE_ID}_source_labels.tar.gz"
+DATASET_DIR="${WORKFLOW_DIR}/dataset/${HARDWARE_ID}"
+DATASET_PACKAGE_PATH="${WORKFLOW_DIR}/perfseer_${HARDWARE_ID}_dataset.tar.gz"
+
+BOOTSTRAP_BLOCK=""
+if [[ -n "$BOOTSTRAP_COMMAND" ]]; then
+  BOOTSTRAP_BLOCK="${BOOTSTRAP_COMMAND}"
+fi
 
 AFFINITY_BLOCK=""
 if [[ -n "$GPU_PRODUCT" ]]; then
@@ -139,6 +156,7 @@ spec:
         - |
           set -euo pipefail
           export PYTHONPATH="${REPO_DIR}/src:${REPO_DIR}:\${PYTHONPATH:-}"
+          ${BOOTSTRAP_BLOCK}
           python nrp_calibration_pack/generate_model_sources.py \
             --catalog-mode template \
             --subset-size ${SUBSET_SIZE} \
@@ -212,6 +230,7 @@ ${AFFINITY_BLOCK}
         - |
           set -euo pipefail
           export PYTHONPATH="${REPO_DIR}/src:${REPO_DIR}:\${PYTHONPATH:-}"
+          ${BOOTSTRAP_BLOCK}
           python nrp_calibration_pack/profile/run_profile.py \
             --manifest ${PACK_DIR}/manifest/subset_manifest.jsonl \
             --models-dir ${PACK_DIR}/models \
@@ -224,6 +243,8 @@ ${AFFINITY_BLOCK}
             --infer-repeats ${INFER_REPEATS} \
             --train-repeats ${TRAIN_REPEATS} \
             --sample-interval ${SAMPLE_INTERVAL} \
+            --optimizer ${OPTIMIZER} \
+            --sm-occupancy-source ${SM_OCCUPANCY_SOURCE} \
             --num-shards ${COMPLETIONS} \
             --shard-index \${JOB_COMPLETION_INDEX:-0}
         resources:
@@ -267,12 +288,19 @@ spec:
         - |
           set -euo pipefail
           export PYTHONPATH="${REPO_DIR}/src:${REPO_DIR}:\${PYTHONPATH:-}"
+          ${BOOTSTRAP_BLOCK}
           python nrp_calibration_pack/package_source_tar.py \
             --pack-dir ${PACK_DIR} \
             --results-dir ${RESULTS_DIR} \
             --out ${PACKAGE_PATH} \
             --note "source-first NRP package; replay with scripts/rebuild_source_tar_dataset.py"
+          python scripts/rebuild_source_tar_dataset.py \
+            --source-tar ${PACKAGE_PATH} \
+            --out-root ${DATASET_DIR} \
+            --force
+          tar -C ${DATASET_DIR} -czf ${DATASET_PACKAGE_PATH} .
           tar -tzf ${PACKAGE_PATH} | tee ${WORKFLOW_DIR}/package_contents.txt
+          tar -tzf ${DATASET_PACKAGE_PATH} | tee ${WORKFLOW_DIR}/dataset_package_contents.txt
         resources:
           requests:
             cpu: "4"

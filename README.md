@@ -1,63 +1,59 @@
 # PerfSeer Predictor
 
 PerfSeer predicts training and inference performance from compute graphs. This
-branch is the canonical expanded-catalog workflow: SeerNet remains a graph
-predictor, but the dataset, feature schema, profiler, and training flow are
-built for CNN, transformer, recurrent, graph, audio, detector, segmentation, and
-tabular model families.
+expanded-catalog branch keeps SeerNet as a graph predictor while extending the
+dataset, feature schema, profiler, and training flow to convolutional,
+transformer, recurrent, graph, audio, detector, segmentation, and tabular model
+families. Git tracks source, tests, configs, and this README; generated packs,
+profiler results, datasets, checkpoints, and smoke outputs are ignored.
 
-Generated packs, profiler results, datasets, checkpoints, and smoke outputs are
-ignored by git. Source code, tests, configs, and this README are the committed
-interface.
+Terminology:
 
-## Model Design
+- NRP = National Research Platform; NGC = NVIDIA GPU Cloud.
+- GPU = Graphics Processing Unit; CPU = Central Processing Unit.
+- CUDA = Compute Unified Device Architecture; PVC = Persistent Volume Claim.
+- SM = Streaming Multiprocessor; GNN = Graph Neural Network.
+- CNN = Convolutional Neural Network; RNN = Recurrent Neural Network.
+- GRU = Gated Recurrent Unit; LSTM = Long Short-Term Memory.
+- FP32 = 32-bit floating point; FP8 = 8-bit floating point.
+- NVFP4 = NVIDIA 4-bit floating point; JSONL = JSON Lines; PKL = Python pickle.
 
-The original baseline used a fixed CNN-heavy graph schema. Its generated pack
-covered image-style DAGs with operators such as convolution, batch norm, pooling,
-`Gemm`, `Add`, and `Concat`. That was enough for the original dataset, but it
-did not encode the operators and input shapes needed by modern text, sequence,
-audio, graph, detector, segmentation, or tabular workloads.
+## Design
 
-The current design keeps the same core idea, a SeerNet GNN over compute graphs,
-and changes the representation around it:
+The baseline was Convolutional Neural Network-heavy: convolution, batch norm,
+pooling, `Gemm`, `Add`, and `Concat`. Current schema: `perfseer_graph_v1`.
 
-- `perfseer_graph_v1` is the single canonical feature schema.
-- The operator vocabulary includes convolution, depthwise convolution, transpose
-  convolution, normalization, embedding, matmul/bmm, attention, RNN/GRU/LSTM,
-  graph-message operators, activations, pooling, upsample, detector heads,
-  segmentation heads, and tabular feature operators.
-- Node and edge features include tensor-rank and tensor-shape summaries in
-  addition to compute, memory, topology, and destination-tensor summaries.
-- Graph-level features include architecture family, modality, variant kind,
-  depth bucket, width bucket, precision recipe, and label domain.
-- Hardware is handled as a dataset filter. We train one teacher/student pair per
-  hardware class instead of one cross-hardware model, which reduces the feature
-  burden and keeps each model specialized to a single GPU family.
+- Operators: convolution, depthwise/transpose convolution, normalization,
+  embedding, matmul/bmm, attention, recurrent ops, graph-message ops,
+  activations, pooling, upsample, detector heads, segmentation heads, tabular
+  ops.
+- Features: tensor rank/shape, compute, memory, topology, destination tensors,
+  architecture family, modality, variant, depth/width buckets, precision recipe,
+  label domain.
+- Hardware policy: one teacher/student pair per hardware class, not one
+  cross-hardware predictor.
 
-Because the feature dimensions changed, train this branch from scratch. Do not
-reuse baseline checkpoints.
+Because feature dimensions changed, train this branch from scratch. Do not reuse
+baseline checkpoints.
 
 ## Model Input And Output
 
-Training uses PyTorch Geometric `Data` objects:
+Training object: PyTorch Geometric `Data`.
 
-- `data.x`: node features with expanded operator one-hot values, operation
-  arguments, compute/memory statistics, topology, and tensor-shape summaries.
-- `data.edge_index`: directed compute-graph edges.
-- `data.edge_attr`: edge tensor summaries, with optional destination tensor and
+- `data.x`: node features; `data.edge_index`: directed graph edges.
+- `data.edge_attr`: edge tensor summaries, optional destination tensor,
   edge-topology features.
-- `data.u`: graph-level features for aggregate resources, architecture metadata,
-  precision recipe, and label domain.
-- `data.y`: standardized six-target training label.
-- `data.y_raw`: raw six-target label in the original metric space.
+- `data.u`: graph-level aggregate, architecture, precision, and label-domain
+  features.
+- `data.y`: standardized six-target label; `data.y_raw`: raw six-target label.
 
-The model output is always six targets in this fixed order:
+Model outputs, in order:
 
 ```text
 train_util, train_mem, train_time, infer_util, infer_mem, infer_time
 ```
 
-Profiler label files keep the original PerfSeer-compatible dict format:
+Profiler label files remain PerfSeer-compatible:
 
 ```text
 {'train': '<7 pipe-separated fields>', 'infer': '<7 pipe-separated fields>'}
@@ -69,26 +65,28 @@ Each phase string is:
 time|average_sm_util|average_memory_util|average_memory_usage|peak_sm_util|peak_memory_util|peak_memory_usage
 ```
 
-`parse_label()` maps those two seven-field strings into the six model targets.
+`parse_label()` maps the two phase strings into the six model targets.
 
 ## Repository Layout
 
-- `src/perfseer/`: shared schema and original parser/model utilities still used
-  by the optimized pipeline.
-- `src/perfseer-optimized/`: canonical training, evaluation, distillation, and
-  deployment package, imported as `perfseer_optimized`.
-- `src/perfseer_source_converter/`: source-to-graph conversion utilities.
+- `src/perfseer/`: shared schema plus original parser/model utilities.
+- `src/perfseer-optimized/`: training, evaluation, distillation, and deployment
+  package, imported as `perfseer_optimized`.
+- `src/perfseer_source_converter/`: source-to-graph conversion.
 - `nrp_calibration_pack/`: template catalog generator, generated-model runtime,
-  profiler, profile-dataset builder, Dockerfile, and NRP submit wrapper.
-- `scripts/materialize_precision_dataset.py`: converts profiler results into
-  `dataset/cg/cg` and `dataset/label/label`.
+  profiler, profile-dataset builder, Dockerfile, and National Research Platform
+  submit wrapper.
+- `scripts/rebuild_source_tar_dataset.py`: rebuilds `dataset/cg/cg` and
+  `dataset/label/label` from a source-label package.
+- `scripts/run_nrp_source_workflow_local.py`: submits the source-first Nautilus
+  workflow, waits for stages, and downloads source-label and dataset packages.
 - `scripts/run_hardware_distill_flow.py`: scratch teacher training followed by
   same-hardware student distillation.
 
-## Dataset Contents
+## Dataset
 
-The canonical generated pack is `nrp_calibration_pack/`; the canonical
-materialized training dataset is `dataset/`.
+Canonical generated pack: `nrp_calibration_pack/`. Canonical materialized
+training dataset: `dataset/`.
 
 ```text
 dataset/
@@ -99,8 +97,8 @@ dataset/
   precision_rejected_rows.jsonl
 ```
 
-The 10,000-template catalog is deterministic and repo-local. It does not import
-torchvision, timm, transformers, or other heavyweight model libraries.
+The deterministic repo-local catalog has 10,000 templates and no heavyweight
+model-library imports such as torchvision, timm, or transformers.
 
 | Family | Count |
 | --- | ---: |
@@ -120,16 +118,18 @@ torchvision, timm, transformers, or other heavyweight model libraries.
 | `wav2vec2_audio` | 240 |
 | `ft_transformer_tabular` | 240 |
 
-Each family uses this variant mix: 10% canonical anchors, 30% added-depth,
-30% dropped-depth, 20% width/shape/hyperparameter changes, and 10% mixed stress.
-
-Every manifest row includes `model_id`, `architecture_family`, `variant_kind`,
+Variant mix per family: 10% canonical anchors, 30% added-depth, 30%
+dropped-depth, 20% width/shape/hyperparameter changes, 10% mixed stress.
+Manifest fields: `model_id`, `architecture_family`, `variant_kind`,
 `variant_signature`, `input_specs`, `feature_schema_version`, `model_file`,
-`subset_graph_file`, `precision_config`, `profile_point_id`, and label paths.
+`subset_graph_file`, `precision_config`, `profile_point_id`, label paths.
 
-## Create The Pack
+Acceptance gates: 10,000 rows in
+`nrp_calibration_pack/manifest/subset_manifest.jsonl`; family quotas match the
+table; every row has architecture, variant, input spec, schema, precision, and
+model path metadata; unsupported operator coverage is zero.
 
-Generate the shared 10,000-model pack once:
+## Generate Pack
 
 ```bash
 python nrp_calibration_pack/generate_model_sources.py \
@@ -143,8 +143,6 @@ python nrp_calibration_pack/generate_model_sources.py \
   --force
 ```
 
-Create profile dataset specs:
-
 ```bash
 python nrp_calibration_pack/profile/make_profile_datasets.py \
   --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
@@ -155,26 +153,15 @@ python nrp_calibration_pack/profile/make_profile_datasets.py \
   --force
 ```
 
-Acceptance gates:
-
-- `nrp_calibration_pack/manifest/subset_manifest.jsonl` has 10,000 source rows.
-- Family quotas match the table above.
-- Every row has architecture, variant, input spec, schema, precision, and model
-  path metadata.
-- Unsupported operator coverage is zero.
-
 ## Create Hardware Labels
 
-Profile the exact same pack once per hardware class. Each result root must
-contain only one hardware ID. Use `--precision-sweep auto` for the NRP/NGC
-workflow: the profiler expands the source manifest after CUDA device selection.
-Base precisions run wherever supported, FP8 runs only when Transformer Engine
-and Ada/Hopper/Blackwell-class hardware probes pass, and `nvfp4_te` runs only
-when Transformer Engine reports NVFP4 on Blackwell-class hardware. `fp4` and
-`nvfp4` are accepted input aliases for canonical `nvfp4_te`; `mxfp8` is out of
-scope for v1.
-
-Example for RTX 5090:
+Profile the same pack once per hardware class; each result root has one hardware
+ID. `--precision-sweep auto` resolves supported precisions after Compute Unified
+Device Architecture device selection. Base precisions run wherever supported;
+8-bit floating point requires Transformer Engine plus Ada/Hopper/Blackwell
+probes; `nvfp4_te` requires Transformer Engine NVIDIA 4-bit floating point on
+Blackwell-class hardware. `fp4` and `nvfp4` alias to `nvfp4_te`; `mxfp8` is out
+of scope for v1.
 
 ```bash
 python nrp_calibration_pack/profile/run_profile.py \
@@ -191,23 +178,20 @@ python nrp_calibration_pack/profile/run_profile.py \
   --num-shards <N> \
   --shard-index <I>
 ```
-Profiling resumes by default. If a job is paused, interrupted, evicted, or
-restarted with the same `--output-dir`, `--num-shards`, and `--shard-index`,
-`run_profile.py` scans `results_shard<I>.jsonl` plus the corresponding label
-files and skips profile points whose labels are already complete. Use
-`--no-resume` only when you intentionally want to reprofile a shard from the
-beginning.
 
-Low-precision v1 is intentionally explicit. Dense, norm, and generated
-attention rows can be rewritten to Transformer Engine modules when they satisfy
-the TE shape-alignment gate: FP8 uses 16-wide feature and leading-dimension
-alignment, while NVFP4 uses 32-wide feature alignment and a leading dimension of
-at least 32. Conv, RNN, graph, message-passing, undersized, and other unsupported
-mixes are recorded as `unsupported_low_precision_op` instead of falling back to
-FP32.
+Resume is default. Same `--output-dir`, `--num-shards`, and `--shard-index`
+skip completed profile points by scanning `results_shard<I>.jsonl` and labels.
+Use `--no-resume` to reprofile.
 
-Repeat on each hardware class by changing only `--output-dir`, `--hardware-id`,
-and the actual hardware/node affinity:
+Low precision is explicit. Transformer Engine rewrites apply only to dense,
+norm, and generated attention rows that pass shape gates: 8-bit floating point
+needs 16-wide feature and leading-dimension alignment; NVIDIA 4-bit floating
+point needs 32-wide feature alignment and leading dimension at least 32.
+Convolutional, recurrent, graph, message-passing, undersized, and unsupported
+mixes become `unsupported_low_precision_op`, not silent 32-bit fallback.
+
+Change only `--output-dir`, `--hardware-id`, and hardware/node affinity per
+Graphics Processing Unit:
 
 ```text
 nrp_results_rtx3090  -> --hardware-id rtx3090
@@ -215,17 +199,19 @@ nrp_results_rtx4090  -> --hardware-id rtx4090
 nrp_results_rtx5090  -> --hardware-id rtx5090
 ```
 
+Only `status == "ok"` rows become training labels. Unsupported, out-of-memory
+and error rows go to `precision_rejected_rows.jsonl`.
+
 ## Source-First Nautilus Workflow
 
-Build the profiling image from the repository root. The Dockerfile uses the
-verified NGC PyTorch 26.03 Transformer Engine image by default:
+Build and push the profiling image:
 
 ```bash
 docker build -f nrp_calibration_pack/Dockerfile -t <registry>/perfseer-ngc:latest .
 docker push <registry>/perfseer-ngc:latest
 ```
 
-Render the three PVC-backed jobs:
+Render Persistent Volume Claim-backed prepare, profile, and package jobs:
 
 ```bash
 ./nrp_calibration_pack/submit_nrp_source_workflow.sh \
@@ -239,15 +225,124 @@ Render the three PVC-backed jobs:
   --dry-run
 ```
 
-Submit stages in order with `--stage prepare`, then `--stage profile`, then
-`--stage package`. The package stage writes
-`perfseer_<hardware_id>_source_labels.tar.gz`, containing `models/*.py`,
-manifests, profile specs, labels, hardware JSON, result JSONL, rejected rows,
-coverage reports, provenance, and a `replay/` copy of the profiler/runtime
-scripts. It excludes generated PKLs, caches, and checkpoints so the download
-stays small.
+Submit one stage at a time: `--stage prepare`, wait, `--stage profile`, wait,
+then `--stage package`. Package outputs:
 
-For audit or reproducibility, rebuild the graph PKLs from the source tarball:
+- `perfseer_<hardware_id>_source_labels.tar.gz`: `models/*.py`, manifests,
+  profile specs, labels, hardware JSON, result JSON Lines, rejected rows,
+  coverage reports, provenance, and `replay/` profiler/runtime scripts.
+- `perfseer_<hardware_id>_dataset.tar.gz`: rebuilt `cg/cg/*.pkl`,
+  `label/label/*.txt`, `label/precision_metadata.jsonl`, and rejected-row
+  metadata.
+
+One-command local runner:
+
+```bash
+python3 scripts/run_nrp_source_workflow_local.py \
+  --namespace <namespace> \
+  --image <registry>/perfseer-ngc:latest \
+  --allow-mutable-image-tag \
+  --pvc <output-pvc> \
+  --gpus a100,a40,l4,rtx_a4000 \
+  --hardware-id mixed4 \
+  --completions 64 \
+  --local-output-dir nrp_downloads
+```
+
+The runner is the recommended interface when the repository tree must be staged
+into a Nautilus Persistent Volume Claim, when multiple Graphics Processing Unit
+types should run in parallel, or when source-label and materialized dataset
+tarballs should be copied back automatically.
+
+Full dataset run from an Omen backend shell:
+
+```bash
+RUN_ID="perfseer-full-omen-$(date +%m%d%H%M%S)"
+LOG="record/${RUN_ID}_driver.log"
+
+nohup python3 -u scripts/run_nrp_source_workflow_local.py \
+  --namespace ecepxie \
+  --image pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel \
+  --allow-mutable-image-tag \
+  --utility-image alpine:3.20 \
+  --pvc test-pvc \
+  --job-prefix "${RUN_ID}" \
+  --workflow-dir "/mnt/output/${RUN_ID}" \
+  --hardware-id mixed4_full_omen \
+  --stage-local-repo \
+  --subset-size 10000 \
+  --completions 64 \
+  --parallelism 4 \
+  --profile-scheduling-mode shard-switcher \
+  --gpus a100,a40,l4,rtx_a4000 \
+  --active-gpus 4 \
+  --warmup 20 \
+  --infer-repeats 50 \
+  --train-repeats 50 \
+  --sample-interval 0.01 \
+  --optimizer sgd \
+  --sm-occupancy-source nvml_proxy \
+  --profile-precision-sweep auto \
+  --bootstrap-command 'python -m pip install --no-cache-dir torch_geometric networkx scikit-learn tqdm pynvml pyyaml' \
+  --local-output-dir "nrp_downloads/${RUN_ID}" \
+  --timeout-seconds 604800 \
+  --stage-timeout-seconds 1800 \
+  --poll-seconds 60 \
+  --kubectl-request-timeout 30s \
+  --kubectl-hard-timeout-seconds 180 \
+  > "${LOG}" 2>&1 &
+
+echo "$!" > "record/${RUN_ID}.pid"
+```
+
+That command runs the complete 10,000-model catalog. `nohup` means no hangup,
+`python3 -u` means unbuffered output, `2>&1` redirects standard error to
+standard output, and the trailing `&` backgrounds the process. The runner
+creates prepare, profile, package, and download stages; stages the current Omen
+repository into the Persistent Volume Claim; keeps the Omen process alive after
+the Secure Shell session exits; and writes the source-label and dataset tarballs
+under `nrp_downloads/${RUN_ID}` when the workflow finishes.
+
+The same command can be used for a small timing smoke by changing these options:
+
+```text
+--subset-size 100
+--completions 1
+--parallelism 1
+--gpus rtx_a6000
+--active-gpus 1
+--profile-precision-sweep fp32_ieee
+--warmup 1
+--infer-repeats 1
+--train-repeats 1
+```
+
+The default `gpu-partition` scheduler creates exactly four profile Kubernetes
+Jobs, one per `--gpus` preset. Each job requests one Graphics Processing Unit
+kind, uses `parallelism: 1`, and receives a disjoint contiguous shard range; the
+union of those ranges is `0..completions-1`. The `shard-switcher` scheduler
+submits one shard job at a time up to `--active-gpus`, picks from the `--gpus`
+preset list, and retries a shard on another Graphics Processing Unit preset when
+the current job stays pending too long or fails for a retryable node reason.
+
+If the image does not already contain this repository, stage the current local
+tree into the Persistent Volume Claim first:
+
+```bash
+python3 scripts/run_nrp_source_workflow_local.py \
+  --namespace <namespace> \
+  --image pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel \
+  --pvc <output-pvc> \
+  --stage-local-repo \
+  --gpus a100,a40,l4,rtx_a4000 \
+  --hardware-id <hardware-id> \
+  --local-output-dir nrp_downloads
+```
+
+The runner uses a short-lived download pod for copy-back because `kubectl cp`
+requires a running container and cannot copy from a completed package pod.
+
+Rebuild a dataset locally from a source-label tarball:
 
 ```bash
 python scripts/rebuild_source_tar_dataset.py \
@@ -256,43 +351,18 @@ python scripts/rebuild_source_tar_dataset.py \
   --force
 ```
 
-This reconstructs `dataset_rtx5090_rebuilt/cg/cg/*.pkl` from the generated
-Python source constants, writes accepted labels under `label/label/`, and
-preserves rejected rows in `precision_rejected_rows.jsonl`.
+Training path: `generate_model_sources.py` writes sources/manifests/coverage and
+optional graph PKLs; `run_profile.py` profiles each source model on the target
+Graphics Processing Unit with `--precision-sweep auto`; `package_source_tar.py`
+writes the source-label package; `rebuild_source_tar_dataset.py` rebuilds
+`dataset/cg/cg/*.pkl`; `run_nrp_source_workflow_local.py` copies both tarballs;
+hardware-filtered teacher/student training reads `precision_metadata.jsonl` and
+splits labels matching `--hardware-id`.
 
-To materialize local explicit result roots into one combined dataset:
+## Train Per Hardware
 
-```bash
-python scripts/materialize_precision_dataset.py \
-  --pack-dir nrp_calibration_pack \
-  --results-dir nrp_results_rtx3090 \
-  --results-dir nrp_results_rtx4090 \
-  --results-dir nrp_results_rtx5090 \
-  --out-root dataset \
-  --force
-```
-
-Only `status == "ok"` rows become training labels. Unsupported, OOM, and error
-rows are written to `precision_rejected_rows.jsonl`.
-
-The full training path is:
-
-1. `generate_model_sources.py` writes deterministic Python model sources,
-   manifests, coverage reports, and optional local graph PKLs.
-2. `run_profile.py` imports each source model on the target GPU, resolves
-   `--precision-sweep auto`, profiles train/infer timing, and writes labels plus
-   hardware and precision metadata.
-3. `package_source_tar.py` downloads only sources, labels, results, and metadata.
-4. `rebuild_source_tar_dataset.py` regenerates `dataset/cg/cg/*.pkl` from the
-   source pack during audit, or `materialize_precision_dataset.py` materializes
-   local profiler roots directly.
-5. Hardware-filtered teacher/student training reads `precision_metadata.jsonl`
-   and splits only labels matching `--hardware-id`.
-
-## Train One Model Per Hardware
-
-Train a large teacher from scratch and distill the matching student. Use one run
-per hardware ID:
+Train a large teacher from scratch and distill the matching student once per
+hardware ID.
 
 ```bash
 python scripts/run_hardware_distill_flow.py \
@@ -302,11 +372,6 @@ python scripts/run_hardware_distill_flow.py \
   --student-epochs 500 \
   --split-unit graph
 ```
-
-For the other GPUs, rerun with `--hardware-id rtx3090` and `--hardware-id
-rtx5090`. The runner passes the hardware ID to training, and training filters
-`precision_metadata.jsonl` before the split. Each hardware model can still learn
-from every accepted precision recipe for that hardware.
 
 Useful individual commands:
 
@@ -325,9 +390,45 @@ python -m perfseer_optimized.train \
   --run-id hardware_distill_student_128_rtx4090
 ```
 
-## Local Validation
+Rerun with `--hardware-id rtx3090` and `--hardware-id rtx5090` for other GPUs.
+Each hardware model can learn from every accepted precision recipe for that
+hardware.
 
-Run the standard checks after changing code:
+## Folder Label Sampling
+
+Use this auxiliary path for a local folder of PyTorch model source files instead
+of the generated calibration pack. It copies labels back, not a full materialized
+dataset. Each `.py` file must define `make_model()`; `MODEL_ID` and
+`INPUT_SHAPE` are optional. The namespace and Persistent Volume Claim below are
+examples.
+
+```text
+local model folder
+-> build manifest
+-> upload models, manifest, profiler, and verifier to Nautilus Persistent Volume Claim
+-> submit one-Graphics Processing Unit jobs with switching, up to --active-gpus concurrent jobs
+-> generate labels
+-> verify labels
+-> copy remote labels back to local labels/<run_id>/
+```
+
+```bash
+python3 scripts/run_nautilus_folder_label_sampling.py \
+  --models-dir /path/to/pytorch_model_files \
+  --local-labels-dir labels \
+  --namespace ecepxie \
+  --pvc test-pvc \
+  --gpus all-readme \
+  --active-gpus 4 \
+  --pending-timeout-seconds 300 \
+  --min-successful-gpus 1
+```
+
+```bash
+python3 scripts/verify_sampled_labels.py labels/<run_id>
+```
+
+## Validation
 
 ```bash
 python -m py_compile \
@@ -338,8 +439,8 @@ python -m py_compile \
   nrp_calibration_pack/profile/run_profile.py \
   nrp_calibration_pack/package_source_tar.py \
   nrp_calibration_pack/template_catalog.py \
-  scripts/materialize_precision_dataset.py \
   scripts/rebuild_source_tar_dataset.py \
+  scripts/run_nrp_source_workflow_local.py \
   scripts/run_hardware_distill_flow.py \
   src/perfseer/architecture_schema.py \
   src/perfseer-optimized/data.py \
@@ -347,12 +448,12 @@ python -m py_compile \
   src/perfseer-optimized/eval.py \
   src/perfseer_source_converter/converter.py
 
-python -m unittest tests.test_nrp_calibration_pack tests.test_source_converter -v
+python -m unittest scripts.test_nrp_calibration_pack scripts.test_source_converter -v
 git diff --check
 git ls-files -ci --exclude-standard
 ```
 
-Tiny CPU smoke:
+Tiny Central Processing Unit smoke:
 
 ```bash
 python nrp_calibration_pack/generate_model_sources.py \
@@ -382,48 +483,4 @@ python /tmp/perfseer_smoke_pack/profile/run_profile.py \
   --warmup 1 \
   --infer-repeats 1 \
   --train-repeats 1
-```
-
-## Folder Label Sampling
-
-Use this path when the input is a local folder of PyTorch model source files
-instead of the generated calibration pack.
-
-Input model file requirements:
-
-- Each `.py` file must define `make_model()`.
-- `MODEL_ID` is optional; the file stem is used when it is missing.
-- `INPUT_SHAPE` is optional; the workflow default input shape is used when it is
-  missing.
-
-Dataflow:
-
-```text
-local model folder
--> build manifest
--> upload models, manifest, profiler, and verifier to Nautilus PVC
--> submit GPU jobs with switching
--> generate labels
--> verify labels
--> copy remote labels back to local labels/<run_id>/
-```
-
-Example:
-
-```bash
-python3 scripts/run_nautilus_folder_label_sampling.py \
-  --models-dir /path/to/pytorch_model_files \
-  --local-labels-dir labels \
-  --namespace ecepxie \
-  --pvc test-pvc \
-  --gpus all-readme \
-  --active-gpus 4 \
-  --pending-timeout-seconds 300 \
-  --min-successful-gpus 1
-```
-
-Verify copied labels locally:
-
-```bash
-python3 scripts/verify_sampled_labels.py labels/<run_id>
 ```

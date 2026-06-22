@@ -22,7 +22,6 @@ REPLAY_FILES = (
     "nrp_calibration_pack/profile/make_profile_datasets.py",
     "nrp_calibration_pack/profile/run_profile.py",
     "nrp_calibration_pack/package_source_tar.py",
-    "scripts/materialize_precision_dataset.py",
     "scripts/rebuild_source_tar_dataset.py",
     "src/perfseer_source_converter/__init__.py",
     "src/perfseer_source_converter/converter.py",

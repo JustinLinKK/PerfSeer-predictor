@@ -28,6 +28,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-tar", required=True, help="Source-only tarball from nrp_calibration_pack/package_source_tar.py.")
     parser.add_argument("--out-root", required=True, help="Dataset root to write.")
     parser.add_argument("--work-dir", help="Optional extraction directory to keep for audit/debugging.")
+    parser.add_argument(
+        "--precision-config",
+        action="append",
+        default=[],
+        help="Only materialize matching precision config(s). May be repeated or comma-separated.",
+    )
     parser.add_argument("--force", action="store_true", help="Remove existing --out-root before writing.")
     return parser.parse_args(argv)
 
@@ -121,7 +127,16 @@ def label_text_for_row(row: dict[str, Any], result_root: Path) -> str | None:
     return None
 
 
-def write_labels_and_metadata(extracted: Path, out_root: Path, model_ids: set[str]) -> tuple[int, int]:
+def parse_precision_filter(values: list[str]) -> set[str]:
+    return {item.strip() for value in values for item in value.split(",") if item.strip()}
+
+
+def write_labels_and_metadata(
+    extracted: Path,
+    out_root: Path,
+    model_ids: set[str],
+    precision_filter: set[str],
+) -> tuple[int, int]:
     label_dir = out_root / "label" / "label"
     label_dir.mkdir(parents=True, exist_ok=True)
     metadata_path = out_root / "label" / "precision_metadata.jsonl"
@@ -136,6 +151,8 @@ def write_labels_and_metadata(extracted: Path, out_root: Path, model_ids: set[st
             precision_config = str(row.get("precision_config") or row.get("precision", {}).get("precision_config") or "unknown")
             status = str(row.get("status") or "unknown")
             hw_id = hardware_id_for_row(row)
+            if precision_filter and precision_config not in precision_filter:
+                continue
             if status != "ok":
                 rejected_fh.write(
                     json.dumps(
@@ -218,11 +235,18 @@ def main(argv: list[str] | None = None) -> None:
         safe_extract(source_tar, extracted)
         rows = load_manifest_rows(extracted)
         graph_count = write_graphs(extracted, out_root, rows)
-        label_count, rejected_count = write_labels_and_metadata(extracted, out_root, {str(row["model_id"]) for row in rows})
+        precision_filter = parse_precision_filter(args.precision_config)
+        label_count, rejected_count = write_labels_and_metadata(
+            extracted,
+            out_root,
+            {str(row["model_id"]) for row in rows},
+            precision_filter,
+        )
         report = {
             "source_tar": str(source_tar),
             "graphs": graph_count,
             "precision_labels": label_count,
+            "precision_filter": sorted(precision_filter),
             "rejected_rows": rejected_count,
             "metadata_file": "label/precision_metadata.jsonl",
             "rejected_rows_file": "precision_rejected_rows.jsonl",
