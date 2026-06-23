@@ -373,7 +373,7 @@ spec:
               --profile-epochs 1
               --batches-per-epoch 1
               --sample-interval 0.01
-              --optimizer sgd
+              --optimizer adam
               --sm-occupancy-source nvml_proxy
               --precision-config fp32_ieee &&
               python /config/verify_sampled_labels.py {out_dir}

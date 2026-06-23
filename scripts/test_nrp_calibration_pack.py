@@ -31,6 +31,8 @@ from nrp_calibration_pack.build_pack import (  # noqa: E402
     GraphRecord,
     generate_model_source,
     load_records,
+    low_precision_focus_families,
+    low_precision_focus_reasons,
     materialize_template_records,
     parse_args as parse_pack_args,
     parse_precision_sweep,
@@ -39,7 +41,7 @@ from nrp_calibration_pack.build_pack import (  # noqa: E402
     write_pack,
 )
 from nrp_calibration_pack.profile.generated_model_runtime import GraphModel  # noqa: E402
-from nrp_calibration_pack.template_catalog import template_family_counts  # noqa: E402
+from nrp_calibration_pack.template_catalog import TE_LOW_PRECISION_TRANSFORMER_FAMILIES, template_family_counts  # noqa: E402
 from perfseer.architecture_schema import ARCHITECTURE_FAMILY_QUOTAS, FEATURE_SCHEMA_VERSION, NODE_TYPES as ARCH_NODE_TYPES  # noqa: E402
 from perfseer.data import parse_label as parse_dataset_label  # noqa: E402
 from perfseer_optimized.train import apply_overrides as apply_train_overrides  # noqa: E402
@@ -601,8 +603,17 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertEqual(args.out_dir, "nrp_calibration_pack")
         self.assertEqual(args.seed, DEFAULT_TEMPLATE_SEED)
         self.assertEqual(args.subset_size, DEFAULT_SUBSET_SIZE)
+        self.assertEqual(args.low_precision_focus, "none")
         with self.assertRaises(SystemExit):
             parse_pack_args(["--catalog-mode", "dataset"])
+
+    def test_low_precision_focus_parser_selects_te_transformer_families(self) -> None:
+        args = parse_pack_args(["--low-precision-focus", "te_transformer"])
+
+        self.assertEqual(args.low_precision_focus, "te_transformer")
+        self.assertEqual(low_precision_focus_families("te_transformer"), TE_LOW_PRECISION_TRANSFORMER_FAMILIES)
+        with self.assertRaises(SystemExit):
+            parse_pack_args(["--low-precision-focus", "cnn"])
 
     def test_canonical_feature_layout_uses_expanded_schema(self) -> None:
         from perfseer_optimized.data import FeatureConfig, feature_layout
@@ -747,6 +758,43 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("GRU", coverage["operator_coverage"])
         self.assertIn("GraphMessage", coverage["operator_coverage"])
         self.assertEqual(set(coverage["operator_coverage"]).issubset(set(ARCH_NODE_TYPES)), True)
+
+    def test_te_transformer_focus_pack_generates_fp8_nvfp4_safe_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pack_dir = tmp_path / "pack"
+            records = materialize_template_records(
+                pack_dir,
+                8,
+                DEFAULT_TEMPLATE_SEED,
+                force=True,
+                families=low_precision_focus_families("te_transformer"),
+            )
+            written, failures = write_pack(
+                records,
+                records,
+                pack_dir,
+                "compile",
+                precision_sweep=("fp8_te_hybrid", "nvfp4_te"),
+                generation_workers=1,
+                low_precision_focus="te_transformer",
+            )
+            rows = [
+                json.loads(line)
+                for line in (pack_dir / "manifest" / "subset_manifest.jsonl").read_text().splitlines()
+                if '"precision_config": "fp8_te_hybrid"' in line
+            ]
+            coverage = json.loads((pack_dir / "coverage_summary.json").read_text())
+            modules = [import_generated((pack_dir / row["model_file"]).read_text(), tmp)[0] for row in rows]
+
+        self.assertEqual(written, 8)
+        self.assertEqual(failures, 0)
+        self.assertEqual(coverage["low_precision_focus"], "te_transformer")
+        self.assertEqual({row["architecture_family"] for row in rows}.issubset(set(TE_LOW_PRECISION_TRANSFORMER_FAMILIES)), True)
+        for module in modules:
+            self.assertEqual(low_precision_focus_reasons(module.NODE_SPECS, "te_transformer"), [])
+            self.assertEqual(GraphModel(module.NODE_SPECS).low_precision_unsupported_reasons("fp8_te_hybrid"), [])
+            self.assertEqual(GraphModel(module.NODE_SPECS).low_precision_unsupported_reasons("nvfp4_te"), [])
 
     def test_write_pack_replaces_validation_failures(self) -> None:
         bad = nx.DiGraph()
@@ -1103,6 +1151,22 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertFalse(runtime.supported)
         self.assertEqual(runtime.details["bf16_probe"]["torch_cuda_is_bf16_supported"], False)
         self.assertTrue(runtime.details["bf16_probe"]["compute_capability_policy_supported"])
+
+    def test_profiler_default_optimizer_is_adam(self) -> None:
+        module = import_run_profile_module()
+
+        args = module.parse_args(
+            [
+                "--manifest",
+                "manifest.jsonl",
+                "--models-dir",
+                "models",
+                "--output-dir",
+                "out",
+            ]
+        )
+
+        self.assertEqual(args.optimizer, "adam")
 
     def test_fp8_transformer_engine_policy_allows_ada_compute_capability(self) -> None:
         module = import_run_profile_module()
@@ -1851,6 +1915,8 @@ class NrpCalibrationPackTests(unittest.TestCase):
                 "3",
                 "--subset-size",
                 "7",
+                "--low-precision-focus",
+                "te_transformer",
                 "--dry-run",
             ],
             check=True,
@@ -1863,8 +1929,10 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("name: perfseer-nrp-source-profile-labels", yaml)
         self.assertIn("name: perfseer-nrp-source-package-results", yaml)
         self.assertIn("--subset-size 7", yaml)
+        self.assertIn("--low-precision-focus te_transformer", yaml)
         self.assertIn("--precision-sweep fp32_ieee", yaml)
         self.assertIn("--precision-sweep auto", yaml)
+        self.assertIn("--optimizer adam", yaml)
         self.assertIn("--hardware-id rtx5090", yaml)
         self.assertIn("completionMode: Indexed", yaml)
         self.assertIn("completions: 3", yaml)

@@ -52,6 +52,13 @@ FAMILY_MODALITY: dict[str, str] = {
     "ft_transformer_tabular": "tabular",
 }
 
+TE_LOW_PRECISION_TRANSFORMER_FAMILIES: tuple[str, ...] = (
+    "vit_encoder",
+    "ast_audio_transformer",
+    "wav2vec2_audio",
+    "ft_transformer_tabular",
+)
+
 
 @dataclass(frozen=True)
 class TemplateSpec:
@@ -71,7 +78,14 @@ class TemplateSpec:
         return f"{self.family}:{self.variant_kind}:{self.local_index}:seed{self.seed}"
 
 
-def template_family_counts(subset_size: int) -> dict[str, int]:
+def template_family_counts(subset_size: int, families: Iterable[str] | None = None) -> dict[str, int]:
+    if families is not None:
+        family_list = [family for family in families if family in ARCHITECTURE_FAMILIES]
+        if not family_list:
+            raise ValueError("template family filter selected no known families")
+        base = subset_size // len(family_list)
+        rem = subset_size % len(family_list)
+        return {family: base + (1 if idx < rem else 0) for idx, family in enumerate(family_list)}
     full_total = sum(ARCHITECTURE_FAMILY_QUOTAS.values())
     if subset_size == full_total:
         return dict(ARCHITECTURE_FAMILY_QUOTAS)
@@ -81,9 +95,10 @@ def template_family_counts(subset_size: int) -> dict[str, int]:
     return {family: base + (1 if idx < rem else 0) for idx, family in enumerate(families)}
 
 
-def iter_template_specs(subset_size: int, seed: int) -> Iterable[TemplateSpec]:
+def iter_template_specs(subset_size: int, seed: int, families: Iterable[str] | None = None) -> Iterable[TemplateSpec]:
     model_index = 0
-    for family_index, (family, count) in enumerate(template_family_counts(subset_size).items()):
+    for family, count in template_family_counts(subset_size, families=families).items():
+        family_index = list(ARCHITECTURE_FAMILIES).index(family)
         variants = variant_plan(count)
         for local_index, variant_kind in enumerate(variants):
             yield TemplateSpec(model_index, family, variant_kind, local_index, family_index, seed)
@@ -150,6 +165,20 @@ def _width(spec: TemplateSpec, base: int = 16) -> int:
     if spec.variant_kind == "mixed_stress":
         scale += 1
     return base * scale
+
+
+def _align_up(value: int, multiple: int) -> int:
+    return max(multiple, ((value + multiple - 1) // multiple) * multiple)
+
+
+def _te_transformer_width(spec: TemplateSpec) -> int:
+    return _align_up(_width(spec), 32)
+
+
+def _te_transformer_seq(spec: TemplateSpec, batch: int) -> int:
+    base = max(1, 32 // max(batch, 1))
+    stride = max(1, 16 // max(batch, 1))
+    return base + stride * (spec.local_index % 2)
 
 
 def _batch(spec: TemplateSpec) -> int:
@@ -385,10 +414,10 @@ def _unet_graph(spec: TemplateSpec) -> nx.DiGraph:
 
 
 def _transformer_graph(spec: TemplateSpec, family: str, *, token_input: bool, kind: str) -> nx.DiGraph:
-    width = _width(spec)
-    seq = 8 + 2 * (spec.local_index % 4)
-    graph = _new_graph(spec, _token_input(spec, seq) if token_input else _seq_input(spec, seq, width, kind=kind))
     batch = _batch(spec)
+    width = _te_transformer_width(spec)
+    seq = _te_transformer_seq(spec, batch)
+    graph = _new_graph(spec, _token_input(spec, seq) if token_input else _seq_input(spec, seq, width, kind=kind))
     if token_input:
         prev = _add_node(graph, "Embedding", _mem_seq(batch, seq, width, width, tokens=True), args={"vocab_size": 1024}, input_index=0)
     else:
@@ -401,7 +430,7 @@ def _transformer_graph(spec: TemplateSpec, family: str, *, token_input: bool, ki
         prev = _add_node(graph, "Gemm", _mem_seq(batch, seq, width, width), args=_linear_args(width, width), preds=[gelu])
     if family in {"bert_encoder", "t5_encoder_decoder"}:
         prev = _add_node(graph, "Softmax", _mem_seq(batch, seq, width, width), args={"softmax_dim": -1}, preds=[prev])
-    _add_node(graph, "Gemm", _mem_seq(batch, seq, width, max(4, width // 2)), args=_linear_args(width, max(4, width // 2)), preds=[prev])
+    _add_node(graph, "Gemm", _mem_seq(batch, seq, width, width), args=_linear_args(width, width), preds=[prev])
     return graph
 
 

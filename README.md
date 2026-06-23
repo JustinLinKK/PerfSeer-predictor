@@ -143,6 +143,30 @@ python nrp_calibration_pack/generate_model_sources.py \
   --force
 ```
 
+For local RTX 5090 FP8/NVFP4 label generation, make a transformer-focused pack
+instead of starting with the broad CNN-first catalog:
+
+```bash
+python nrp_calibration_pack/generate_model_sources.py \
+  --catalog-mode template \
+  --subset-size 256 \
+  --seed 20260617 \
+  --out-dir nrp_calibration_pack_te_transformer \
+  --precision-sweep fp32_ieee \
+  --validation-mode compile \
+  --generation-workers "$(nproc)" \
+  --low-precision-focus te_transformer \
+  --force
+```
+
+`te_transformer` emits non-embedding transformer template families
+(`vit_encoder`, `ast_audio_transformer`, `wav2vec2_audio`, and
+`ft_transformer_tabular`) and verifies that each generated source passes both
+the FP8 and NVFP4 Transformer Engine shape gates. The full catalog still
+contains CNN, recurrent, graph, and message-passing models for baseline
+precisions; those operator families are intentionally recorded as
+`unsupported_low_precision_op` for FP8/NVFP4 in v1.
+
 ```bash
 python nrp_calibration_pack/profile/make_profile_datasets.py \
   --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
@@ -172,9 +196,11 @@ python nrp_calibration_pack/profile/run_profile.py \
   --precision-sweep auto \
   --profile-dataset-dir nrp_calibration_pack/profile_datasets \
   --device cuda \
+  --sm-occupancy-source nvml_proxy \
   --warmup 20 \
   --infer-repeats 50 \
   --train-repeats 50 \
+  --optimizer adam \
   --num-shards <N> \
   --shard-index <I>
 ```
@@ -187,8 +213,9 @@ Low precision is explicit. Transformer Engine rewrites apply only to dense,
 norm, and generated attention rows that pass shape gates: 8-bit floating point
 needs 16-wide feature and leading-dimension alignment; NVIDIA 4-bit floating
 point needs 32-wide feature alignment and leading dimension at least 32.
-Convolutional, recurrent, graph, message-passing, undersized, and unsupported
-mixes become `unsupported_low_precision_op`, not silent 32-bit fallback.
+Convolutional, recurrent, graph, message-passing, embedding-heavy token
+transformer, undersized, and unsupported mixes become
+`unsupported_low_precision_op`, not silent 32-bit fallback.
 
 Change only `--output-dir`, `--hardware-id`, and hardware/node affinity per
 Graphics Processing Unit:
@@ -227,6 +254,9 @@ Render Persistent Volume Claim-backed prepare, profile, and package jobs:
 
 Submit one stage at a time: `--stage prepare`, wait, `--stage profile`, wait,
 then `--stage package`. Package outputs:
+
+For a 5090 FP8/NVFP4 transformer-focused Nautilus run, add
+`--low-precision-focus te_transformer` to the prepare/source workflow command.
 
 - `perfseer_<hardware_id>_source_labels.tar.gz`: `models/*.py`, manifests,
   profile specs, labels, hardware JSON, result JSON Lines, rejected rows,
@@ -280,10 +310,10 @@ nohup python3 -u scripts/run_nrp_source_workflow_local.py \
   --infer-repeats 50 \
   --train-repeats 50 \
   --sample-interval 0.01 \
-  --optimizer sgd \
+  --optimizer adam \
   --sm-occupancy-source nvml_proxy \
   --profile-precision-sweep auto \
-  --bootstrap-command 'python -m pip install --no-cache-dir torch_geometric networkx scikit-learn tqdm pynvml pyyaml' \
+  --bootstrap-command 'python -m pip install --no-cache-dir torch_geometric networkx scikit-learn tqdm nvidia-ml-py pyyaml' \
   --local-output-dir "nrp_downloads/${RUN_ID}" \
   --timeout-seconds 604800 \
   --stage-timeout-seconds 1800 \

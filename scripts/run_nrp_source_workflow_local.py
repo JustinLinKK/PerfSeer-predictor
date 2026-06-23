@@ -758,6 +758,8 @@ def submit_stage(args: argparse.Namespace, stage: str) -> None:
         str(args.seed),
         "--generation-workers",
         str(args.generation_workers),
+        "--low-precision-focus",
+        args.low_precision_focus,
         "--parallelism",
         str(args.parallelism),
         "--completions",
@@ -1228,13 +1230,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--subset-size", type=int, default=10000)
     parser.add_argument("--seed", type=int, default=20260617)
     parser.add_argument("--generation-workers", type=int, default=0)
+    parser.add_argument("--low-precision-focus", default="none", choices=("none", "te_transformer"))
     parser.add_argument("--parallelism", type=int, default=4)
     parser.add_argument("--completions", type=int, default=64)
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--infer-repeats", type=int, default=50)
     parser.add_argument("--train-repeats", type=int, default=50)
     parser.add_argument("--sample-interval", type=float, default=0.01)
-    parser.add_argument("--optimizer", default="sgd", choices=("sgd", "adam", "adamw"))
+    parser.add_argument("--optimizer", default="adam", choices=("sgd", "adam", "adamw"))
     parser.add_argument("--sm-occupancy-source", default="nvml_proxy", choices=("ncu", "nvml_proxy"))
     parser.add_argument("--profile-precision-sweep", default="auto")
     parser.add_argument("--bootstrap-command", default="")

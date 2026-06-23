@@ -14,13 +14,14 @@ HARDWARE_ID="rtx5090"
 SUBSET_SIZE="10000"
 SEED="20260617"
 GENERATION_WORKERS="0"
+LOW_PRECISION_FOCUS="none"
 PARALLELISM="4"
 COMPLETIONS="64"
 WARMUP="20"
 INFER_REPEATS="50"
 TRAIN_REPEATS="50"
 SAMPLE_INTERVAL="0.01"
-OPTIMIZER="sgd"
+OPTIMIZER="adam"
 SM_OCCUPANCY_SOURCE="nvml_proxy"
 BOOTSTRAP_COMMAND=""
 DRY_RUN="0"
@@ -49,13 +50,15 @@ Options:
   --subset-size N         Number of unique generated source models. Default: 10000.
   --seed N                Deterministic generation/profile seed. Default: 20260617.
   --generation-workers N  Source generation workers. Default: 0 (all CPUs).
+  --low-precision-focus VALUE
+                          Source-generation focus: none or te_transformer. Default: none.
   --parallelism N         Concurrent profile pods. Default: 4.
   --completions N         Indexed profile shard count. Default: 64.
   --warmup N              Warmup iterations before timing. Default: 20.
   --infer-repeats N       Timed inference iterations per model. Default: 50.
   --train-repeats N       Timed train-step iterations per model. Default: 50.
   --sample-interval SEC   NVML sampling interval. Default: 0.01.
-  --optimizer VALUE       Training optimizer for profiling labels. Default: sgd.
+  --optimizer VALUE       Training optimizer for profiling labels. Default: adam.
   --sm-occupancy-source VALUE
                           SM occupancy source: ncu or nvml_proxy. Default: nvml_proxy.
   --bootstrap-command CMD Optional shell command run before each stage command.
@@ -78,6 +81,7 @@ while [[ $# -gt 0 ]]; do
     --subset-size) SUBSET_SIZE="$2"; shift 2 ;;
     --seed) SEED="$2"; shift 2 ;;
     --generation-workers) GENERATION_WORKERS="$2"; shift 2 ;;
+    --low-precision-focus) LOW_PRECISION_FOCUS="$2"; shift 2 ;;
     --parallelism) PARALLELISM="$2"; shift 2 ;;
     --completions) COMPLETIONS="$2"; shift 2 ;;
     --warmup) WARMUP="$2"; shift 2 ;;
@@ -165,6 +169,7 @@ spec:
             --precision-sweep fp32_ieee \
             --validation-mode compile \
             --generation-workers ${GENERATION_WORKERS} \
+            --low-precision-focus ${LOW_PRECISION_FOCUS} \
             --force
           python nrp_calibration_pack/profile/make_profile_datasets.py \
             --manifest ${PACK_DIR}/manifest/subset_manifest.jsonl \
@@ -177,6 +182,7 @@ spec:
             "repo_dir=${REPO_DIR}" \
             "subset_size=${SUBSET_SIZE}" \
             "seed=${SEED}" \
+            "low_precision_focus=${LOW_PRECISION_FOCUS}" \
             "source_manifest=${PACK_DIR}/manifest/subset_manifest.jsonl" \
             "profile_dataset_dir=${PROFILE_DATASET_DIR}" \
             > ${WORKFLOW_DIR}/prepare_provenance.txt

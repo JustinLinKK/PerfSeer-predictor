@@ -22,6 +22,29 @@ python nrp_calibration_pack/generate_model_sources.py \
   --force
 ```
 
+For a local RTX 5090 FP8/NVFP4 transformer sweep, generate a TE-focused source
+pack:
+
+```bash
+python nrp_calibration_pack/generate_model_sources.py \
+  --catalog-mode template \
+  --subset-size 256 \
+  --seed 20260617 \
+  --out-dir nrp_calibration_pack_te_transformer \
+  --precision-sweep fp32_ieee \
+  --validation-mode compile \
+  --generation-workers "$(nproc)" \
+  --low-precision-focus te_transformer \
+  --force
+```
+
+This focus mode keeps v1 low precision on non-embedding transformer rows whose
+dense, norm, and generated attention operators satisfy both FP8 and NVFP4
+Transformer Engine gates. The broad catalog still includes CNN, recurrent,
+graph, message-passing, and token-embedding transformer rows for baseline
+precisions, but those are explicit `unsupported_low_precision_op` rows for
+FP8/NVFP4 until separate runtime rewrites are implemented.
+
 ## Build Profile Specs
 
 ```bash
@@ -45,9 +68,11 @@ python nrp_calibration_pack/profile/run_profile.py \
   --precision-sweep auto \
   --profile-dataset-dir nrp_calibration_pack/profile_datasets \
   --device cuda \
+  --sm-occupancy-source nvml_proxy \
   --warmup 20 \
   --infer-repeats 50 \
   --train-repeats 50 \
+  --optimizer adam \
   --num-shards <N> \
   --shard-index <I>
 ```
@@ -70,9 +95,9 @@ are accepted aliases. `mxfp8` remains out of scope for v1.
 Low precision is enabled only for generated dense, norm, and attention rows that
 pass the TE rewrite and shape gates. FP8 requires 16-wide feature and leading
 alignment; NVFP4 requires 32-wide feature alignment and a leading dimension of
-at least 32. Unsupported conv/RNN/graph/message-passing mixes and undersized
-low-precision shapes are recorded as `unsupported_low_precision_op`, never
-silently profiled as FP32.
+at least 32. Unsupported conv/RNN/graph/message-passing mixes,
+embedding-heavy token transformers, and undersized low-precision shapes are
+recorded as `unsupported_low_precision_op`, never silently profiled as FP32.
 
 ## Nautilus Source Workflow
 
@@ -103,6 +128,9 @@ Submit one stage at a time: `--stage prepare`, wait for completion, then
 rejected rows, reports, provenance, and a `replay/` copy of the profiler/runtime
 scripts. It excludes `subset/cg/cg/*.pkl`, generated PyG PKLs, caches, and
 checkpoints.
+
+For a 5090 FP8/NVFP4 transformer-focused Nautilus run, add
+`--low-precision-focus te_transformer` to the source workflow command.
 
 ## Rebuild Or Materialize Labels
 

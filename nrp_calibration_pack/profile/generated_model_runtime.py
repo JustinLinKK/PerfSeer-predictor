@@ -56,6 +56,17 @@ def _input_last_dim(mem: dict[str, Any], default: int = 8) -> int:
 
 
 def _leading_dim(mem: dict[str, Any], last_dim: int, *, field: str = "input_size") -> int:
+    batch = _positive(mem.get("batch_size"), 1)
+    rank = _as_int(mem.get("rank"), 0)
+    if rank == 3:
+        seq = _positive(mem.get("sequence_length"), 0)
+        if seq > 0:
+            return max(1, batch * seq)
+    if rank == 4:
+        spatial = _positive(mem.get("spatial_area"), 0)
+        if spatial <= 0:
+            spatial = _positive(mem.get("input_h"), 1) * _positive(mem.get("input_w"), 1)
+        return max(1, batch * spatial)
     size = _positive(mem.get(field), last_dim)
     return max(1, size // max(last_dim, 1))
 

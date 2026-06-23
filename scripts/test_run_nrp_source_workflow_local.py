@@ -182,6 +182,8 @@ class SourceWorkflowLocalRunnerTests(unittest.TestCase):
                         "rtx5090",
                         "--subset-size",
                         "2",
+                        "--low-precision-focus",
+                        "te_transformer",
                         "--completions",
                         "1",
                         "--parallelism",
@@ -200,9 +202,11 @@ class SourceWorkflowLocalRunnerTests(unittest.TestCase):
                 for call in run_calls
                 if call and call[0].endswith("submit_nrp_source_workflow.sh")
             ]
+            submit_calls = [call for call in run_calls if call and call[0].endswith("submit_nrp_source_workflow.sh")]
             cp_calls = [call for call in run_calls if call[:2] == ["kubectl", "cp"]]
 
         self.assertEqual(submit_stages, ["prepare", "package"])
+        self.assertTrue(all("--low-precision-focus" in call and "te_transformer" in call for call in submit_calls))
         partition_runner.assert_called_once()
         self.assertIn(
             [

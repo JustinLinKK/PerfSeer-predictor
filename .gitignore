@@ -230,11 +230,16 @@ runs/
 nrp_calibration_pack/models/calib_*.py
 nrp_calibration_pack/manifest/
 nrp_calibration_pack/subset/
+nrp_calibration_pack/template_catalog/
 nrp_calibration_pack/profile_datasets/
 nrp_calibration_pack/selection_report.md
 nrp_calibration_pack/coverage_summary.json
 
 # Local calibration/profile smoke outputs.
 nrp_results_*/
+perfseer_*_source_labels.tar.gz
+*_source_labels.tar.gz
 perfseer_*_pack/
 perfseer_*_results/
+nrp_calibration_pack/template_catalog/*
+nrp_calibration_pack_*

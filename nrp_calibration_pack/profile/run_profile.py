@@ -155,7 +155,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--sample-interval", type=float, default=0.01)
     parser.add_argument("--device", default="cuda")
-    parser.add_argument("--optimizer", default="sgd", choices=("sgd", "adam", "adamw"))
+    parser.add_argument("--optimizer", default="adam", choices=("sgd", "adam", "adamw"))
     parser.add_argument("--sm-occupancy-source", default="ncu", choices=("ncu", "nvml_proxy"))
     parser.add_argument(
         "--hardware-id",
@@ -441,7 +441,7 @@ def main():
     parser.add_argument("--model-file", required=True)
     parser.add_argument("--input-shape", required=True)
     parser.add_argument("--phase", required=True, choices=("infer", "train"))
-    parser.add_argument("--optimizer", default="sgd", choices=("sgd", "adam", "adamw"))
+    parser.add_argument("--optimizer", default="adam", choices=("sgd", "adam", "adamw"))
     args = parser.parse_args()
     model = load_model(args.model_file).cuda()
     x = torch.randn(tuple(json.loads(args.input_shape)), device="cuda")
@@ -1025,6 +1025,19 @@ def phase_label_v2(
     return label
 
 
+def nvml_proxy_occupancy(detail: dict[str, Any], *, reason: str | None = None) -> dict[str, Any]:
+    sampler = detail["sampler"]
+    out = {
+        "avg_sm_occupancy_percent": sampler.get("avg_sm_util", 0.0),
+        "peak_sm_occupancy_percent": sampler.get("peak_sm_util", 0.0),
+        "source": "nvml_utilization_proxy",
+        "kernel_count": 0,
+    }
+    if reason:
+        out["fallback_reason"] = reason
+    return out
+
+
 def timed_phase(
     phase: str,
     fn: Callable[[], torch.Tensor],
@@ -1231,23 +1244,19 @@ def profile_model(
             "backward_gradient_dtypes": gradient_dtypes,
         }
         if args.sm_occupancy_source == "ncu":
-            infer_occupancy = collect_ncu_occupancy(row, models_dir, output_dir, input_shape, "infer", args.optimizer)
-            train_occupancy = collect_ncu_occupancy(row, models_dir, output_dir, input_shape, "train", args.optimizer)
+            try:
+                infer_occupancy = collect_ncu_occupancy(row, models_dir, output_dir, input_shape, "infer", args.optimizer)
+                train_occupancy = collect_ncu_occupancy(row, models_dir, output_dir, input_shape, "train", args.optimizer)
+            except RuntimeError as exc:
+                reason = repr(exc)
+                if "ERR_NVGPUCTRPERM" not in reason and "ncu or nv-nsight-cu-cli is required" not in reason:
+                    raise
+                result["label_v2_occupancy_warning"] = reason
+                infer_occupancy = nvml_proxy_occupancy(infer_detail, reason=reason)
+                train_occupancy = nvml_proxy_occupancy(train_detail, reason=reason)
         else:
-            infer_sampler = infer_detail["sampler"]
-            train_sampler = train_detail["sampler"]
-            infer_occupancy = {
-                "avg_sm_occupancy_percent": infer_sampler.get("avg_sm_util", 0.0),
-                "peak_sm_occupancy_percent": infer_sampler.get("peak_sm_util", 0.0),
-                "source": "nvml_utilization_proxy",
-                "kernel_count": 0,
-            }
-            train_occupancy = {
-                "avg_sm_occupancy_percent": train_sampler.get("avg_sm_util", 0.0),
-                "peak_sm_occupancy_percent": train_sampler.get("peak_sm_util", 0.0),
-                "source": "nvml_utilization_proxy",
-                "kernel_count": 0,
-            }
+            infer_occupancy = nvml_proxy_occupancy(infer_detail)
+            train_occupancy = nvml_proxy_occupancy(train_detail)
         result["label_v2"] = {
             "train": phase_label_v2(train_detail, data_type, train_occupancy, args.optimizer),
             "infer": phase_label_v2(infer_detail, data_type, infer_occupancy),

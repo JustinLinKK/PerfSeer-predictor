@@ -24,7 +24,13 @@ import numpy as np
 import torch
 
 from perfseer.architecture_schema import FEATURE_SCHEMA_VERSION, NODE_TYPES as ARCH_NODE_TYPES
-from nrp_calibration_pack.template_catalog import build_template_graph, iter_template_specs, template_family_counts
+from nrp_calibration_pack.profile.generated_model_runtime import GraphModel
+from nrp_calibration_pack.template_catalog import (
+    TE_LOW_PRECISION_TRANSFORMER_FAMILIES,
+    build_template_graph,
+    iter_template_specs,
+    template_family_counts,
+)
 
 
 SEED = 20260617
@@ -32,6 +38,8 @@ DEFAULT_TEMPLATE_SEED = SEED
 DEFAULT_SUBSET_SIZE = 10000
 DEFAULT_PILOT_SUBSET_SIZE = 1000
 DEFAULT_PRECISION_SWEEP = ("fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid")
+LOW_PRECISION_FOCUS_CHOICES = ("none", "te_transformer")
+LOW_PRECISION_FOCUS_PRECISIONS = ("fp8_te_hybrid", "nvfp4_te")
 PRECISION_ALIASES = {
     "fp32": "fp32_ieee",
     "float32": "fp32_ieee",
@@ -168,6 +176,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--validation-mode", choices=("compile", "construct", "meta", "real", "none"), default="compile")
     parser.add_argument(
+        "--low-precision-focus",
+        choices=LOW_PRECISION_FOCUS_CHOICES,
+        default="none",
+        help=(
+            "Restrict generated templates for low-precision profiling. "
+            "'te_transformer' emits non-embedding transformer rows that pass FP8 and NVFP4 TE gates."
+        ),
+    )
+    parser.add_argument(
         "--generation-workers",
         type=int,
         default=0,
@@ -238,7 +255,14 @@ def load_records(data_root: Path, generation_workers: int | None = 1) -> list[Gr
     return records
 
 
-def materialize_template_records(out_dir: Path, subset_size: int, seed: int, *, force: bool = False) -> list[GraphRecord]:
+def materialize_template_records(
+    out_dir: Path,
+    subset_size: int,
+    seed: int,
+    *,
+    force: bool = False,
+    families: Iterable[str] | None = None,
+) -> list[GraphRecord]:
     catalog_root = out_dir / "template_catalog"
     graph_dir = catalog_root / "cg" / "cg"
     label_dir = catalog_root / "label" / "label"
@@ -248,7 +272,7 @@ def materialize_template_records(out_dir: Path, subset_size: int, seed: int, *, 
     label_dir.mkdir(parents=True, exist_ok=True)
 
     records: list[GraphRecord] = []
-    for spec in iter_template_specs(subset_size, seed):
+    for spec in iter_template_specs(subset_size, seed, families=families):
         graph = build_template_graph(spec)
         graph_path = graph_dir / f"{spec.model_stem}.pkl"
         label_path = label_dir / f"{spec.model_stem}.txt"
@@ -1010,8 +1034,10 @@ def write_pack(
     validation_mode: str,
     precision_sweep: Iterable[str] | str | None = None,
     generation_workers: int | None = 1,
+    low_precision_focus: str = "none",
 ) -> tuple[int, int]:
     precision_configs = parse_precision_sweep(precision_sweep)
+    low_precision_focus = normalize_low_precision_focus(low_precision_focus)
     workers = resolve_generation_workers(generation_workers)
     sync_runtime_files(out_dir)
     models_dir = out_dir / "models"
@@ -1041,7 +1067,7 @@ def write_pack(
         attempted.add(record.stem)
         candidate_records.append(record)
 
-    for result in prepare_pack_candidates(candidate_records, validation_mode, workers):
+    for result in prepare_pack_candidates(candidate_records, validation_mode, workers, low_precision_focus):
         if len(model_rows) >= target_size:
             break
         model_id = f"calib_{len(model_rows):04d}"
@@ -1075,6 +1101,7 @@ def write_pack(
             "variant_kind": str(metadata.get("variant_kind", "source_dataset")),
             "variant_signature": str(metadata.get("variant_signature", result.record.stem)),
             "precision_sweep": list(precision_configs),
+            "low_precision_focus": low_precision_focus,
         }
         model_rows.append(clean_json(row))
 
@@ -1093,6 +1120,7 @@ def write_pack(
         [record_by_stem(all_records, row["original_stem"]) for row in model_rows],
         validation_failures,
         precision_configs,
+        low_precision_focus=low_precision_focus,
     )
     write_coverage_summary(
         out_dir / "coverage_summary.json",
@@ -1100,6 +1128,7 @@ def write_pack(
         [record_by_stem(all_records, row["original_stem"]) for row in model_rows],
         validation_failures,
         precision_configs,
+        low_precision_focus=low_precision_focus,
     )
     return len(model_rows), len(validation_failures)
 
@@ -1108,10 +1137,12 @@ def prepare_pack_candidates(
     records: list[GraphRecord],
     validation_mode: str,
     generation_workers: int,
+    low_precision_focus: str = "none",
 ) -> Iterable[GeneratedCandidate]:
+    low_precision_focus = normalize_low_precision_focus(low_precision_focus)
     if generation_workers <= 1:
         for record in records:
-            yield prepare_pack_candidate(record, validation_mode)
+            yield prepare_pack_candidate(record, validation_mode, low_precision_focus)
         return
 
     batch_size = max(32, generation_workers * 4)
@@ -1119,17 +1150,21 @@ def prepare_pack_candidates(
     try:
         for start in range(0, len(records), batch_size):
             batch = records[start : start + batch_size]
-            yield from executor.map(prepare_pack_candidate_for_pool, [(record, validation_mode) for record in batch], chunksize=1)
+            yield from executor.map(
+                prepare_pack_candidate_for_pool,
+                [(record, validation_mode, low_precision_focus) for record in batch],
+                chunksize=1,
+            )
     finally:
         executor.shutdown(cancel_futures=True)
 
 
-def prepare_pack_candidate_for_pool(args: tuple[GraphRecord, str]) -> GeneratedCandidate:
-    record, validation_mode = args
-    return prepare_pack_candidate(record, validation_mode)
+def prepare_pack_candidate_for_pool(args: tuple[GraphRecord, str, str]) -> GeneratedCandidate:
+    record, validation_mode, low_precision_focus = args
+    return prepare_pack_candidate(record, validation_mode, low_precision_focus)
 
 
-def prepare_pack_candidate(record: GraphRecord, validation_mode: str) -> GeneratedCandidate:
+def prepare_pack_candidate(record: GraphRecord, validation_mode: str, low_precision_focus: str = "none") -> GeneratedCandidate:
     try:
         with Path(record.graph_path).open("rb") as fh:
             graph = nx.DiGraph(pickle.load(fh))
@@ -1137,6 +1172,12 @@ def prepare_pack_candidate(record: GraphRecord, validation_mode: str) -> Generat
         if unsupported:
             return GeneratedCandidate(record=record, error=f"unsupported ops: {', '.join(unsupported)}")
         node_specs, input_shape, input_specs = model_source_parts(graph)
+        focus_reasons = low_precision_focus_reasons(node_specs, low_precision_focus)
+        if focus_reasons:
+            preview = "; ".join(focus_reasons[:8])
+            if len(focus_reasons) > 8:
+                preview += f"; {len(focus_reasons) - 8} more"
+            return GeneratedCandidate(record=record, error=f"low_precision_focus {low_precision_focus} rejected: {preview}")
         if validation_mode != "none":
             source = render_model_source("calib_validation", record, input_shape, node_specs, input_specs)
             validate_generated_source(source, input_shape, validation_mode, input_specs)
@@ -1144,6 +1185,34 @@ def prepare_pack_candidate(record: GraphRecord, validation_mode: str) -> Generat
         return GeneratedCandidate(record=record, input_shape=input_shape, input_specs=input_specs, node_specs=node_specs, metadata=metadata)
     except Exception as exc:
         return GeneratedCandidate(record=record, error=repr(exc))
+
+
+def normalize_low_precision_focus(value: str | None) -> str:
+    focus = (value or "none").strip().lower().replace("-", "_")
+    if focus not in LOW_PRECISION_FOCUS_CHOICES:
+        allowed = ", ".join(LOW_PRECISION_FOCUS_CHOICES)
+        raise ValueError(f"unknown low-precision focus {value!r}; expected one of: {allowed}")
+    return focus
+
+
+def low_precision_focus_families(focus: str) -> tuple[str, ...] | None:
+    focus = normalize_low_precision_focus(focus)
+    if focus == "te_transformer":
+        return TE_LOW_PRECISION_TRANSFORMER_FAMILIES
+    return None
+
+
+def low_precision_focus_reasons(node_specs: list[dict[str, Any]], focus: str) -> list[str]:
+    focus = normalize_low_precision_focus(focus)
+    if focus == "none":
+        return []
+    if focus == "te_transformer" and not any(str(spec.get("type")) in {"Attention", "MultiHeadAttention"} for spec in node_specs):
+        return ["te_transformer focus requires generated Attention or MultiHeadAttention"]
+    model = GraphModel(node_specs)
+    reasons: list[str] = []
+    for precision_config in LOW_PRECISION_FOCUS_PRECISIONS:
+        reasons.extend(f"{precision_config}: {reason}" for reason in model.low_precision_unsupported_reasons(precision_config))
+    return reasons
 
 
 def expand_precision_rows(model_rows: Iterable[dict[str, Any]], precision_configs: Iterable[str]) -> list[dict[str, Any]]:
@@ -1177,9 +1246,11 @@ def write_coverage_summary(
     selected: list[GraphRecord],
     validation_failures: list[dict[str, str]] | None = None,
     precision_sweep: Iterable[str] | None = None,
+    low_precision_focus: str = "none",
 ) -> None:
     validation_failures = validation_failures or []
     precision_configs = tuple(precision_sweep or DEFAULT_PRECISION_SWEEP)
+    low_precision_focus = normalize_low_precision_focus(low_precision_focus)
     report_node_types = node_types_for_records([*all_records, *selected])
     summary = {
         "full_dataset_graphs": len(all_records),
@@ -1189,6 +1260,7 @@ def write_coverage_summary(
         "default_subset_size": DEFAULT_SUBSET_SIZE,
         "default_pilot_subset_size": DEFAULT_PILOT_SUBSET_SIZE,
         "precision_sweep": list(precision_configs),
+        "low_precision_focus": low_precision_focus,
         "validation_exclusions_replaced": len(validation_failures),
         "batch_size_coverage": {
             str(batch): {
@@ -1358,9 +1430,11 @@ def write_report(
     selected: list[GraphRecord],
     validation_failures: list[dict[str, str]] | None = None,
     precision_sweep: Iterable[str] | None = None,
+    low_precision_focus: str = "none",
 ) -> None:
     validation_failures = validation_failures or []
     precision_configs = tuple(precision_sweep or DEFAULT_PRECISION_SWEEP)
+    low_precision_focus = normalize_low_precision_focus(low_precision_focus)
     report_node_types = node_types_for_records([*all_records, *selected])
     lines = [
         "# NRP Calibration Subset Selection Report",
@@ -1372,6 +1446,7 @@ def write_report(
         f"- Default target size: {DEFAULT_SUBSET_SIZE}",
         f"- Default pilot target size: {DEFAULT_PILOT_SUBSET_SIZE}",
         f"- Precision sweep: {', '.join(precision_configs)}",
+        f"- Low-precision focus: {low_precision_focus}",
         f"- Validation exclusions replaced: {len(validation_failures)}",
         "",
         "## Selection Policy",
@@ -1489,7 +1564,9 @@ def main(argv: list[str] | None = None) -> None:
 
     sync_runtime_files(out_dir)
     print(f"generating with {args.generation_workers} worker(s)", flush=True)
-    records = materialize_template_records(out_dir, args.subset_size, args.seed, force=args.force)
+    low_precision_focus = normalize_low_precision_focus(args.low_precision_focus)
+    focus_families = low_precision_focus_families(low_precision_focus)
+    records = materialize_template_records(out_dir, args.subset_size, args.seed, force=args.force, families=focus_families)
     selected = records
     precision_sweep = parse_precision_sweep(args.precision_sweep)
     valid_count, failure_count = write_pack(
@@ -1499,6 +1576,7 @@ def main(argv: list[str] | None = None) -> None:
         args.validation_mode,
         precision_sweep,
         generation_workers=args.generation_workers,
+        low_precision_focus=low_precision_focus,
     )
     print(
         f"wrote {valid_count} generated models, {valid_count * len(precision_sweep)} manifest rows, "
