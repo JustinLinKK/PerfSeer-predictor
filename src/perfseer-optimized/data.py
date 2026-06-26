@@ -39,6 +39,14 @@ TARGET_NAMES: list[str] = [
     "infer_mem",
     "infer_time",
 ]
+SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES: list[str] = [
+    "train_avg_sm_util_percent",
+    "train_p95_sm_util_percent",
+    "train_peak_vram_used_mib",
+    "train_peak_torch_reserved_mib",
+    "train_step_wall_ms",
+    "train_peak_memory_controller_util_percent",
+]
 
 UNKNOWN_PRECISION_CONFIG = "unknown"
 DTYPE_VOCAB = ("fp32", "tf32", "bf16", "fp16", "fp8_e4m3", "fp8_e5m2", "fp4_e2m1", "unknown")
@@ -58,6 +66,21 @@ PRECISION_CONFIG_VOCAB = (
 )
 RESOURCE_REGIME_VOCAB = ("small_overhead", "memory_bound", "balanced", "compute_bound")
 LABEL_DOMAIN_VOCAB = ("unknown", "source", "precision_profile", "pseudo")
+OPTIMIZER_VOCAB = ("sgd", "adam", "adamw", "unknown")
+DATASET_MODALITY_VOCAB = ("unknown", "image", "text", "tabular", "graph", "audio", "time_series", "tensor")
+DATASET_TASK_TYPE_VOCAB = (
+    "unknown",
+    "image_classification",
+    "image_segmentation",
+    "object_detection",
+    "text_classification",
+    "text_summarization",
+    "graph_node_classification",
+    "tabular_classification",
+    "tabular_regression",
+    "time_series_forecasting",
+    "audio_classification",
+)
 HARDWARE_FEATURE_FIELDS = (
     "compute_capability",
     "architecture_id",
@@ -69,6 +92,34 @@ HARDWARE_FEATURE_FIELDS = (
     "peak_tf32_tflops",
     "peak_fp16_bf16_tflops",
     "peak_fp8_tflops",
+)
+DATASET_FEATURE_FIELDS = (
+    "dataset_num_samples",
+    "dataset_sample_bytes_mean",
+    "dataset_input_bytes_mean",
+    "dataset_label_bytes_mean",
+    "dataset_sequence_length_p50",
+    "dataset_sequence_length_p95",
+    "dataset_image_pixels_p50",
+    "dataset_image_pixels_p95",
+    "dataset_graph_nodes_p50",
+    "dataset_graph_nodes_p95",
+    "dataset_graph_edges_p50",
+    "dataset_graph_edges_p95",
+    "dataset_input_rank",
+    "dataset_input_dim0",
+    "dataset_input_dim1",
+    "dataset_input_dim2",
+    "dataset_input_dim3",
+    "dataset_input_dim4",
+    "dataset_input_dim5",
+    "dataset_input_numel_per_sample",
+    "dataset_input_bytes_per_sample",
+    "dataset_input_bytes_per_batch",
+    "dataloader_num_workers",
+    "dataloader_prefetch_factor",
+    "training_batch_size",
+    "training_grad_accumulation_steps",
 )
 DTYPE_BYTES = {
     "unknown": 0.0,
@@ -197,7 +248,9 @@ class FeatureConfig:
     include_destination_tensor: bool = False
     time_target_mode: str = "raw"
     target_mode: str = "absolute"
+    target_source: str = "legacy"
     include_precision_features: bool = True
+    include_dataset_features: bool = True
     include_hardware_features: bool = False
     precision_config: str = "fp32_ieee"
     hardware_id: str = "unknown"
@@ -219,6 +272,35 @@ class FeatureConfig:
     peak_tf32_tflops: float = 0.0
     peak_fp16_bf16_tflops: float = 0.0
     peak_fp8_tflops: float = 0.0
+    dataset_num_samples: float = 0.0
+    dataset_sample_bytes_mean: float = 0.0
+    dataset_input_bytes_mean: float = 0.0
+    dataset_label_bytes_mean: float = 0.0
+    dataset_sequence_length_p50: float = 0.0
+    dataset_sequence_length_p95: float = 0.0
+    dataset_image_pixels_p50: float = 0.0
+    dataset_image_pixels_p95: float = 0.0
+    dataset_graph_nodes_p50: float = 0.0
+    dataset_graph_nodes_p95: float = 0.0
+    dataset_graph_edges_p50: float = 0.0
+    dataset_graph_edges_p95: float = 0.0
+    dataset_input_rank: float = 0.0
+    dataset_input_dim0: float = 0.0
+    dataset_input_dim1: float = 0.0
+    dataset_input_dim2: float = 0.0
+    dataset_input_dim3: float = 0.0
+    dataset_input_dim4: float = 0.0
+    dataset_input_dim5: float = 0.0
+    dataset_input_numel_per_sample: float = 0.0
+    dataset_input_bytes_per_sample: float = 0.0
+    dataset_input_bytes_per_batch: float = 0.0
+    dataset_modality: str = "unknown"
+    dataset_task_type: str = "unknown"
+    dataloader_num_workers: float = 0.0
+    dataloader_prefetch_factor: float = 0.0
+    training_batch_size: float = 0.0
+    training_grad_accumulation_steps: float = 1.0
+    training_optimizer: str = "unknown"
     base_label_weight: float = 1.0
     precision_label_weight: float = 1.0
     pseudo_label_weight: float = 1.0
@@ -378,6 +460,42 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             "estimated_master_weight_bytes_log1p",
         ]:
             add_global(name, True)
+    if cfg.include_dataset_features:
+        for name in [
+            "dataset_num_samples_log1p",
+            "dataset_sample_bytes_mean_log1p",
+            "dataset_input_bytes_mean_log1p",
+            "dataset_label_bytes_mean_log1p",
+            "dataset_sequence_length_p50_log1p",
+            "dataset_sequence_length_p95_log1p",
+            "dataset_image_pixels_p50_log1p",
+            "dataset_image_pixels_p95_log1p",
+            "dataset_graph_nodes_p50_log1p",
+            "dataset_graph_nodes_p95_log1p",
+            "dataset_graph_edges_p50_log1p",
+            "dataset_graph_edges_p95_log1p",
+            "dataset_input_rank_log1p",
+            "dataset_input_dim0_log1p",
+            "dataset_input_dim1_log1p",
+            "dataset_input_dim2_log1p",
+            "dataset_input_dim3_log1p",
+            "dataset_input_dim4_log1p",
+            "dataset_input_dim5_log1p",
+            "dataset_input_numel_per_sample_log1p",
+            "dataset_input_bytes_per_sample_log1p",
+            "dataset_input_bytes_per_batch_log1p",
+            "dataloader_num_workers",
+            "dataloader_prefetch_factor",
+            "training_batch_size",
+            "training_grad_accumulation_steps",
+        ]:
+            add_global(name, True)
+        for modality in DATASET_MODALITY_VOCAB:
+            add_global(f"dataset_modality_{modality}", False)
+        for task_type in DATASET_TASK_TYPE_VOCAB:
+            add_global(f"dataset_task_type_{task_type}", False)
+        for optimizer in OPTIMIZER_VOCAB:
+            add_global(f"training_optimizer_{optimizer}", False)
     if cfg.include_hardware_features:
         for name in [
             "hardware_compute_capability",
@@ -619,12 +737,89 @@ def precision_metadata_for_label(label_path: str) -> dict[str, Any] | None:
     return None
 
 
+def _scheduler_resource_candidate_paths(label_path: str) -> tuple[str, ...]:
+    path = os.path.abspath(label_path)
+    label_dir = os.path.dirname(path)
+    label_parent = os.path.dirname(label_dir)
+    data_root = os.path.dirname(label_parent)
+    return (
+        os.path.join(label_dir, "scheduler_resource_label.jsonl"),
+        os.path.join(label_parent, "scheduler_resource_label.jsonl"),
+        os.path.join(data_root, "scheduler_resource_label.jsonl"),
+    )
+
+
+@lru_cache(maxsize=32)
+def _scheduler_resource_index(path: str) -> dict[str, dict[str, Any]]:
+    if not os.path.isfile(path):
+        return {}
+    index: dict[str, dict[str, Any]] = {}
+    with open(path, "r") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            keys = {
+                str(row.get("profile_point_id", "")),
+                str(row.get("label_file", "")),
+                os.path.basename(str(row.get("label_file", ""))),
+                str(row.get("label_stem", "")),
+            }
+            for key in keys:
+                if key:
+                    index[key] = row
+    return index
+
+
+def scheduler_resource_label_for_pair(label_path: str) -> dict[str, Any] | None:
+    metadata = precision_metadata_for_label(label_path) or {}
+    keys = {
+        os.path.basename(label_path),
+        os.path.splitext(os.path.basename(label_path))[0],
+        str(metadata.get("label_file", "")),
+        str(metadata.get("profile_point_id", "")),
+    }
+    keys = {key for key in keys if key}
+    for path in _scheduler_resource_candidate_paths(label_path):
+        index = _scheduler_resource_index(path)
+        for key in keys:
+            row = index.get(key)
+            if row is not None:
+                return row
+    return None
+
+
+def target_source_key(cfg: FeatureConfig | None) -> str:
+    return str(getattr(cfg, "target_source", "legacy") or "legacy").lower()
+
+
 def target_mode_key(cfg: FeatureConfig | None) -> str:
     return str(getattr(cfg, "target_mode", "absolute") or "absolute").lower()
 
 
 def is_log_ratio_target(cfg: FeatureConfig | None) -> bool:
     return target_mode_key(cfg) in {"log_ratio_to_source", "log_ratio", "ratio_delta"}
+
+
+def is_scheduler_resource_target(cfg: FeatureConfig | None) -> bool:
+    return target_source_key(cfg) in {"scheduler_resource_train", "scheduler_resource", "resource_train"}
+
+
+def target_names_for_config(cfg: FeatureConfig | None) -> list[str]:
+    if is_scheduler_resource_target(cfg):
+        return list(SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES)
+    return list(TARGET_NAMES)
+
+
+def scheduler_resource_target_for_label(label_path: str) -> np.ndarray:
+    row = scheduler_resource_label_for_pair(label_path)
+    if row is None:
+        raise FileNotFoundError(f"target_source='scheduler_resource_train' requires scheduler_resource_label.jsonl row for {label_path}")
+    targets = row.get("targets") if isinstance(row.get("targets"), dict) else {}
+    missing = [name for name in SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES if name not in targets]
+    if missing:
+        raise KeyError(f"scheduler resource label for {label_path} is missing target(s): {', '.join(missing)}")
+    return np.asarray([_f(targets.get(name)) for name in SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES], dtype=np.float64)
 
 
 def precision_from_label_path(graph_path: str, label_path: str) -> str | None:
@@ -697,6 +892,59 @@ def feature_config_for_pair(cfg: FeatureConfig, graph_path: str, label_path: str
             data["compute_capability"] = float(str(hardware.get("compute_capability")))
         except (TypeError, ValueError):
             pass
+    dataset = metadata.get("dataset") if isinstance(metadata.get("dataset"), dict) else {}
+    training = metadata.get("training") if isinstance(metadata.get("training"), dict) else {}
+    dataset_aliases = {
+        "dataset_num_samples": ("dataset_num_samples", "num_samples", "sample_count"),
+        "dataset_sample_bytes_mean": ("dataset_sample_bytes_mean", "sample_bytes_mean"),
+        "dataset_input_bytes_mean": ("dataset_input_bytes_mean", "input_bytes_mean"),
+        "dataset_label_bytes_mean": ("dataset_label_bytes_mean", "label_bytes_mean"),
+        "dataset_sequence_length_p50": ("dataset_sequence_length_p50", "sequence_length_p50"),
+        "dataset_sequence_length_p95": ("dataset_sequence_length_p95", "sequence_length_p95"),
+        "dataset_image_pixels_p50": ("dataset_image_pixels_p50", "image_pixels_p50"),
+        "dataset_image_pixels_p95": ("dataset_image_pixels_p95", "image_pixels_p95"),
+        "dataset_graph_nodes_p50": ("dataset_graph_nodes_p50", "graph_nodes_p50"),
+        "dataset_graph_nodes_p95": ("dataset_graph_nodes_p95", "graph_nodes_p95"),
+        "dataset_graph_edges_p50": ("dataset_graph_edges_p50", "graph_edges_p50"),
+        "dataset_graph_edges_p95": ("dataset_graph_edges_p95", "graph_edges_p95"),
+        "dataset_input_rank": ("dataset_input_rank", "input_rank"),
+        "dataset_input_dim0": ("dataset_input_dim0", "input_dim0"),
+        "dataset_input_dim1": ("dataset_input_dim1", "input_dim1"),
+        "dataset_input_dim2": ("dataset_input_dim2", "input_dim2"),
+        "dataset_input_dim3": ("dataset_input_dim3", "input_dim3"),
+        "dataset_input_dim4": ("dataset_input_dim4", "input_dim4"),
+        "dataset_input_dim5": ("dataset_input_dim5", "input_dim5"),
+        "dataset_input_numel_per_sample": ("dataset_input_numel_per_sample", "input_numel_per_sample"),
+        "dataset_input_bytes_per_sample": ("dataset_input_bytes_per_sample", "input_bytes_per_sample"),
+        "dataset_input_bytes_per_batch": ("dataset_input_bytes_per_batch", "input_bytes_per_batch"),
+    }
+    for field, aliases in dataset_aliases.items():
+        for alias in aliases:
+            if alias in metadata:
+                data[field] = _f(metadata.get(alias))
+                break
+            if alias in dataset:
+                data[field] = _f(dataset.get(alias))
+                break
+    data["dataset_modality"] = str(metadata.get("dataset_modality") or dataset.get("modality") or "unknown").lower()
+    data["dataset_task_type"] = str(metadata.get("dataset_task_type") or dataset.get("task_type") or "unknown").lower()
+    training_aliases = {
+        "dataloader_num_workers": ("dataloader_num_workers", "num_workers"),
+        "dataloader_prefetch_factor": ("dataloader_prefetch_factor", "prefetch_factor"),
+        "training_batch_size": ("training_batch_size", "batch_size"),
+        "training_grad_accumulation_steps": ("training_grad_accumulation_steps", "grad_accumulation_steps"),
+    }
+    for field, aliases in training_aliases.items():
+        for alias in aliases:
+            if alias in metadata:
+                data[field] = _f(metadata.get(alias))
+                break
+            if alias in training:
+                data[field] = _f(training.get(alias))
+                break
+    optimizer = metadata.get("optimizer") or training.get("optimizer")
+    if optimizer:
+        data["training_optimizer"] = str(optimizer).lower()
     return FeatureConfig.from_dict(data)
 
 
@@ -1016,7 +1264,13 @@ def _target_for_mode(
     batch_size: float,
     cfg: FeatureConfig,
     base_label6: Sequence[float] | None = None,
+    target_raw_override: Sequence[float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if target_raw_override is not None:
+        if target_mode_key(cfg) != "absolute":
+            raise ValueError("scheduler-resource target_source requires target_mode='absolute'")
+        target = np.asarray(target_raw_override, dtype=np.float64).reshape(NUM_TARGETS).copy()
+        return target, target, target
     absolute = _target_with_mode(label6, batch_size, cfg)
     base = _target_with_mode(base_label6 if base_label6 is not None else label6, batch_size, cfg)
     mode = target_mode_key(cfg)
@@ -1307,6 +1561,43 @@ def _extract_raw(g: nx.DiGraph, cfg: FeatureConfig) -> tuple[np.ndarray, np.ndar
         master_weight_bytes = totals["weight"] if _dtype_bytes(precision["weight_dtype"]) < 4.0 else 0.0
         for value in (activation_bytes, weight_bytes, grad_bytes, optimizer_state_bytes, master_weight_bytes):
             u.append(np.log1p(max(value, 0.0)))
+    if cfg.include_dataset_features:
+        for value in [
+            cfg.dataset_num_samples,
+            cfg.dataset_sample_bytes_mean,
+            cfg.dataset_input_bytes_mean,
+            cfg.dataset_label_bytes_mean,
+            cfg.dataset_sequence_length_p50,
+            cfg.dataset_sequence_length_p95,
+            cfg.dataset_image_pixels_p50,
+            cfg.dataset_image_pixels_p95,
+            cfg.dataset_graph_nodes_p50,
+            cfg.dataset_graph_nodes_p95,
+            cfg.dataset_graph_edges_p50,
+            cfg.dataset_graph_edges_p95,
+            cfg.dataset_input_rank,
+            cfg.dataset_input_dim0,
+            cfg.dataset_input_dim1,
+            cfg.dataset_input_dim2,
+            cfg.dataset_input_dim3,
+            cfg.dataset_input_dim4,
+            cfg.dataset_input_dim5,
+            cfg.dataset_input_numel_per_sample,
+            cfg.dataset_input_bytes_per_sample,
+            cfg.dataset_input_bytes_per_batch,
+        ]:
+            u.append(np.log1p(max(_f(value), 0.0)))
+        u.extend(
+            [
+                _f(cfg.dataloader_num_workers),
+                _f(cfg.dataloader_prefetch_factor),
+                _f(cfg.training_batch_size),
+                _f(cfg.training_grad_accumulation_steps),
+            ]
+        )
+        u.extend(_onehot(str(cfg.dataset_modality or "unknown").lower(), DATASET_MODALITY_VOCAB))
+        u.extend(_onehot(str(cfg.dataset_task_type or "unknown").lower(), DATASET_TASK_TYPE_VOCAB))
+        u.extend(_onehot(str(cfg.training_optimizer or "unknown").lower(), OPTIMIZER_VOCAB))
     if cfg.include_hardware_features:
         u.extend(
             [
@@ -1377,6 +1668,7 @@ def build_pyg_data(
     feature_config: FeatureConfig | None = None,
     sample_weight: float = 1.0,
     base_label6: Sequence[float] | None = None,
+    target_raw_override: Sequence[float] | None = None,
     label_domain: str = "unknown",
     graph_family: str = "unknown",
 ) -> Data:
@@ -1384,7 +1676,7 @@ def build_pyg_data(
     layout = feature_layout(cfg)
     x_raw, edge_idx, e_raw, u_raw, batch_size = _extract_raw(g, cfg)
     slice_meta = graph_slice_metadata(g)
-    y_raw, y_eval_raw, y_base_raw = _target_for_mode(label6, batch_size, cfg, base_label6)
+    y_raw, y_eval_raw, y_base_raw = _target_for_mode(label6, batch_size, cfg, base_label6, target_raw_override)
 
     if norm_stats is not None:
         x = (x_raw - norm_stats["node_mean"]) / norm_stats["node_std"]
@@ -1503,7 +1795,8 @@ def _stats_chunk_worker(arg):
         pair_cfg = feature_config_for_pair(cfg, gp, lp)
         x_raw, _ei, e_raw, u_raw, batch_size = _extract_raw(g, pair_cfg)
         base_label = base_label_for_pair(pair_cfg, gp, lp)
-        y_raw, _y_eval_raw, _y_base_raw = _target_for_mode(parse_label(lp), batch_size, pair_cfg, base_label)
+        target_override = scheduler_resource_target_for_label(lp) if is_scheduler_resource_target(pair_cfg) else None
+        y_raw, _y_eval_raw, _y_base_raw = _target_for_mode(parse_label(lp), batch_size, pair_cfg, base_label, target_override)
         y_stat = target_stat_values(y_raw, pair_cfg)
         if x_raw.shape[0]:
             acc["node"][0] += x_raw.shape[0]
@@ -1675,6 +1968,7 @@ def _build_chunk_worker(arg):
             weight = sample_weight_for_pair(cfg, gp, lp)
             label_domain = label_domain_for_pair(gp, lp)
             base_label = base_label_for_pair(pair_cfg, gp, lp)
+            target_override = scheduler_resource_target_for_label(lp) if is_scheduler_resource_target(pair_cfg) else None
             out.append(
                 build_pyg_data(
                     parse_graph(gp),
@@ -1683,11 +1977,14 @@ def _build_chunk_worker(arg):
                     pair_cfg,
                     sample_weight=weight,
                     base_label6=base_label,
+                    target_raw_override=target_override,
                     label_domain=label_domain,
                     graph_family=graph_family_for_path(gp),
                 )
             )
         except Exception as exc:
+            if is_scheduler_resource_target(cfg):
+                raise
             print(f"[PerfSeerOptimizedDataset] skipping {gp}: {exc}", flush=True)
     return pickle.dumps(out, protocol=pickle.HIGHEST_PROTOCOL)
 

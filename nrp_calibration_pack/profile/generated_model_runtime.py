@@ -165,6 +165,7 @@ class GraphModel(nn.Module):
         reasons: list[str] = []
         is_nvfp4 = precision_config == "nvfp4_te"
         feature_multiple = 32 if is_nvfp4 else 16
+        leading_multiple = 32 if is_nvfp4 else 16
         min_leading = 32 if is_nvfp4 else 16
         for spec in self.node_specs:
             op = str(spec["type"])
@@ -179,18 +180,18 @@ class GraphModel(nn.Module):
                         f"node {node_id} {op} dimensions {in_features}->{out_features} are not divisible by {feature_multiple}"
                     )
                 leading = _leading_dim(spec.get("memory_info", {}), in_features)
-                if leading % 16 != 0 or leading < min_leading:
+                if leading % leading_multiple != 0 or leading < min_leading:
                     reasons.append(
-                        f"node {node_id} {op} leading dimension product {leading} must be divisible by 16 and >= {min_leading}"
+                        f"node {node_id} {op} leading dimension product {leading} must be divisible by {leading_multiple} and >= {min_leading}"
                     )
             if op == "LayerNormalization":
                 hidden = _last_dim(spec.get("memory_info", {}))
                 leading = _leading_dim(spec.get("memory_info", {}), hidden)
                 if hidden % feature_multiple != 0:
                     reasons.append(f"node {node_id} {op} hidden size {hidden} is not divisible by {feature_multiple}")
-                if leading % 16 != 0 or leading < min_leading:
+                if leading % leading_multiple != 0 or leading < min_leading:
                     reasons.append(
-                        f"node {node_id} {op} leading dimension product {leading} must be divisible by 16 and >= {min_leading}"
+                        f"node {node_id} {op} leading dimension product {leading} must be divisible by {leading_multiple} and >= {min_leading}"
                     )
             if op in {"Attention", "MultiHeadAttention"}:
                 mem = spec.get("memory_info", {})
@@ -198,9 +199,9 @@ class GraphModel(nn.Module):
                 if hidden % feature_multiple != 0:
                     reasons.append(f"node {node_id} {op} hidden size {hidden} is not divisible by {feature_multiple}")
                 leading = _leading_dim(mem, hidden)
-                if leading % 16 != 0 or leading < min_leading:
+                if leading % leading_multiple != 0 or leading < min_leading:
                     reasons.append(
-                        f"node {node_id} {op} leading dimension product {leading} must be divisible by 16 and >= {min_leading}"
+                        f"node {node_id} {op} leading dimension product {leading} must be divisible by {leading_multiple} and >= {min_leading}"
                     )
         return reasons
 
@@ -405,7 +406,12 @@ class GraphModel(nn.Module):
             elif op == "Gemm":
                 out = self._gemm(node_id, node_inputs[0])
             elif op == "Embedding":
-                out = self.layers[str(node_id)](node_inputs[0].long())
+                layer = self.layers[str(node_id)]
+                tokens = node_inputs[0].long()
+                # Real-dataset seeded token tensors may use a larger tokenizer
+                # id space than a compact generated embedding table.
+                tokens = tokens.remainder(max(int(getattr(layer, "num_embeddings", 1)), 1))
+                out = layer(tokens)
             elif op in {"RNN", "GRU", "LSTM"}:
                 out, _hidden = self.layers[str(node_id)](node_inputs[0].float())
             elif op in {"GraphMessage", "GraphAttention"}:

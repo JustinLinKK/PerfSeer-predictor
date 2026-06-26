@@ -59,6 +59,8 @@ TE_LOW_PRECISION_TRANSFORMER_FAMILIES: tuple[str, ...] = (
     "ft_transformer_tabular",
 )
 
+TEMPORAL_SEQUENCE_BUCKETS: tuple[int, ...] = (64, 96, 128, 160, 192)
+
 
 @dataclass(frozen=True)
 class TemplateSpec:
@@ -177,7 +179,7 @@ def _te_transformer_width(spec: TemplateSpec) -> int:
 
 def _te_transformer_seq(spec: TemplateSpec, batch: int) -> int:
     base = max(1, 32 // max(batch, 1))
-    stride = max(1, 16 // max(batch, 1))
+    stride = max(1, 32 // max(batch, 1))
     return base + stride * (spec.local_index % 2)
 
 
@@ -460,7 +462,7 @@ def _ft_transformer_graph(spec: TemplateSpec) -> nx.DiGraph:
 
 def _rnn_graph(spec: TemplateSpec, op_type: str) -> nx.DiGraph:
     width = _width(spec)
-    seq = 10 + (spec.local_index % 5)
+    seq = TEMPORAL_SEQUENCE_BUCKETS[spec.local_index % len(TEMPORAL_SEQUENCE_BUCKETS)]
     graph = _new_graph(spec, _seq_input(spec, seq, width, kind="temporal"))
     batch = _batch(spec)
     prev = _add_node(graph, op_type, _mem_seq(batch, seq, width, width), input_index=0)

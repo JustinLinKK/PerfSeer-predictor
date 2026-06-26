@@ -47,6 +47,8 @@ FP8/NVFP4 until separate runtime rewrites are implemented.
 
 ## Build Profile Specs
 
+Legacy synthetic/repeat specs remain available for compatibility:
+
 ```bash
 python nrp_calibration_pack/profile/make_profile_datasets.py \
   --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
@@ -57,7 +59,52 @@ python nrp_calibration_pack/profile/make_profile_datasets.py \
   --force
 ```
 
+For scheduler-grade labels, use approved real dataset profiles instead of random
+input specs. Review the local tier first, then approve each dataset source
+before downloading:
+
+```bash
+python scripts/manage_dataset_sources.py list --tier local
+python scripts/manage_dataset_sources.py show cassava_leaf_disease
+python scripts/manage_dataset_sources.py approve cassava_leaf_disease
+```
+
+Download and prepare deterministic real-data subsets:
+
+```bash
+python scripts/manage_dataset_sources.py download cassava_leaf_disease \
+  --raw-root datasets/raw
+
+python scripts/manage_dataset_sources.py prepare cassava_leaf_disease \
+  --raw-root datasets/raw \
+  --prepared-root datasets/prepared
+```
+
+Large/reference sources are in the `nautilus` tier. The local download path
+refuses them unless `--allow-nautilus-only` is passed inside a PVC-backed
+Nautilus job.
+
+Build scheduler workload specs:
+
+```bash
+python nrp_calibration_pack/profile/make_workload_specs.py \
+  --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
+  --registry dataset_sources/registry.json \
+  --dataset-profile-root datasets/prepared \
+  --output-dir nrp_calibration_pack/workload_specs \
+  --subset-id tiny \
+  --subset-id small \
+  --batch-size 8 \
+  --batch-size 32 \
+  --precision-sweep fp32_ieee,bf16_amp \
+  --optimizer adam \
+  --hardware-id rtx5090 \
+  --force
+```
+
 ## Profile A Hardware Shard
+
+Legacy profile-spec path:
 
 ```bash
 python nrp_calibration_pack/profile/run_profile.py \
@@ -76,6 +123,36 @@ python nrp_calibration_pack/profile/run_profile.py \
   --num-shards <N> \
   --shard-index <I>
 ```
+
+Scheduler workload path:
+
+```bash
+python nrp_calibration_pack/profile/run_profile.py \
+  --workload-specs nrp_calibration_pack/workload_specs/workloads.jsonl \
+  --models-dir nrp_calibration_pack/models \
+  --output-dir nrp_results_rtx5090_scheduler \
+  --hardware-id rtx5090 \
+  --precision-sweep auto \
+  --device cuda \
+  --sm-occupancy-source nvml_proxy \
+  --warmup 20 \
+  --infer-repeats 50 \
+  --train-repeats 50 \
+  --num-shards <N> \
+  --shard-index <I>
+```
+
+Scheduler runs write both legacy PerfSeer-compatible label files and
+`label_v3_shard<I>.jsonl`. `label_v3` derives the default epoch label from the
+real subset size:
+
+```text
+train_epoch_ms = train_step_wall_ms * ceil(num_samples / effective_batch_size)
+```
+
+The profiler rejects scheduler workload rows that do not declare a real
+dataloader adapter. `--allow-synthetic-workload-inputs` exists only for schema
+smoke tests, not production labels.
 
 Profiling has a built-in checkpoint: rerun the same command with the same
 `--output-dir`, `--num-shards`, and `--shard-index` to continue after a pause,

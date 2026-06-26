@@ -1,18 +1,30 @@
-# Full 10k RTX 5090 Label Generation Plan
+# Plan: Ignore Generated Dataset And Label Artifacts
 
-- Objective: use the canonical balanced 10,000-model source catalog for local RTX 5090 label generation, not the transformer-only diagnostic pack.
+## Goal
 
-- Step: keep `--low-precision-focus none` for the full dataset.
-  - Verifier: generated source command omits `--low-precision-focus te_transformer` and uses `--subset-size 10000`.
+Update `.gitignore` so generated datasets, labels, workload indexes, and local
+profile/validation outputs do not get accidentally tracked.
 
-- Step: keep `--precision-sweep auto` for environment-aware precision labels.
-  - Verifier: profiler help confirms `auto` is accepted and resolves after CUDA/Transformer Engine probes.
+## Steps And Verifiers
 
-- Step: set Adam as the default profiling optimizer across local and Nautilus helper CLIs.
-  - Verifier: grep confirms no remaining `default="sgd"` or `Default: sgd` in labeling/profiling helpers.
+1. Inspect current ignore coverage.
+   - Check existing `.gitignore`, current dirty/untracked paths, and generated
+     dataset/label directories.
+   - Verifier: identify concrete paths that are currently untracked and should
+     be ignored.
 
-- Step: explain that a true optimizer sweep is separate from precision sweep.
-  - Verifier: materializer label naming is reviewed for optimizer collision risk before recommending multi-optimizer runs.
+2. Patch `.gitignore`.
+   - Keep source metadata such as `dataset_sources/` trackable.
+   - Ignore generated roots such as `label/`, `by_profile_point/`,
+     workload/index JSONL outputs, generated workload specs, and local profiling
+     result folders.
+   - Verifier: `git check-ignore -v` reports the new rules for representative
+     generated paths.
 
-- Step: provide a corrected copy-paste local 5090 command.
-  - Verifier: command uses the balanced pack path, `--precision-sweep auto`, and `--optimizer adam`.
+3. Run final checks.
+   - `git diff --check`.
+   - `git status --short --ignored` for representative paths.
+
+## Completed Verifiers
+
+- Pending.

@@ -41,7 +41,11 @@ from nrp_calibration_pack.build_pack import (  # noqa: E402
     write_pack,
 )
 from nrp_calibration_pack.profile.generated_model_runtime import GraphModel  # noqa: E402
-from nrp_calibration_pack.template_catalog import TE_LOW_PRECISION_TRANSFORMER_FAMILIES, template_family_counts  # noqa: E402
+from nrp_calibration_pack.template_catalog import (  # noqa: E402
+    TE_LOW_PRECISION_TRANSFORMER_FAMILIES,
+    TEMPORAL_SEQUENCE_BUCKETS,
+    template_family_counts,
+)
 from perfseer.architecture_schema import ARCHITECTURE_FAMILY_QUOTAS, FEATURE_SCHEMA_VERSION, NODE_TYPES as ARCH_NODE_TYPES  # noqa: E402
 from perfseer.data import parse_label as parse_dataset_label  # noqa: E402
 from perfseer_optimized.train import apply_overrides as apply_train_overrides  # noqa: E402
@@ -759,6 +763,26 @@ class NrpCalibrationPackTests(unittest.TestCase):
         self.assertIn("GraphMessage", coverage["operator_coverage"])
         self.assertEqual(set(coverage["operator_coverage"]).issubset(set(ARCH_NODE_TYPES)), True)
 
+    def test_temporal_templates_use_dataset_like_sequence_windows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            pack_dir = tmp_path / "pack"
+            records = materialize_template_records(pack_dir, 30, DEFAULT_TEMPLATE_SEED, force=True)
+            written, failures = write_pack(records, records, pack_dir, "compile", precision_sweep=("fp32_ieee",), generation_workers=1)
+            rows = [
+                json.loads(line)
+                for line in (pack_dir / "manifest" / "subset_manifest.jsonl").read_text().splitlines()
+                if line.strip()
+            ]
+
+        self.assertEqual(written, 30)
+        self.assertEqual(failures, 0)
+        temporal_rows = [row for row in rows if row["architecture_family"] in {"gru_temporal", "lstm_temporal"}]
+        self.assertTrue(temporal_rows)
+        for row in temporal_rows:
+            self.assertIn(row["input_specs"][0]["shape"][1], TEMPORAL_SEQUENCE_BUCKETS)
+            self.assertGreaterEqual(row["input_specs"][0]["shape"][1], 64)
+
     def test_te_transformer_focus_pack_generates_fp8_nvfp4_safe_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -795,6 +819,8 @@ class NrpCalibrationPackTests(unittest.TestCase):
             self.assertEqual(low_precision_focus_reasons(module.NODE_SPECS, "te_transformer"), [])
             self.assertEqual(GraphModel(module.NODE_SPECS).low_precision_unsupported_reasons("fp8_te_hybrid"), [])
             self.assertEqual(GraphModel(module.NODE_SPECS).low_precision_unsupported_reasons("nvfp4_te"), [])
+            batch, seq, _hidden = module.INPUT_SPECS[0]["shape"]
+            self.assertEqual((batch * seq) % 32, 0)
 
     def test_write_pack_replaces_validation_failures(self) -> None:
         bad = nx.DiGraph()
@@ -1228,6 +1254,38 @@ class NrpCalibrationPackTests(unittest.TestCase):
                 self.assertEqual(configs, expected)
                 self.assertEqual(probes["nvfp4_te"]["details"]["compute_capability"], f"{cc[0]}.{cc[1]}")
 
+    def test_transformer_engine_cuda_include_auto_discovers_python_wheel_headers(self) -> None:
+        module = import_run_profile_module()
+        old_env = module.os.environ.get("NVTE_CUDA_INCLUDE_DIR")
+        old_find_spec = module.importlib.util.find_spec
+        details: dict[str, object] = {}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            include = root / "nvidia" / "cu13" / "include"
+            include.mkdir(parents=True)
+            (include / "cuda_runtime.h").write_text("// fake cuda header\n")
+
+            def fake_find_spec(name: str) -> object:
+                if name == "nvidia":
+                    return types.SimpleNamespace(submodule_search_locations=[str(root / "nvidia")])
+                return old_find_spec(name)
+
+            module.os.environ.pop("NVTE_CUDA_INCLUDE_DIR", None)
+            module.importlib.util.find_spec = fake_find_spec
+            try:
+                found = module.configure_transformer_engine_cuda_include(details)
+            finally:
+                module.importlib.util.find_spec = old_find_spec
+                if old_env is None:
+                    module.os.environ.pop("NVTE_CUDA_INCLUDE_DIR", None)
+                else:
+                    module.os.environ["NVTE_CUDA_INCLUDE_DIR"] = old_env
+
+        self.assertEqual(found, str(include))
+        self.assertEqual(details["nvte_cuda_include_dir"], str(include))
+        self.assertEqual(details["nvte_cuda_include_dir_source"], "python_package:cu13")
+
     def test_nvfp4_policy_requires_transformer_engine_probe_and_bf16(self) -> None:
         module = import_run_profile_module()
         module.compute_capability_tuple = lambda _device: (12, 0)
@@ -1284,10 +1342,31 @@ class NrpCalibrationPackTests(unittest.TestCase):
                 "preds": [],
             }
         ]
+        bad_nvfp4_leading = [
+            {
+                "id": 0,
+                "type": "Gemm",
+                "args": {"linear_in_features": 32, "linear_out_features": 32, "linear_bias": 1},
+                "memory_info": {
+                    "batch_size": 1,
+                    "rank": 3,
+                    "sequence_length": 48,
+                    "input_size": 1 * 48 * 32 * 4,
+                    "output_size": 1 * 48 * 32 * 4,
+                    "input_features": 32,
+                    "output_features": 32,
+                    "input_channels": 32,
+                    "output_channels": 32,
+                },
+                "preds": [],
+            }
+        ]
 
         self.assertEqual(GraphModel(dense).low_precision_unsupported_reasons("nvfp4_te"), [])
         self.assertIn("dimensions 8->16", GraphModel(bad_dim).low_precision_unsupported_reasons("fp8_te_hybrid")[0])
         self.assertIn("not TE low-precision safe", GraphModel(conv).low_precision_unsupported_reasons("nvfp4_te")[0])
+        self.assertEqual(GraphModel(bad_nvfp4_leading).low_precision_unsupported_reasons("fp8_te_hybrid"), [])
+        self.assertIn("divisible by 32", GraphModel(bad_nvfp4_leading).low_precision_unsupported_reasons("nvfp4_te")[0])
 
     def test_materialize_precision_dataset_writes_hardware_metadata(self) -> None:
         graph = sequential_graph()
@@ -1945,7 +2024,10 @@ class NrpCalibrationPackTests(unittest.TestCase):
     def test_root_markdown_entrypoint_is_readme_only(self) -> None:
         root_markdown = sorted(path.name for path in ROOT.glob("*.md"))
 
-        self.assertEqual(root_markdown, ["README.md"])
+        self.assertIn("README.md", root_markdown)
+        self.assertIn("AGENTS.md", root_markdown)
+        self.assertIn("plan.md", root_markdown)
+        self.assertEqual([name for name in root_markdown if name not in {"AGENTS.md", "README.md", "plan.md"}], [])
 
     def test_hardware_filter_keeps_one_gpu_and_multiple_precisions(self) -> None:
         from perfseer_optimized.data import FeatureConfig, feature_config_for_pair, precision_from_label_path, split_dataset

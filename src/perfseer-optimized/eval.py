@@ -32,11 +32,15 @@ from .data import (
     list_precision_pairs,
     split_dataset,
     split_hash,
+    target_names_for_config,
     validate_precision_hardware_pairs,
 )
 from .metrics import all_metrics
 from .model import SeerNet, SeerNetConfig, SeerNetMulti, count_parameters
 from .train import append_jsonl, json_default
+
+
+METRIC_NAMES = list(TARGET_NAMES)
 
 
 def safe_torch_load(path: str, device: torch.device) -> dict[str, Any]:
@@ -153,6 +157,12 @@ def feature_config_from_checkpoint(ckpt: dict[str, Any]) -> FeatureConfig:
     meta = ckpt.get("metadata", {})
     cfg = meta.get("config", {})
     return FeatureConfig.from_dict(meta.get("feature_config") or cfg.get("features"))
+
+
+def set_metric_names_for_config(feature_cfg: FeatureConfig) -> list[str]:
+    global METRIC_NAMES
+    METRIC_NAMES = target_names_for_config(feature_cfg)
+    return METRIC_NAMES
 
 
 def invert_selected(
@@ -382,7 +392,7 @@ def evaluate_singles(models, ckpts, loader, device, stats):
 
 def rows_from_predictions(y_true: np.ndarray, y_pred: np.ndarray) -> dict[int, dict[str, float]]:
     rows: dict[int, dict[str, float]] = {}
-    for idx, name in enumerate(TARGET_NAMES):
+    for idx, name in enumerate(METRIC_NAMES):
         if np.all(np.isnan(y_pred[:, idx])):
             continue
         rows[idx] = all_metrics(y_true[:, idx], y_pred[:, idx])
@@ -399,7 +409,7 @@ def rows_by_precision(y_true: np.ndarray, y_pred: np.ndarray, precision_ids: np.
             name = PRECISION_CONFIG_VOCAB[idx]
         mask = precision_ids == idx
         rows = rows_from_predictions(y_true[mask], y_pred[mask])
-        out[name] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+        out[name] = {METRIC_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
     return out
 
 
@@ -443,7 +453,7 @@ def rows_by_index_slice(
         name = vocab[idx] if idx < len(vocab) else f"{unknown_prefix}_{idx}"
         mask = ids == idx
         rows = rows_from_predictions(y_true[mask], y_pred[mask])
-        out[name] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+        out[name] = {METRIC_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
     return out
 
 
@@ -464,7 +474,7 @@ def rows_by_batch_size(y_true: np.ndarray, y_pred: np.ndarray, batch_sizes: np.n
             continue
         mask = buckets == bucket
         rows = rows_from_predictions(y_true[mask], y_pred[mask])
-        out[bucket] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+        out[bucket] = {METRIC_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
     return out
 
 
@@ -484,7 +494,7 @@ def rows_by_graph_signature(
             continue
         mask = buckets == bucket
         rows = rows_from_predictions(y_true[mask], y_pred[mask])
-        out[bucket] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+        out[bucket] = {METRIC_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
     return out
 
 
@@ -500,7 +510,7 @@ def rows_by_graph_family(
             continue
         mask = families == family
         rows = rows_from_predictions(y_true[mask], y_pred[mask])
-        out[family] = {TARGET_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
+        out[family] = {METRIC_NAMES[metric_idx]: rows[metric_idx] for metric_idx in rows}
     return out
 
 
@@ -514,18 +524,19 @@ def print_slice_summary(title: str, grouped_rows: dict[str, dict[str, dict[str, 
 
 
 def print_table(rows: dict[int, dict[str, float]]) -> None:
-    header = f"{'metric':<12} {'MAPE%':>9} {'RMSPE%':>9} {'5%Acc':>8} {'10%Acc':>8}"
+    width = max(12, *(len(name) for name in METRIC_NAMES))
+    header = f"{'metric':<{width}} {'MAPE%':>9} {'RMSPE%':>9} {'5%Acc':>8} {'10%Acc':>8}"
     print("\n" + header)
     print("-" * len(header))
     mapes: list[float] = []
     for idx in sorted(rows):
         row = rows[idx]
-        print(f"{TARGET_NAMES[idx]:<12} {row['MAPE']:>9.3f} {row['RMSPE']:>9.3f} {row['5Acc'] * 100:>7.2f}% {row['10Acc'] * 100:>7.2f}%")
+        print(f"{METRIC_NAMES[idx]:<{width}} {row['MAPE']:>9.3f} {row['RMSPE']:>9.3f} {row['5Acc'] * 100:>7.2f}% {row['10Acc'] * 100:>7.2f}%")
         if not np.isnan(row["MAPE"]):
             mapes.append(row["MAPE"])
     print("-" * len(header))
     if mapes:
-        print(f"{'MEAN MAPE':<12} {np.mean(mapes):>9.3f}   (over {len(mapes)} metrics)")
+        print(f"{'MEAN MAPE':<{width}} {np.mean(mapes):>9.3f}   (over {len(mapes)} metrics)")
 
 
 def export_predictions(path: str, y_true: np.ndarray, y_pred: np.ndarray) -> None:
@@ -533,7 +544,7 @@ def export_predictions(path: str, y_true: np.ndarray, y_pred: np.ndarray) -> Non
     with open(path, "w", newline="") as fh:
         writer = csv.writer(fh)
         header = []
-        for name in TARGET_NAMES:
+        for name in METRIC_NAMES:
             header.extend([f"{name}_true", f"{name}_pred"])
         writer.writerow(header)
         for i in range(y_true.shape[0]):
@@ -563,7 +574,7 @@ def bucket_summary(values: np.ndarray, errors: np.ndarray, bins: int = 5) -> lis
 def write_error_analysis(out_dir: str, y_true: np.ndarray, y_pred: np.ndarray, node_counts: np.ndarray, edge_counts: np.ndarray) -> None:
     os.makedirs(out_dir, exist_ok=True)
     rows = []
-    for metric_idx, name in enumerate(TARGET_NAMES):
+    for metric_idx, name in enumerate(METRIC_NAMES):
         if np.all(np.isnan(y_pred[:, metric_idx])):
             continue
         denom = np.maximum(np.abs(y_true[:, metric_idx]), 1e-8)
@@ -578,7 +589,7 @@ def write_error_analysis(out_dir: str, y_true: np.ndarray, y_pred: np.ndarray, n
 
     worst = []
     for i in range(y_true.shape[0]):
-        for metric_idx, name in enumerate(TARGET_NAMES):
+        for metric_idx, name in enumerate(METRIC_NAMES):
             if np.isnan(y_pred[i, metric_idx]):
                 continue
             rel = abs(y_true[i, metric_idx] - y_pred[i, metric_idx]) / max(abs(y_true[i, metric_idx]), 1e-8)
@@ -592,7 +603,7 @@ def write_error_analysis(out_dir: str, y_true: np.ndarray, y_pred: np.ndarray, n
     try:
         import matplotlib.pyplot as plt
 
-        for metric_idx, name in enumerate(TARGET_NAMES):
+        for metric_idx, name in enumerate(METRIC_NAMES):
             if np.all(np.isnan(y_pred[:, metric_idx])):
                 continue
             plt.figure(figsize=(5, 5))
@@ -690,6 +701,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     first = ckpts[0]
     stats = stats_from_metadata(first)
     ds, feature_cfg, data_root = build_test_dataset(args, first, stats)
+    metric_names = set_metric_names_for_config(feature_cfg)
     loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     print(f"test graphs: {len(ds)} | feature dims: {feature_layout(feature_cfg)}", flush=True)
 
@@ -747,7 +759,8 @@ def main(argv: Optional[list[str]] = None) -> None:
         "params": int(sum(count_parameters(model) for model in models)),
         "model_params": int(sum(count_parameters(model) for model in models)),
         "mean_mape": float(np.mean(mapes)) if mapes else float("nan"),
-        "metrics": {TARGET_NAMES[idx]: rows[idx] for idx in rows},
+        "target_names": metric_names,
+        "metrics": {metric_names[idx]: rows[idx] for idx in rows},
         "metrics_by_precision": precision_rows,
         "precision_config_counts": precision_count_rows,
         "metrics_by_label_domain": label_domain_rows,

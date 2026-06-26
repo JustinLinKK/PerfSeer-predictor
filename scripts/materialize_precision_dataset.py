@@ -322,6 +322,8 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     manifest = load_manifest(pack_dir)
     result_paths = sorted(path for results_dir in results_dirs for path in results_dir.glob("results_shard*.jsonl"))
     metadata_path = out_root / "label" / "precision_metadata.jsonl"
+    scheduler_label_path = out_root / "label" / "scheduler_label_v3.jsonl"
+    scheduler_resource_path = out_root / "label" / "scheduler_resource_label.jsonl"
     rejected_path = out_root / "precision_rejected_rows.jsonl"
     report = {
         "base_pairs": base_count,
@@ -346,6 +348,10 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
         "unsupported_fp8_rows": 0,
         "unsupported_low_precision_rows": 0,
         "rejected_rows_file": str(rejected_path.name),
+        "scheduler_label_v3_file": str(scheduler_label_path.relative_to(out_root)),
+        "scheduler_label_v3_rows": 0,
+        "scheduler_resource_label_file": str(scheduler_resource_path.relative_to(out_root)),
+        "scheduler_resource_label_rows": 0,
         "result_dirs": [str(path) for path in results_dirs],
         "result_files": [str(path) for path in result_paths],
     }
@@ -354,7 +360,12 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
     source_candidates: list[dict[str, Any]] = list(source_metadata_rows)
     accepted_precision_keys: set[tuple[str, str, str]] = set()
 
-    with metadata_path.open("w") as meta_fh, rejected_path.open("w") as rejected_fh:
+    with (
+        metadata_path.open("w") as meta_fh,
+        rejected_path.open("w") as rejected_fh,
+        scheduler_label_path.open("w") as scheduler_fh,
+        scheduler_resource_path.open("w") as scheduler_resource_fh,
+    ):
         for meta in source_metadata_rows:
             meta_fh.write(json.dumps(meta, sort_keys=True) + "\n")
             bump(report["label_domain_counts"], "source")
@@ -407,6 +418,33 @@ def materialize(args: argparse.Namespace) -> dict[str, Any]:
                 "hardware": row.get("hardware", {}),
                 "precision": row.get("precision", {}),
             }
+            workload = row.get("workload_spec") if isinstance(row.get("workload_spec"), dict) else {}
+            label_v3 = row.get("label_v3") if isinstance(row.get("label_v3"), dict) else {}
+            scheduler_resource = row.get("scheduler_resource_label") if isinstance(row.get("scheduler_resource_label"), dict) else {}
+            if workload:
+                meta["workload_spec"] = workload
+                dataset = workload.get("dataset") if isinstance(workload.get("dataset"), dict) else {}
+                training = workload.get("training") if isinstance(workload.get("training"), dict) else {}
+                meta["dataset"] = dataset
+                meta["training"] = training
+                if dataset.get("dataset_id"):
+                    meta["dataset_id"] = dataset.get("dataset_id")
+                if dataset.get("subset_id"):
+                    meta["dataset_subset_id"] = dataset.get("subset_id")
+                if training.get("optimizer"):
+                    meta["optimizer"] = training.get("optimizer")
+            if label_v3:
+                label_v3 = dict(label_v3)
+                label_v3["graph_file"] = graph_file
+                label_v3["label_file"] = label_file
+                scheduler_fh.write(json.dumps(label_v3, sort_keys=True) + "\n")
+                report["scheduler_label_v3_rows"] += 1
+            if scheduler_resource:
+                scheduler_resource = dict(scheduler_resource)
+                scheduler_resource["graph_file"] = graph_file
+                scheduler_resource["label_file"] = label_file
+                scheduler_resource_fh.write(json.dumps(scheduler_resource, sort_keys=True) + "\n")
+                report["scheduler_resource_label_rows"] += 1
             meta_fh.write(json.dumps(meta, sort_keys=True) + "\n")
             accepted_precision_keys.add((model_id, hw_id, precision_config))
             report["precision_labels"] += 1

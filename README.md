@@ -36,6 +36,19 @@ pooling, `Gemm`, `Add`, and `Concat`. Current schema: `perfseer_graph_v1`.
 Because feature dimensions changed, train this branch from scratch. Do not reuse
 baseline checkpoints.
 
+## Environment
+
+Use the exported `perfseer` conda environment for local development and
+transfer to other machines:
+
+```bash
+conda env create -f environment.yml
+conda activate perfseer
+```
+
+`environment.yml` is exported without build strings or a local `prefix:` so it
+can be recreated on another compatible Linux/CUDA platform.
+
 ## Model Input And Output
 
 Training object: PyTorch Geometric `Data`.
@@ -67,6 +80,22 @@ time|average_sm_util|average_memory_util|average_memory_usage|peak_sm_util|peak_
 
 `parse_label()` maps the two phase strings into the six model targets.
 
+Scheduler-grade runs additionally write `label/scheduler_label_v3.jsonl`.
+Those rows are the source of truth for real-dataset training-resource labels:
+train step wall time, train GPU step time, scheduler epoch time, SM utilization,
+peak VRAM, and matching inference labels. The legacy six-target files remain a
+compatibility projection while the optimized data path learns extra dataset,
+dataloader, optimizer, precision, and hardware features from
+`precision_metadata.jsonl`.
+
+For training-time labels, read the field carefully: the legacy
+`label/label/*.txt` `train.time` value is the compatibility timing field used by
+the original six-target parser, not a measured full epoch. For scheduler
+packing, use `scheduler_label_v3.targets.train_epoch_ms`. In the measured-epoch
+scheduler workflow this is the mean wall time of the measured epochs after one
+warmup epoch. In legacy runs it falls back to the step-extrapolated one-epoch
+estimate.
+
 ## Repository Layout
 
 - `src/perfseer/`: shared schema plus original parser/model utilities.
@@ -76,6 +105,13 @@ time|average_sm_util|average_memory_util|average_memory_usage|peak_sm_util|peak_
 - `nrp_calibration_pack/`: template catalog generator, generated-model runtime,
   profiler, profile-dataset builder, Dockerfile, and National Research Platform
   submit wrapper.
+- `dataset_sources/`: approval-first real dataset registry and one Markdown
+  review card per candidate dataset.
+- `scripts/manage_dataset_sources.py`: approves, dry-runs, downloads, and
+  prepares real dataset sources after manual review.
+- `nrp_calibration_pack/profile/make_workload_specs.py`: combines model
+  sources, approved dataset profiles, subset masks, batch sizes, optimizer,
+  precision, and hardware into scheduler `WorkloadSpec` rows.
 - `scripts/rebuild_source_tar_dataset.py`: rebuilds `dataset/cg/cg` and
   `dataset/label/label` from a source-label package.
 - `scripts/run_nrp_source_workflow_local.py`: submits the source-first Nautilus
@@ -93,30 +129,35 @@ dataset/
   cg/cg/*.pkl
   label/label/*.txt
   label/precision_metadata.jsonl
+  label/scheduler_label_v3.jsonl
+  label/scheduler_resource_label.jsonl
   precision_materialization_report.json
   precision_rejected_rows.jsonl
 ```
 
-The deterministic repo-local catalog has 10,000 templates and no heavyweight
-model-library imports such as torchvision, timm, or transformers.
+The balanced local scheduler catalog uses 10,005 base templates and no
+heavyweight model-library imports such as torchvision, timm, or transformers.
+That size is intentional: 10,005 is divisible by the 15 architecture families,
+so every family contributes exactly 667 base models. A four-precision expansion
+of this balanced set has 40,020 profile points.
 
 | Family | Count |
 | --- | ---: |
-| `resnet_cnn` | 2160 |
-| `efficientnet_cnn` | 1520 |
-| `bert_encoder` | 1200 |
-| `vit_encoder` | 1200 |
-| `yolo_detector` | 560 |
-| `unet_encoder_decoder` | 480 |
-| `ast_audio_transformer` | 480 |
-| `gru_temporal` | 480 |
-| `lstm_temporal` | 320 |
-| `vgg_cnn` | 400 |
-| `gat_graph` | 240 |
-| `mpnn_graph` | 240 |
-| `t5_encoder_decoder` | 240 |
-| `wav2vec2_audio` | 240 |
-| `ft_transformer_tabular` | 240 |
+| `ast_audio_transformer` | 667 |
+| `bert_encoder` | 667 |
+| `efficientnet_cnn` | 667 |
+| `ft_transformer_tabular` | 667 |
+| `gat_graph` | 667 |
+| `gru_temporal` | 667 |
+| `lstm_temporal` | 667 |
+| `mpnn_graph` | 667 |
+| `resnet_cnn` | 667 |
+| `t5_encoder_decoder` | 667 |
+| `unet_encoder_decoder` | 667 |
+| `vgg_cnn` | 667 |
+| `vit_encoder` | 667 |
+| `wav2vec2_audio` | 667 |
+| `yolo_detector` | 667 |
 
 Variant mix per family: 10% canonical anchors, 30% added-depth, 30%
 dropped-depth, 20% width/shape/hyperparameter changes, 10% mixed stress.
@@ -124,17 +165,138 @@ Manifest fields: `model_id`, `architecture_family`, `variant_kind`,
 `variant_signature`, `input_specs`, `feature_schema_version`, `model_file`,
 `subset_graph_file`, `precision_config`, `profile_point_id`, label paths.
 
-Acceptance gates: 10,000 rows in
-`nrp_calibration_pack/manifest/subset_manifest.jsonl`; family quotas match the
-table; every row has architecture, variant, input spec, schema, precision, and
-model path metadata; unsupported operator coverage is zero.
+Acceptance gates for the balanced local scheduler workflow: 10,005 rows in
+`nrp_calibration_pack/manifest/subset_manifest.jsonl`; each architecture family
+has 667 base models; every row has architecture, variant, input spec, schema,
+precision, and model path metadata; unsupported operator coverage is zero.
+
+## Real Dataset Scheduler Workflow
+
+The scheduler predictor should be trained from real task datasets, not random
+tensor-only workloads. Use one approved dataset per task family and create
+deterministic subset masks (`tiny`, `small`, `medium`, `large`, `full`) to
+represent different dataset sizes. The registry has a default `local` tier for
+this RTX 5090 workstation and a `nautilus` tier for PVC-backed large/reference
+datasets.
+
+Review candidate sources first:
+
+```bash
+python scripts/manage_dataset_sources.py list --tier local
+python scripts/manage_dataset_sources.py show cassava_leaf_disease
+```
+
+Approve a source only after reading its Markdown card and accepting external
+terms:
+
+```bash
+python scripts/manage_dataset_sources.py approve cassava_leaf_disease
+```
+
+Download and prepare approved data:
+
+```bash
+python scripts/manage_dataset_sources.py download cassava_leaf_disease \
+  --raw-root datasets/raw
+
+python scripts/manage_dataset_sources.py prepare cassava_leaf_disease \
+  --raw-root datasets/raw \
+  --prepared-root datasets/prepared
+```
+
+Raw and prepared dataset bodies are ignored by git. The tracked artifacts are
+the approval docs, registry status, subset masks, checksums, and metadata
+summaries.
+
+Nautilus-only candidates such as `imagenet_object_localization`,
+`carvana_image_masking`, and `birdclef_2024` are refused by the local download
+command unless `--allow-nautilus-only` is passed on a PVC-backed Nautilus job.
+
+After generating model sources, create scheduler workload specs:
+
+```bash
+python nrp_calibration_pack/profile/make_workload_specs.py \
+  --manifest nrp_calibration_pack/manifest/subset_manifest.jsonl \
+  --registry dataset_sources/registry.json \
+  --dataset-profile-root datasets/prepared \
+  --output-dir nrp_calibration_pack/workload_specs \
+  --subset-id tiny \
+  --subset-id small \
+  --batch-size 8 \
+  --batch-size 32 \
+  --precision-sweep fp32_ieee,bf16_amp \
+  --optimizer adam \
+  --hardware-id rtx5090 \
+  --force
+```
+
+Profile those workloads with scheduler labels:
+
+```bash
+python nrp_calibration_pack/profile/run_profile.py \
+  --workload-specs nrp_calibration_pack/workload_specs/workloads.jsonl \
+  --models-dir nrp_calibration_pack/models \
+  --output-dir nrp_results_rtx5090_scheduler \
+  --hardware-id rtx5090 \
+  --device cuda \
+  --sm-occupancy-source nvml_proxy \
+  --resource-profile-mode sustained \
+  --min-phase-seconds 20 \
+  --min-sampler-samples 100 \
+  --label-time-mode measured_epochs \
+  --time-label-warmup-epochs 1 \
+  --time-label-measured-epochs 2 \
+  --warmup 20 \
+  --infer-repeats 50 \
+  --train-repeats 50 \
+  --num-shards <N> \
+  --shard-index <I>
+```
+
+The profiler refuses scheduler workload rows whose dataset profile does not
+declare a real dataloader adapter. Use `--allow-synthetic-workload-inputs` only
+for smoke tests that intentionally exercise the schema without production
+labels.
+
+`label_v3` stores both the scheduler epoch label and the legacy step-derived
+estimate. In measured-epoch mode, the scheduler label is:
+
+```text
+train_epoch_ms = mean(measured_epoch_wall_ms after warmup epochs)
+```
+
+The compatibility estimate remains available as:
+
+```text
+train_epoch_ms_step_extrapolated =
+  train_step_wall_ms * ceil(num_samples / effective_batch_size)
+```
+
+Use `train_epoch_ms` when comparing labels against a real multi-epoch training
+run. The legacy six-target `train_time`/`train.time` field is retained for
+PerfSeer compatibility and should not be interpreted as a full epoch label.
+
+Validate label reliability against 5-epoch golden runs on a local RTX 5090:
+
+```bash
+python scripts/validate_dataset_resource_labels.py \
+  --workloads nrp_calibration_pack/workload_specs_balanced_local/workloads.jsonl \
+  --models-dir nrp_calibration_pack/models \
+  --hardware-id rtx5090 \
+  --device cuda
+```
+
+The validator selects 20 workload rows across architecture families, profiles
+them with sustained labels, runs matching 5-epoch golden training phases, and
+writes comparison CSV, JSON, and Markdown summaries under
+`record/resource_label_validation_<timestamp>/`.
 
 ## Generate Pack
 
 ```bash
 python nrp_calibration_pack/generate_model_sources.py \
   --catalog-mode template \
-  --subset-size 10000 \
+  --subset-size 10005 \
   --seed 20260617 \
   --out-dir nrp_calibration_pack \
   --precision-sweep fp32_ieee \
@@ -142,6 +304,19 @@ python nrp_calibration_pack/generate_model_sources.py \
   --generation-workers "$(nproc)" \
   --force
 ```
+
+Before a large scheduler-label run, validate the generated model structures:
+
+```bash
+python scripts/validate_generated_model_structures.py \
+  --output-dir record/generated_model_structure_validation_smoke \
+  --force
+```
+
+The verifier generates a representative pack, checks coverage across all 15
+architecture families and variant kinds, then runs one forward/backward profile
+smoke per generated model. Add `--cuda-if-available` for an RTX 5090 smoke or
+`--full` for the heavier 10,005-base-model local sweep.
 
 For local RTX 5090 FP8/NVFP4 label generation, make a transformer-focused pack
 instead of starting with the broad CNN-first catalog:
@@ -197,6 +372,9 @@ python nrp_calibration_pack/profile/run_profile.py \
   --profile-dataset-dir nrp_calibration_pack/profile_datasets \
   --device cuda \
   --sm-occupancy-source nvml_proxy \
+  --resource-profile-mode sustained \
+  --min-phase-seconds 20 \
+  --min-sampler-samples 100 \
   --warmup 20 \
   --infer-repeats 50 \
   --train-repeats 50 \
@@ -300,7 +478,7 @@ nohup python3 -u scripts/run_nrp_source_workflow_local.py \
   --workflow-dir "/mnt/output/${RUN_ID}" \
   --hardware-id mixed4_full_omen \
   --stage-local-repo \
-  --subset-size 10000 \
+  --subset-size 10005 \
   --completions 64 \
   --parallelism 4 \
   --profile-scheduling-mode shard-switcher \
@@ -313,7 +491,7 @@ nohup python3 -u scripts/run_nrp_source_workflow_local.py \
   --optimizer adam \
   --sm-occupancy-source nvml_proxy \
   --profile-precision-sweep auto \
-  --bootstrap-command 'python -m pip install --no-cache-dir torch_geometric networkx scikit-learn tqdm nvidia-ml-py pyyaml' \
+  --bootstrap-command 'python -m pip install --no-cache-dir torch_geometric ogb networkx scikit-learn tqdm nvidia-ml-py pyyaml' \
   --local-output-dir "nrp_downloads/${RUN_ID}" \
   --timeout-seconds 604800 \
   --stage-timeout-seconds 1800 \
@@ -325,7 +503,7 @@ nohup python3 -u scripts/run_nrp_source_workflow_local.py \
 echo "$!" > "record/${RUN_ID}.pid"
 ```
 
-That command runs the complete 10,000-model catalog. `nohup` means no hangup,
+That command runs the complete 10,005-model balanced scheduler catalog. `nohup` means no hangup,
 `python3 -u` means unbuffered output, `2>&1` redirects standard error to
 standard output, and the trailing `&` backgrounds the process. The runner
 creates prepare, profile, package, and download stages; stages the current Omen
@@ -420,6 +598,25 @@ python -m perfseer_optimized.train \
   --run-id hardware_distill_student_128_rtx4090
 ```
 
+For scheduler packing, train from `label/scheduler_resource_label.jsonl`
+instead of the legacy six-target text labels:
+
+```bash
+python -m perfseer_optimized.train \
+  --config src/perfseer-optimized/configs/train_hardware_teacher/scheduler_resource_teacher.yaml \
+  --data-root dataset \
+  --hardware-id rtx5090 \
+  --run-id scheduler_resource_teacher_rtx5090
+```
+
+That config sets `features.target_source: scheduler_resource_train` and
+`features.target_mode: absolute`. Its six training targets are
+`train_avg_sm_util_percent`, `train_p95_sm_util_percent`,
+`train_peak_vram_used_mib`, `train_peak_torch_reserved_mib`,
+`train_step_wall_ms`, and `train_peak_memory_controller_util_percent`. Rows
+missing from `scheduler_resource_label.jsonl` fail loudly so a scheduler
+predictor cannot silently train on stale legacy labels.
+
 Rerun with `--hardware-id rtx3090` and `--hardware-id rtx5090` for other GPUs.
 Each hardware model can learn from every accepted precision recipe for that
 hardware.
@@ -467,8 +664,10 @@ python -m py_compile \
   nrp_calibration_pack/profile/generated_model_runtime.py \
   nrp_calibration_pack/profile/make_profile_datasets.py \
   nrp_calibration_pack/profile/run_profile.py \
+  nrp_calibration_pack/workload.py \
   nrp_calibration_pack/package_source_tar.py \
   nrp_calibration_pack/template_catalog.py \
+  scripts/validate_dataset_resource_labels.py \
   scripts/rebuild_source_tar_dataset.py \
   scripts/run_nrp_source_workflow_local.py \
   scripts/run_hardware_distill_flow.py \

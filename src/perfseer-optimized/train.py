@@ -43,13 +43,14 @@ from .data import (
     split_dataset,
     split_hash,
     supported_precision_hardware_summary,
+    target_names_for_config,
 )
 from .losses import build_loss, weighted_metric_loss
 from .model import SeerNet, SeerNetConfig, SeerNetMulti, count_parameters
 from .pcgrad import pcgrad_backward
 
 
-METRIC_NAMES = TARGET_NAMES
+METRIC_NAMES = list(TARGET_NAMES)
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -303,6 +304,12 @@ def build_datasets(cfg: dict[str, Any]):
         "supported_precision_hardware": supported_precision_hardware_summary(train_files + val_files + test_files, feature_cfg),
     }
     return train_ds, val_ds, test_ds, norm_stats, feature_cfg, split_meta
+
+
+def set_metric_names_for_config(feature_cfg: FeatureConfig) -> list[str]:
+    global METRIC_NAMES
+    METRIC_NAMES = target_names_for_config(feature_cfg)
+    return METRIC_NAMES
 
 
 def make_model_config(cfg: dict[str, Any], feature_cfg: FeatureConfig, num_outputs: int) -> SeerNetConfig:
@@ -577,6 +584,7 @@ def base_metadata(
         "run_id": run_id,
         "config": cfg,
         "feature_config": feature_cfg.to_dict(),
+        "target_names": list(METRIC_NAMES),
         "precision_hardware_config": precision_hardware_config(feature_cfg),
         "source_precision": {
             "precision_config": feature_cfg.precision_config,
@@ -622,6 +630,7 @@ def checkpoint_payload(
         "epoch": epoch,
         "val_loss": val_loss,
         "num_targets": NUM_TARGETS,
+        "target_names": list(METRIC_NAMES),
         "metadata": metadata,
         "calibration": calibration,
     }
@@ -1296,6 +1305,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     print(f"device: {device} | torch threads: {torch.get_num_threads()}", flush=True)
 
     train_ds, val_ds, _test_ds, norm_stats, feature_cfg, split_meta = build_datasets(cfg)
+    set_metric_names_for_config(feature_cfg)
     metadata = base_metadata(cfg, run_id, feature_cfg, norm_stats, split_meta)
     ckpts: list[str] = []
     t0 = time.time()
