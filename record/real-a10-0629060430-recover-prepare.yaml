@@ -1,0 +1,137 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: real-a10-0629060430-prepare-real
+  namespace: ecepxie
+  labels:
+    app: real-a10-0629060430
+    stage: prepare-real
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: real-a10-0629060430
+        stage: prepare-real
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - rci-nrp-gpu-04.sdsu.edu
+      restartPolicy: Never
+      containers:
+      - name: prepare-real
+        image: pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
+        imagePullPolicy: IfNotPresent
+        workingDir: /mnt/output/real-a10-0629060430/repo
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONPATH="/mnt/output/real-a10-0629060430/repo/src:/mnt/output/real-a10-0629060430/repo:${PYTHONPATH:-}"
+          python -m pip install --no-cache-dir networkx pyyaml pandas scikit-learn tqdm ogb torch_geometric
+          python - <<'PY'
+          import json
+          import pickle
+          import shutil
+          from pathlib import Path
+
+          import networkx as nx
+
+          from nrp_calibration_pack.build_pack import record_from_template_graph, write_pack
+
+          pack = Path("/mnt/output/real-a10-0629060430/pack")
+          graph_dir = pack / "template_catalog" / "cg" / "cg"
+          label_dir = pack / "template_catalog" / "label" / "label"
+
+          records = []
+          for graph_path in sorted(graph_dir.glob("*.pkl")):
+              label_path = label_dir / f"{graph_path.stem}.txt"
+              if not label_path.is_file():
+                  raise FileNotFoundError(label_path)
+              with graph_path.open("rb") as file_handle:
+                  graph = nx.DiGraph(pickle.load(file_handle))
+              records.append(record_from_template_graph(graph_path, label_path, graph))
+
+          if len(records) != 10005:
+              raise SystemExit(f"expected 10005 records, found {len(records)}")
+
+          for relative in ("models", "manifest", "subset"):
+              shutil.rmtree(pack / relative, ignore_errors=True)
+
+          written, failures = write_pack(
+              records,
+              records,
+              pack,
+              "compile",
+              ("fp32_ieee",),
+              generation_workers=1,
+          )
+          if written != len(records) or failures:
+              raise SystemExit(f"written={written} failures={failures}")
+          print(json.dumps({"event": "manifest_recovery_ok", "written": written, "failures": failures}), flush=True)
+          PY
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          pack = Path("/mnt/output/real-a10-0629060430/pack")
+          manifest = pack / "manifest" / "subset_manifest.jsonl"
+          rows = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
+          if len(rows) != 10005:
+              raise SystemExit(f"expected 10005 manifest rows, got {len(rows)}")
+          if len({row["model_id"] for row in rows}) != 10005:
+              raise SystemExit("model_id uniqueness verifier failed")
+          missing_model = [row["model_file"] for row in rows if not (pack / row["model_file"]).is_file()]
+          missing_graph = [row["subset_graph_file"] for row in rows if not (pack / row["subset_graph_file"]).is_file()]
+          if missing_model or missing_graph:
+              raise SystemExit(f"missing_model={len(missing_model)} missing_graph={len(missing_graph)}")
+          if {row["precision_config"] for row in rows} != {"fp32_ieee"}:
+              raise SystemExit("precision verifier failed")
+          print(json.dumps({"event": "manifest_verifier_ok", "rows": len(rows)}), flush=True)
+          PY
+          python nrp_calibration_pack/profile/make_workload_specs.py \
+            --manifest /mnt/output/real-a10-0629060430/pack/manifest/subset_manifest.jsonl \
+            --registry dataset_sources/registry.json \
+            --dataset-profile-root /mnt/output/real-a10-0629060430/repo/datasets/prepared \
+            --raw-root /mnt/output/real-a10-0629060430/repo/datasets/raw \
+            --output-dir /mnt/output/real-a10-0629060430/workload_specs_real \
+            --subset-id tiny \
+            --batch-size 8 \
+            --precision-sweep fp32_ieee \
+            --optimizer adam \
+            --hardware-id a10 \
+            --force
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          workloads = Path("/mnt/output/real-a10-0629060430/workload_specs_real/workloads.jsonl")
+          rows = [json.loads(line) for line in workloads.read_text().splitlines() if line.strip()]
+          if len(rows) != 10005:
+              raise SystemExit(f"expected 10005 workload rows, got {len(rows)}")
+          bad = [row.get("profile_point_id") for row in rows if not row.get("dataset", {}).get("real_dataloader_backed")]
+          if bad:
+              raise SystemExit(f"real_dataloader_backed verifier failed: {len(bad)} bad row(s)")
+          print(json.dumps({"event": "real_workload_verifier_ok", "rows": len(rows)}), flush=True)
+          PY
+        resources:
+          requests:
+            cpu: "4"
+            memory: "24Gi"
+          limits:
+            cpu: "4"
+            memory: "24Gi"
+        volumeMounts:
+        - name: output
+          mountPath: /mnt/output
+      volumes:
+      - name: output
+        persistentVolumeClaim:
+          claimName: perfseer-real-dataset-pvc

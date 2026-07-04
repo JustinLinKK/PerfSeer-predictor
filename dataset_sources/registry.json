@@ -64,7 +64,7 @@
     },
     {
       "id": "siim_acr_pneumothorax",
-      "status": "prepared",
+      "status": "approved",
       "target_tier": "local",
       "estimated_storage_gb": "low_single_digits_compressed",
       "source_type": "kaggle_competition",
@@ -81,8 +81,29 @@
         "download",
         "-c",
         "siim-acr-pneumothorax-segmentation"
+      ]
+    },
+    {
+      "id": "pothole_image_segmentation",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_1_compressed",
+      "source_type": "kaggle_dataset",
+      "slug": "farzadnekouei/pothole-image-segmentation-dataset",
+      "task_family": "image_segmentation",
+      "modality": "image",
+      "approval_doc": "candidates/pothole_image_segmentation.md",
+      "model_families": [
+        "unet_encoder_decoder"
       ],
-      "prepared_profile": "datasets/prepared/siim_acr_pneumothorax/dataset_profile.json"
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "farzadnekouei/pothole-image-segmentation-dataset"
+      ],
+      "prepared_profile": "datasets/prepared/pothole_image_segmentation/dataset_profile.json"
     },
     {
       "id": "carvana_image_masking",
@@ -108,7 +129,7 @@
     },
     {
       "id": "great_barrier_reef",
-      "status": "prepared",
+      "status": "approved",
       "target_tier": "local",
       "estimated_storage_gb": "around_20_to_30_download",
       "source_type": "kaggle_competition",
@@ -125,8 +146,29 @@
         "download",
         "-c",
         "tensorflow-great-barrier-reef"
+      ]
+    },
+    {
+      "id": "taco_yolo_object_detection",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_1_compressed",
+      "source_type": "kaggle_dataset",
+      "slug": "vencerlanz09/taco-dataset-yolo-format",
+      "task_family": "object_detection",
+      "modality": "image",
+      "approval_doc": "candidates/taco_yolo_object_detection.md",
+      "model_families": [
+        "yolo_detector"
       ],
-      "prepared_profile": "datasets/prepared/great_barrier_reef/dataset_profile.json"
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "vencerlanz09/taco-dataset-yolo-format"
+      ],
+      "prepared_profile": "datasets/prepared/taco_yolo_object_detection/dataset_profile.json"
     },
     {
       "id": "global_wheat_detection",
@@ -196,7 +238,7 @@
     },
     {
       "id": "birdclef_2023",
-      "status": "prepared",
+      "status": "approved",
       "target_tier": "local",
       "estimated_storage_gb": "single_digit_download; larger_prepared_features_possible",
       "source_type": "kaggle_competition",
@@ -214,8 +256,30 @@
         "download",
         "-c",
         "birdclef-2023"
+      ]
+    },
+    {
+      "id": "animal_audio_classification",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_1_compressed",
+      "source_type": "kaggle_dataset",
+      "slug": "warcoder/cats-vs-dogs-vs-birds-audio-classification",
+      "task_family": "audio_classification",
+      "modality": "audio",
+      "approval_doc": "candidates/animal_audio_classification.md",
+      "model_families": [
+        "ast_audio_transformer",
+        "wav2vec2_audio"
       ],
-      "prepared_profile": "datasets/prepared/birdclef_2023/dataset_profile.json"
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "warcoder/cats-vs-dogs-vs-birds-audio-classification"
+      ],
+      "prepared_profile": "datasets/prepared/animal_audio_classification/dataset_profile.json"
     },
     {
       "id": "birdclef_2024",
@@ -265,7 +329,7 @@
     },
     {
       "id": "home_credit_default_risk",
-      "status": "prepared",
+      "status": "approved",
       "target_tier": "local",
       "estimated_storage_gb": "well_under_10",
       "source_type": "kaggle_competition",
@@ -282,8 +346,29 @@
         "download",
         "-c",
         "home-credit-default-risk"
+      ]
+    },
+    {
+      "id": "credit_card_default",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_1_compressed",
+      "source_type": "kaggle_dataset",
+      "slug": "uciml/default-of-credit-card-clients-dataset",
+      "task_family": "tabular",
+      "modality": "tabular",
+      "approval_doc": "candidates/credit_card_default.md",
+      "model_families": [
+        "ft_transformer_tabular"
       ],
-      "prepared_profile": "datasets/prepared/home_credit_default_risk/dataset_profile.json"
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "uciml/default-of-credit-card-clients-dataset"
+      ],
+      "prepared_profile": "datasets/prepared/credit_card_default/dataset_profile.json"
     },
     {
       "id": "ogbn_products",

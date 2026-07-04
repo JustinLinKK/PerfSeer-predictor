@@ -327,6 +327,9 @@ def sample_keys_for_dataset(row: dict[str, Any], raw_dir: Path, summary: dict[st
         if dataset_id == "home_credit_default_risk":
             rows, _header = zip_csv_row_count(archive, "application_train.csv")
             return row_keys(zip_member_key(raw_dir, archive, "application_train.csv"), rows)
+        if dataset_id == "credit_card_default":
+            rows, _header = zip_csv_row_count(archive, "UCI_Credit_Card.csv")
+            return row_keys(zip_member_key(raw_dir, archive, "UCI_Credit_Card.csv"), rows)
         with zipfile.ZipFile(archive) as zf:
             media = [
                 zip_member_key(raw_dir, archive, info.filename)

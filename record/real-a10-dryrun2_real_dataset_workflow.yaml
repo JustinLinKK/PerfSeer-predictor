@@ -1,0 +1,243 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: real-a10-dryrun2-prepare-real
+  namespace: ecepxie
+  labels:
+    app: real-a10-dryrun2
+    stage: prepare-real
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: real-a10-dryrun2
+        stage: prepare-real
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: prepare-real
+        image: pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
+        imagePullPolicy: IfNotPresent
+        workingDir: /mnt/output/real-a10-dryrun2/repo
+        env:
+        - name: KAGGLE_CONFIG_DIR
+          value: /root/.kaggle
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONPATH="/mnt/output/real-a10-dryrun2/repo/src:/mnt/output/real-a10-dryrun2/repo:\${PYTHONPATH:-}"
+          chmod 600 /root/.kaggle/kaggle.json || true
+          
+          python -m pip install --no-cache-dir kaggle ogb torch_geometric networkx scikit-learn tqdm nvidia-ml-py pyyaml pandas
+          mkdir -p '/mnt/output/real-a10-dryrun2/repo/datasets/raw' '/mnt/output/real-a10-dryrun2/repo/datasets/prepared' '/mnt/output/real-a10-dryrun2/pack' '/mnt/output/real-a10-dryrun2/workload_specs_real'
+          python - <<'PY' > '/mnt/output/real-a10-dryrun2/dataset_plan.tsv'
+          import json
+          from pathlib import Path
+          wanted = [item.strip() for item in 'cassava_leaf_disease,pothole_image_segmentation,great_barrier_reef,jigsaw_toxic_comment,cnn_dailymail_summarization,birdclef_2023,store_sales_time_series,home_credit_default_risk,ogbn_products'.split(",") if item.strip()]
+          registry = json.loads(Path("dataset_sources/registry.json").read_text())
+          rows = registry.get("datasets", [])
+          by_id = {str(row["id"]): row for row in rows}
+          selected = [by_id[item] for item in wanted]
+          for row in selected:
+              print(f"{row['id']}\t{row.get('source_type', '')}\t{row.get('task_family', '')}")
+          PY
+          while IFS=$'\t' read -r DATASET_ID SOURCE_TYPE TASK_FAMILY; do
+            test -n "$DATASET_ID"
+            if [[ "$SOURCE_TYPE" == "pyg_ogb" ]]; then
+              python scripts/manage_dataset_sources.py download-ogb "$DATASET_ID" --raw-root '/mnt/output/real-a10-dryrun2/repo/datasets/raw' --allow-nautilus-only
+            else
+              python scripts/manage_dataset_sources.py download "$DATASET_ID" --raw-root '/mnt/output/real-a10-dryrun2/repo/datasets/raw' --allow-nautilus-only
+            fi
+            python scripts/manage_dataset_sources.py prepare "$DATASET_ID" --raw-root '/mnt/output/real-a10-dryrun2/repo/datasets/raw' --prepared-root '/mnt/output/real-a10-dryrun2/repo/datasets/prepared' --force
+          done < '/mnt/output/real-a10-dryrun2/dataset_plan.tsv'
+          python nrp_calibration_pack/generate_model_sources.py \
+            --catalog-mode template \
+            --subset-size 10005 \
+            --seed 20260617 \
+            --out-dir '/mnt/output/real-a10-dryrun2/pack' \
+            --precision-sweep fp32_ieee \
+            --validation-mode compile \
+            --generation-workers 0 \
+            --force
+          python nrp_calibration_pack/profile/make_workload_specs.py \
+            --manifest '/mnt/output/real-a10-dryrun2/pack/manifest/subset_manifest.jsonl' \
+            --registry dataset_sources/registry.json \
+            --dataset-profile-root '/mnt/output/real-a10-dryrun2/repo/datasets/prepared' \
+            --raw-root '/mnt/output/real-a10-dryrun2/repo/datasets/raw' \
+            --output-dir '/mnt/output/real-a10-dryrun2/workload_specs_real' \
+            --subset-id tiny \
+            --batch-size 8 \
+            --precision-sweep fp32_ieee \
+            --optimizer adam \
+            --hardware-id a10 \
+            --force
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          workloads = Path('/mnt/output/real-a10-dryrun2/workload_specs_real/workloads.jsonl')
+          rows = [json.loads(line) for line in workloads.read_text().splitlines() if line.strip()]
+          if len(rows) != 10005:
+              raise SystemExit(f"expected 10005 workload rows, got {len(rows)}")
+          bad = [row.get("profile_point_id") for row in rows if not row.get("dataset", {}).get("real_dataloader_backed")]
+          if bad:
+              raise SystemExit(f"real_dataloader_backed verifier failed: {len(bad)} bad row(s)")
+          print(json.dumps({"event": "real_workload_verifier_ok", "rows": len(rows)}), flush=True)
+          PY
+        resources:
+          requests:
+            cpu: "8"
+            memory: "48Gi"
+          limits:
+            cpu: "8"
+            memory: "48Gi"
+        volumeMounts:
+        - name: output
+          mountPath: /mnt/output
+        - name: kaggle
+          mountPath: /root/.kaggle
+          readOnly: true
+      volumes:
+      - name: output
+        persistentVolumeClaim:
+          claimName: perfseer-real-dataset-pvc
+      - name: kaggle
+        secret:
+          secretName: real-a10-dryrun2-kaggle
+          defaultMode: 384
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: real-a10-dryrun2-profile-real
+  namespace: ecepxie
+  labels:
+    app: real-a10-dryrun2
+    stage: profile-real
+spec:
+  completionMode: Indexed
+  completions: 64
+  parallelism: 4
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: real-a10-dryrun2
+        stage: profile-real
+    spec:
+      restartPolicy: Never
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nvidia.com/gpu.product
+                operator: In
+                values:
+                - NVIDIA-A10
+      containers:
+      - name: profile-real
+        image: pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
+        imagePullPolicy: IfNotPresent
+        workingDir: /mnt/output/real-a10-dryrun2/repo
+        env:
+        - name: JOB_COMPLETION_INDEX
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+        - name: JOB_COMPLETIONS
+          value: "64"
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONPATH="/mnt/output/real-a10-dryrun2/repo/src:/mnt/output/real-a10-dryrun2/repo:\${PYTHONPATH:-}"
+          
+          python -m pip install --no-cache-dir ogb torch_geometric networkx scikit-learn tqdm nvidia-ml-py pyyaml pandas
+          python nrp_calibration_pack/profile/run_profile.py \
+            --workload-specs '/mnt/output/real-a10-dryrun2/workload_specs_real/workloads.jsonl' \
+            --models-dir '/mnt/output/real-a10-dryrun2/pack/models' \
+            --output-dir '/mnt/output/real-a10-dryrun2/results/a10' \
+            --hardware-id a10 \
+            --device cuda \
+            --precision-sweep auto \
+            --resume \
+            --num-shards 64 \
+            --shard-index \${JOB_COMPLETION_INDEX:-0} \
+            --warmup 20 \
+            --infer-repeats 50 \
+            --train-repeats 50 \
+            --label-time-mode measured_epochs \
+            --time-label-warmup-epochs 1 \
+            --time-label-measured-epochs 2 \
+            --sample-interval 0.01 \
+            --min-phase-seconds 20 \
+            --min-sampler-samples 100 \
+            --optimizer adam \
+            --sm-occupancy-source nvml_proxy \
+            --resource-profile-mode sustained
+        resources:
+          requests:
+            cpu: "4"
+            memory: "24Gi"
+            nvidia.com/gpu: "1"
+          limits:
+            cpu: "4"
+            memory: "24Gi"
+            nvidia.com/gpu: "1"
+        volumeMounts:
+        - name: output
+          mountPath: /mnt/output
+      volumes:
+      - name: output
+        persistentVolumeClaim:
+          claimName: perfseer-real-dataset-pvc
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: real-a10-dryrun2-package-real
+  namespace: ecepxie
+  labels:
+    app: real-a10-dryrun2
+    stage: package-real
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: real-a10-dryrun2
+        stage: package-real
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: package-real
+        image: alpine:3.20
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-lc"]
+        args:
+        - |
+          set -eu
+          cd '/mnt/output/real-a10-dryrun2'
+          tar -czf '/mnt/output/real-a10-dryrun2/perfseer_a10_real_dataset_labels.tar.gz' \
+            dataset_plan.tsv \
+            pack/manifest \
+            pack/models \
+            workload_specs_real \
+            results/a10
+          tar -tzf '/mnt/output/real-a10-dryrun2/perfseer_a10_real_dataset_labels.tar.gz' | tee '/mnt/output/real-a10-dryrun2/real_dataset_package_contents.txt'
+        resources:
+          requests:
+            cpu: "2"
+            memory: "8Gi"
+          limits:
+            cpu: "2"
+            memory: "8Gi"
+        volumeMounts:
+        - name: output
+          mountPath: /mnt/output
+      volumes:
+      - name: output
+        persistentVolumeClaim:
+          claimName: perfseer-real-dataset-pvc

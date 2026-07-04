@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: real-a10-0629060430-package-real
+  namespace: ecepxie
+  labels:
+    app: real-a10-0629060430
+    stage: package-real
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: real-a10-0629060430
+        stage: package-real
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: package-real
+        image: alpine:3.20
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-lc"]
+        args:
+        - |
+          set -eu
+          cd /mnt/output/real-a10-0629060430
+          tar -czf perfseer_a10_real_dataset_labels.tar.gz \
+            dataset_plan.tsv \
+            pack_ready.tar.gz \
+            workload_specs_real_ready.tar.gz \
+            results/a10
+          tar -tzf perfseer_a10_real_dataset_labels.tar.gz | tee real_dataset_package_contents.txt
+        resources:
+          requests:
+            cpu: "2"
+            memory: "8Gi"
+          limits:
+            cpu: "2"
+            memory: "8Gi"
+        volumeMounts:
+        - name: output
+          mountPath: /mnt/output
+      volumes:
+      - name: output
+        persistentVolumeClaim:
+          claimName: perfseer-real-dataset-pvc

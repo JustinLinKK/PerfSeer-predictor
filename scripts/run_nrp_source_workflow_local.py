@@ -123,6 +123,7 @@ def create_repo_archive(repo_dir: Path, archive_path: Path) -> dict[str, int]:
         "README.md",
         "pyproject.toml",
         "requirements.txt",
+        "dataset_sources",
         "nrp_calibration_pack",
         "scripts",
         "src",
@@ -236,6 +237,34 @@ def parse_gpus(value: str) -> list[str]:
     if unknown:
         raise ValueError(f"unknown GPU preset(s): {', '.join(unknown)}")
     return gpu_keys
+
+
+def configure_single_indexed_gpu(args: argparse.Namespace) -> None:
+    gpu_keys = parse_gpus(args.gpus)
+    if len(gpu_keys) != 1:
+        raise ValueError("--profile-scheduling-mode single-indexed requires exactly one --gpus preset")
+    gpu_key = gpu_keys[0]
+    preset = GPU_PRESETS[gpu_key]
+    products = list(preset["products"])
+    if not args.gpu_product:
+        if len(products) != 1:
+            raise ValueError(f"--gpu-product is required for preset {gpu_key} because it has multiple product values")
+        args.gpu_product = products[0]
+    if not args.gpu_resource or args.gpu_resource == "nvidia.com/gpu":
+        args.gpu_resource = str(preset["resource"])
+    print(
+        json.dumps(
+            {
+                "event": "single_indexed_gpu_configured",
+                "gpu_key": gpu_key,
+                "gpu_product": args.gpu_product,
+                "gpu_resource": args.gpu_resource,
+                "parallelism": args.parallelism,
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
 
 
 def partition_profile_shards(total_shards: int, gpu_keys: list[str]) -> list[ProfileGpuPartition]:
@@ -1207,7 +1236,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--gpu-resource", default="nvidia.com/gpu")
     parser.add_argument("--gpus", default="a100,a40,l4,rtx_a4000")
     parser.add_argument("--active-gpus", type=int, default=4)
-    parser.add_argument("--profile-scheduling-mode", choices=("gpu-partition", "shard-switcher"), default="gpu-partition")
+    parser.add_argument(
+        "--profile-scheduling-mode",
+        choices=("gpu-partition", "shard-switcher", "single-indexed"),
+        default="gpu-partition",
+    )
     parser.add_argument("--pending-timeout-seconds", type=int, default=300)
     parser.add_argument("--max-retries-per-shard", type=int, default=3)
     parser.add_argument("--skip-image-warmup", action="store_true")
@@ -1275,10 +1308,16 @@ def main(argv: list[str] | None = None) -> None:
             print_diagnostics(args.namespace, job_name(args, "prepare"))
             wait_for_job(args, "prepare")
         if not args.skip_profile:
-            args.warmed_nodes_by_gpu = warm_profile_image_cache(args)
+            if args.profile_scheduling_mode == "single-indexed":
+                configure_single_indexed_gpu(args)
+                submit_stage(args, "profile")
+                print_diagnostics(args.namespace, job_name(args, "profile"))
+                wait_for_job(args, "profile")
+            else:
+                args.warmed_nodes_by_gpu = warm_profile_image_cache(args)
             if args.profile_scheduling_mode == "gpu-partition":
                 run_partitioned_profile_jobs(args)
-            else:
+            elif args.profile_scheduling_mode == "shard-switcher":
                 run_profile_switcher(args)
         if not args.skip_package:
             submit_stage(args, "package")

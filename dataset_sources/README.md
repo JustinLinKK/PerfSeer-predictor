@@ -47,13 +47,13 @@ Local primary candidates:
 | Task family | Local dataset id | Larger/reference tier |
 | --- | --- | --- |
 | image classification | `cassava_leaf_disease` | `imagenet_object_localization` |
-| image segmentation | `siim_acr_pneumothorax` | `carvana_image_masking` |
-| object detection | `great_barrier_reef` | `global_wheat_detection` |
+| image segmentation | `pothole_image_segmentation` | `carvana_image_masking` |
+| object detection | `taco_yolo_object_detection` | `global_wheat_detection` |
 | text classification | `jigsaw_toxic_comment` | none |
 | seq2seq text | `cnn_dailymail_summarization` | none |
-| audio classification | `birdclef_2023` | `birdclef_2024` |
+| audio classification | `animal_audio_classification` | `birdclef_2024` |
 | time series | `store_sales_time_series` | none |
-| tabular | `home_credit_default_risk` | none |
+| tabular | `credit_card_default` | none |
 | graph | `ogbn_products` | none |
 
 For Nautilus/PVC runs only:
