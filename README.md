@@ -59,8 +59,17 @@ Training object: PyTorch Geometric `Data`.
 - `data.u`: graph-level aggregate, architecture, precision, and label-domain
   features.
 - `data.y`: standardized six-target label; `data.y_raw`: raw six-target label.
+  The six target names depend on `features.target_source`.
 
-Model outputs, in order:
+Canonical v2 model outputs, in order:
+
+```text
+train_epoch_ms, train_avg_sm_util_percent, train_p95_sm_util_percent,
+train_peak_vram_used_mib, train_peak_torch_reserved_mib,
+train_peak_memory_controller_util_percent
+```
+
+The legacy compatibility output order is:
 
 ```text
 train_util, train_mem, train_time, infer_util, infer_mem, infer_time
@@ -80,12 +89,13 @@ time|average_sm_util|average_memory_util|average_memory_usage|peak_sm_util|peak_
 
 `parse_label()` maps the two phase strings into the six model targets.
 
-Scheduler-grade runs additionally write `label/scheduler_label_v3.jsonl`.
-Those rows are the source of truth for real-dataset training-resource labels:
-train step wall time, train GPU step time, scheduler epoch time, SM utilization,
-peak VRAM, and matching inference labels. The legacy six-target files remain a
-compatibility projection while the optimized data path learns extra dataset,
-dataloader, optimizer, precision, and hardware features from
+Scheduler-grade runs additionally write `label/scheduler_label_v3.jsonl` and
+`label/scheduler_resource_label.jsonl`. The canonical v2 target source
+`scheduler_v2_train` combines measured scheduler epoch time from
+`scheduler_label_v3.targets.train_epoch_ms` with sustained utilization and memory
+targets from `scheduler_resource_label.targets`. The legacy six-target files
+remain a compatibility projection while the optimized data path learns extra
+dataset, dataloader, optimizer, precision, and hardware features from
 `precision_metadata.jsonl`.
 
 For training-time labels, read the field carefully: the legacy
@@ -116,8 +126,8 @@ estimate.
   `dataset/label/label` from a source-label package.
 - `scripts/run_nrp_source_workflow_local.py`: submits the source-first Nautilus
   workflow, waits for stages, and downloads source-label and dataset packages.
-- `scripts/run_hardware_distill_flow.py`: scratch teacher training followed by
-  same-hardware student distillation.
+- `scripts/run_hardware_distill_flow.py`: canonical v2 teacher training followed
+  by same-hardware student distillation.
 
 ## Dataset
 
@@ -569,15 +579,20 @@ splits labels matching `--hardware-id`.
 
 ## Train Per Hardware
 
-Train a large teacher from scratch and distill the matching student once per
-hardware ID.
+Train one v2 teacher/student pair per hardware ID. The active model configs are
+only:
+
+- `src/perfseer-optimized/configs/train_hardware_teacher/v2_teacher.yaml`
+- `src/perfseer-optimized/configs/train_deploy_model/v2_student.yaml`
+
+Older architecture configs are under `src/perfseer-optimized/configs/legacy/`
+and should not be used for new v2 runs.
+See `doc/v2_teacher_student_model_pair.md` for the current architecture summary.
 
 ```bash
 python scripts/run_hardware_distill_flow.py \
   --data-root dataset \
-  --hardware-id rtx4090 \
-  --teacher-epochs 600 \
-  --student-epochs 500 \
+  --hardware-id rtx5090 \
   --split-unit graph
 ```
 
@@ -585,37 +600,23 @@ Useful individual commands:
 
 ```bash
 python -m perfseer_optimized.train \
-  --config src/perfseer-optimized/configs/train_hardware_teacher/large_teacher.yaml \
-  --data-root dataset \
-  --hardware-id rtx4090 \
-  --run-id hardware_large_teacher_rtx4090
-
-python -m perfseer_optimized.train \
-  --config src/perfseer-optimized/configs/train_deploy_model/distill_student_128.yaml \
-  --data-root dataset \
-  --hardware-id rtx4090 \
-  --teacher-ckpt-dir runs/optimized/hardware_large_teacher_rtx4090 \
-  --run-id hardware_distill_student_128_rtx4090
-```
-
-For scheduler packing, train from `label/scheduler_resource_label.jsonl`
-instead of the legacy six-target text labels:
-
-```bash
-python -m perfseer_optimized.train \
-  --config src/perfseer-optimized/configs/train_hardware_teacher/scheduler_resource_teacher.yaml \
+  --config src/perfseer-optimized/configs/train_hardware_teacher/v2_teacher.yaml \
   --data-root dataset \
   --hardware-id rtx5090 \
-  --run-id scheduler_resource_teacher_rtx5090
+  --run-id v2_teacher_rtx5090
+
+python -m perfseer_optimized.train \
+  --config src/perfseer-optimized/configs/train_deploy_model/v2_student.yaml \
+  --data-root dataset \
+  --hardware-id rtx5090 \
+  --teacher-ckpt-dir runs/optimized/v2_teacher_rtx5090 \
+  --run-id v2_student_rtx5090
 ```
 
-That config sets `features.target_source: scheduler_resource_train` and
-`features.target_mode: absolute`. Its six training targets are
-`train_avg_sm_util_percent`, `train_p95_sm_util_percent`,
-`train_peak_vram_used_mib`, `train_peak_torch_reserved_mib`,
-`train_step_wall_ms`, and `train_peak_memory_controller_util_percent`. Rows
-missing from `scheduler_resource_label.jsonl` fail loudly so a scheduler
-predictor cannot silently train on stale legacy labels.
+Both configs set `features.target_source: scheduler_v2_train` and
+`features.target_mode: absolute`. Rows missing from either
+`label/scheduler_label_v3.jsonl` or `label/scheduler_resource_label.jsonl` fail
+loudly so the v2 pair cannot silently train on stale legacy labels.
 
 Rerun with `--hardware-id rtx3090` and `--hardware-id rtx5090` for other GPUs.
 Each hardware model can learn from every accepted precision recipe for that

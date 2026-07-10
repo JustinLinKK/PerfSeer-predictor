@@ -33,9 +33,11 @@ from nrp_calibration_pack.workload import (  # noqa: E402
 from perfseer_optimized.data import (  # noqa: E402
     FeatureConfig,
     SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES,
+    SCHEDULER_V2_TRAIN_TARGET_NAMES,
     feature_config_for_pair,
     feature_layout,
     scheduler_resource_target_for_label,
+    scheduler_v2_target_for_label,
     target_names_for_config,
 )
 from scripts.validate_dataset_resource_labels import select_validation_workloads  # noqa: E402
@@ -197,6 +199,36 @@ class RealDatasetWorkflowTests(unittest.TestCase):
         self.assertEqual(target_names_for_config(FeatureConfig()), ["train_util", "train_mem", "train_time", "infer_util", "infer_mem", "infer_time"])
         cfg = FeatureConfig(target_source="scheduler_resource_train")
         self.assertEqual(target_names_for_config(cfg), list(SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES))
+
+    def test_scheduler_v2_target_source_combines_epoch_and_resource_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            label_dir = root / "label" / "label"
+            label_dir.mkdir(parents=True)
+            label_path = label_dir / "toy.txt"
+            label_path.write_text("{'train': '1|2|3|4|5|6|7', 'infer': '1|2|3|4|5|6|7'}\n")
+            scheduler_targets = {"train_epoch_ms": 123.0, "train_step_wall_ms": 4.0}
+            resource_targets = {
+                "train_avg_sm_util_percent": 11.0,
+                "train_p95_sm_util_percent": 22.0,
+                "train_peak_vram_used_mib": 33.0,
+                "train_peak_torch_reserved_mib": 44.0,
+                "train_peak_memory_controller_util_percent": 66.0,
+            }
+            (root / "label" / "scheduler_label_v3.jsonl").write_text(
+                json.dumps({"label_file": "label/label/toy.txt", "profile_point_id": "toy::rtx", "targets": scheduler_targets}) + "\n"
+            )
+            (root / "label" / "scheduler_resource_label.jsonl").write_text(
+                json.dumps({"label_file": "label/label/toy.txt", "profile_point_id": "toy::rtx", "targets": resource_targets}) + "\n"
+            )
+
+            vector = scheduler_v2_target_for_label(str(label_path))
+            expected = {
+                "train_epoch_ms": 123.0,
+                **resource_targets,
+            }
+            self.assertEqual(vector.tolist(), [expected[name] for name in SCHEDULER_V2_TRAIN_TARGET_NAMES])
+            self.assertEqual(target_names_for_config(FeatureConfig(target_source="scheduler_v2_train")), list(SCHEDULER_V2_TRAIN_TARGET_NAMES))
 
     def test_validation_selector_uses_all_families_before_round_robin_extras(self) -> None:
         rows = []

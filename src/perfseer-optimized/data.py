@@ -47,6 +47,14 @@ SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES: list[str] = [
     "train_step_wall_ms",
     "train_peak_memory_controller_util_percent",
 ]
+SCHEDULER_V2_TRAIN_TARGET_NAMES: list[str] = [
+    "train_epoch_ms",
+    "train_avg_sm_util_percent",
+    "train_p95_sm_util_percent",
+    "train_peak_vram_used_mib",
+    "train_peak_torch_reserved_mib",
+    "train_peak_memory_controller_util_percent",
+]
 
 UNKNOWN_PRECISION_CONFIG = "unknown"
 DTYPE_VOCAB = ("fp32", "tf32", "bf16", "fp16", "fp8_e4m3", "fp8_e5m2", "fp4_e2m1", "unknown")
@@ -749,8 +757,42 @@ def _scheduler_resource_candidate_paths(label_path: str) -> tuple[str, ...]:
     )
 
 
+def _scheduler_label_candidate_paths(label_path: str) -> tuple[str, ...]:
+    path = os.path.abspath(label_path)
+    label_dir = os.path.dirname(path)
+    label_parent = os.path.dirname(label_dir)
+    data_root = os.path.dirname(label_parent)
+    return (
+        os.path.join(label_dir, "scheduler_label_v3.jsonl"),
+        os.path.join(label_parent, "scheduler_label_v3.jsonl"),
+        os.path.join(data_root, "scheduler_label_v3.jsonl"),
+    )
+
+
 @lru_cache(maxsize=32)
 def _scheduler_resource_index(path: str) -> dict[str, dict[str, Any]]:
+    if not os.path.isfile(path):
+        return {}
+    index: dict[str, dict[str, Any]] = {}
+    with open(path, "r") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            keys = {
+                str(row.get("profile_point_id", "")),
+                str(row.get("label_file", "")),
+                os.path.basename(str(row.get("label_file", ""))),
+                str(row.get("label_stem", "")),
+            }
+            for key in keys:
+                if key:
+                    index[key] = row
+    return index
+
+
+@lru_cache(maxsize=32)
+def _scheduler_label_index(path: str) -> dict[str, dict[str, Any]]:
     if not os.path.isfile(path):
         return {}
     index: dict[str, dict[str, Any]] = {}
@@ -789,6 +831,24 @@ def scheduler_resource_label_for_pair(label_path: str) -> dict[str, Any] | None:
     return None
 
 
+def scheduler_label_v3_for_pair(label_path: str) -> dict[str, Any] | None:
+    metadata = precision_metadata_for_label(label_path) or {}
+    keys = {
+        os.path.basename(label_path),
+        os.path.splitext(os.path.basename(label_path))[0],
+        str(metadata.get("label_file", "")),
+        str(metadata.get("profile_point_id", "")),
+    }
+    keys = {key for key in keys if key}
+    for path in _scheduler_label_candidate_paths(label_path):
+        index = _scheduler_label_index(path)
+        for key in keys:
+            row = index.get(key)
+            if row is not None:
+                return row
+    return None
+
+
 def target_source_key(cfg: FeatureConfig | None) -> str:
     return str(getattr(cfg, "target_source", "legacy") or "legacy").lower()
 
@@ -805,7 +865,17 @@ def is_scheduler_resource_target(cfg: FeatureConfig | None) -> bool:
     return target_source_key(cfg) in {"scheduler_resource_train", "scheduler_resource", "resource_train"}
 
 
+def is_scheduler_v2_target(cfg: FeatureConfig | None) -> bool:
+    return target_source_key(cfg) in {"scheduler_v2_train", "v2_train", "scheduler_label_v3_train"}
+
+
+def uses_target_override(cfg: FeatureConfig | None) -> bool:
+    return is_scheduler_resource_target(cfg) or is_scheduler_v2_target(cfg)
+
+
 def target_names_for_config(cfg: FeatureConfig | None) -> list[str]:
+    if is_scheduler_v2_target(cfg):
+        return list(SCHEDULER_V2_TRAIN_TARGET_NAMES)
     if is_scheduler_resource_target(cfg):
         return list(SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES)
     return list(TARGET_NAMES)
@@ -820,6 +890,37 @@ def scheduler_resource_target_for_label(label_path: str) -> np.ndarray:
     if missing:
         raise KeyError(f"scheduler resource label for {label_path} is missing target(s): {', '.join(missing)}")
     return np.asarray([_f(targets.get(name)) for name in SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES], dtype=np.float64)
+
+
+def scheduler_v2_target_for_label(label_path: str) -> np.ndarray:
+    scheduler_row = scheduler_label_v3_for_pair(label_path)
+    resource_row = scheduler_resource_label_for_pair(label_path)
+    if scheduler_row is None:
+        raise FileNotFoundError(f"target_source='scheduler_v2_train' requires scheduler_label_v3.jsonl row for {label_path}")
+    if resource_row is None:
+        raise FileNotFoundError(f"target_source='scheduler_v2_train' requires scheduler_resource_label.jsonl row for {label_path}")
+    scheduler_targets = scheduler_row.get("targets") if isinstance(scheduler_row.get("targets"), dict) else {}
+    resource_targets = resource_row.get("targets") if isinstance(resource_row.get("targets"), dict) else {}
+    combined = {
+        "train_epoch_ms": scheduler_targets.get("train_epoch_ms"),
+        "train_avg_sm_util_percent": resource_targets.get("train_avg_sm_util_percent"),
+        "train_p95_sm_util_percent": resource_targets.get("train_p95_sm_util_percent"),
+        "train_peak_vram_used_mib": resource_targets.get("train_peak_vram_used_mib"),
+        "train_peak_torch_reserved_mib": resource_targets.get("train_peak_torch_reserved_mib"),
+        "train_peak_memory_controller_util_percent": resource_targets.get("train_peak_memory_controller_util_percent"),
+    }
+    missing = [name for name in SCHEDULER_V2_TRAIN_TARGET_NAMES if combined.get(name) is None]
+    if missing:
+        raise KeyError(f"scheduler v2 label for {label_path} is missing target(s): {', '.join(missing)}")
+    return np.asarray([_f(combined.get(name)) for name in SCHEDULER_V2_TRAIN_TARGET_NAMES], dtype=np.float64)
+
+
+def target_override_for_label(cfg: FeatureConfig, label_path: str) -> np.ndarray | None:
+    if is_scheduler_v2_target(cfg):
+        return scheduler_v2_target_for_label(label_path)
+    if is_scheduler_resource_target(cfg):
+        return scheduler_resource_target_for_label(label_path)
+    return None
 
 
 def precision_from_label_path(graph_path: str, label_path: str) -> str | None:
@@ -1268,7 +1369,7 @@ def _target_for_mode(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     if target_raw_override is not None:
         if target_mode_key(cfg) != "absolute":
-            raise ValueError("scheduler-resource target_source requires target_mode='absolute'")
+            raise ValueError("scheduler target_source requires target_mode='absolute'")
         target = np.asarray(target_raw_override, dtype=np.float64).reshape(NUM_TARGETS).copy()
         return target, target, target
     absolute = _target_with_mode(label6, batch_size, cfg)
@@ -1795,7 +1896,7 @@ def _stats_chunk_worker(arg):
         pair_cfg = feature_config_for_pair(cfg, gp, lp)
         x_raw, _ei, e_raw, u_raw, batch_size = _extract_raw(g, pair_cfg)
         base_label = base_label_for_pair(pair_cfg, gp, lp)
-        target_override = scheduler_resource_target_for_label(lp) if is_scheduler_resource_target(pair_cfg) else None
+        target_override = target_override_for_label(pair_cfg, lp)
         y_raw, _y_eval_raw, _y_base_raw = _target_for_mode(parse_label(lp), batch_size, pair_cfg, base_label, target_override)
         y_stat = target_stat_values(y_raw, pair_cfg)
         if x_raw.shape[0]:
@@ -1968,7 +2069,7 @@ def _build_chunk_worker(arg):
             weight = sample_weight_for_pair(cfg, gp, lp)
             label_domain = label_domain_for_pair(gp, lp)
             base_label = base_label_for_pair(pair_cfg, gp, lp)
-            target_override = scheduler_resource_target_for_label(lp) if is_scheduler_resource_target(pair_cfg) else None
+            target_override = target_override_for_label(pair_cfg, lp)
             out.append(
                 build_pyg_data(
                     parse_graph(gp),
@@ -1983,7 +2084,7 @@ def _build_chunk_worker(arg):
                 )
             )
         except Exception as exc:
-            if is_scheduler_resource_target(cfg):
+            if uses_target_override(cfg):
                 raise
             print(f"[PerfSeerOptimizedDataset] skipping {gp}: {exc}", flush=True)
     return pickle.dumps(out, protocol=pickle.HIGHEST_PROTOCOL)

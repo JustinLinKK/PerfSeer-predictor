@@ -636,12 +636,12 @@ class SourceConverterTests(unittest.TestCase):
                 tmp,
                 ckpt={
                     "metadata": {
-                        "run_id": "precision_distill_student_128",
+                        "run_id": "precision_v2_student",
                         "precision_hardware_config": precision_hardware_config(cfg),
                         "supported_precision_hardware": supported,
                     }
                 },
-                ckpt_paths=["runs/optimized/precision_distill_student_128/seernet_multi.pt"],
+                ckpt_paths=["runs/optimized/precision_v2_student/seernet_multi.pt"],
                 runtime=runtime,
                 profile=profile,
                 feature_cfg=cfg,
@@ -655,7 +655,7 @@ class SourceConverterTests(unittest.TestCase):
             metadata = json.loads(Path(metadata_path).read_text())
 
         self.assertIn(metadata_path, runtime.artifact_paths)
-        self.assertEqual(metadata["run_id"], "precision_distill_student_128")
+        self.assertEqual(metadata["run_id"], "precision_v2_student")
         self.assertEqual(metadata["runtime_backend"], "torchscript")
         self.assertEqual(metadata["runtime_backend_actual"], "torchscript")
         self.assertEqual(metadata["feature_config"]["precision_config"], "bf16_amp")

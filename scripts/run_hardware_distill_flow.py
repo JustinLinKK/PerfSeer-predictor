@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run or print the scratch hardware teacher-to-student workflow."""
+"""Run or print the canonical v2 hardware teacher-to-student workflow."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_TEACHER_CONFIG = "src/perfseer-optimized/configs/train_hardware_teacher/large_teacher.yaml"
-DEFAULT_STUDENT_CONFIG = "src/perfseer-optimized/configs/train_deploy_model/distill_student_128.yaml"
+DEFAULT_TEACHER_CONFIG = "src/perfseer-optimized/configs/train_hardware_teacher/v2_teacher.yaml"
+DEFAULT_STUDENT_CONFIG = "src/perfseer-optimized/configs/train_deploy_model/v2_student.yaml"
 DEFAULT_EVAL_PROFILE = "src/perfseer-optimized/configs/eval_profiles/gpu_accuracy.yaml"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Run the scratch one-hardware teacher and distilled-student flow.")
+    p = argparse.ArgumentParser(description="Run the canonical v2 one-hardware teacher and distilled-student flow.")
     p.add_argument("--python", default=sys.executable, help="Python executable for module commands.")
     p.add_argument("--data-root", default="dataset", help="Materialized profiling dataset root.")
     p.add_argument("--hardware-id", required=True, help="Single hardware id to train for, for example rtx4090.")
@@ -26,8 +26,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--deploy-eval-profile", help="Optional deployment eval profile.")
     p.add_argument("--out-dir", default="runs/optimized")
     p.add_argument("--results-path", default="runs/results.jsonl")
-    p.add_argument("--teacher-run-id", help="Defaults to hardware_large_teacher_<hardware-id>.")
-    p.add_argument("--student-run-id", help="Defaults to hardware_distill_student_128_<hardware-id>.")
+    p.add_argument("--teacher-run-id", help="Defaults to v2_teacher_<hardware-id>.")
+    p.add_argument("--student-run-id", help="Defaults to v2_student_<hardware-id>.")
     p.add_argument("--teacher-ckpt-dir", help="Existing teacher directory for --skip-teacher distillation.")
     p.add_argument("--limit", type=int, help="Optional data limit for train/eval commands.")
     p.add_argument("--split-unit", choices=("pair", "graph", "graph_signature", "graph_family"), help="Override data split unit.")
@@ -131,18 +131,18 @@ def deploy_eval_cmd(args: argparse.Namespace, ckpt_dir: Path) -> list[str]:
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    teacher_run_id = args.teacher_run_id or f"hardware_large_teacher_{args.hardware_id}"
-    student_run_id = args.student_run_id or f"hardware_distill_student_128_{args.hardware_id}"
+    teacher_run_id = args.teacher_run_id or f"v2_teacher_{args.hardware_id}"
+    student_run_id = args.student_run_id or f"v2_student_{args.hardware_id}"
     out_root = Path(args.out_dir)
     teacher_dir = Path(args.teacher_ckpt_dir) if args.teacher_ckpt_dir else out_root / teacher_run_id
     student_dir = out_root / student_run_id
 
     if not args.skip_teacher:
-        print("# train scratch hardware teacher", flush=True)
+        print("# train canonical v2 hardware teacher", flush=True)
         run_cmd(train_cmd(args, args.teacher_config, teacher_run_id, epochs=args.teacher_epochs), dry_run=args.dry_run)
 
     if not args.skip_distill:
-        print("# distill hardware student", flush=True)
+        print("# distill canonical v2 hardware student", flush=True)
         run_cmd(
             train_cmd(
                 args,

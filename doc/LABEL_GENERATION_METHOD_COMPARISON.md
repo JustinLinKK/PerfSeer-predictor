@@ -213,7 +213,7 @@ For the old six-target PerfSeer model, training on `label/label/*.txt` is valid 
 - train/infer peak memory usage;
 - train/infer time.
 
-For realistic training-resource prediction, prefer the scheduler/resource labels because they preserve more information:
+For realistic training-resource prediction, prefer the canonical v2 target source `scheduler_v2_train` because it preserves the measured epoch-time label and the richer resource labels:
 
 - use `label/scheduler_label_v3.jsonl` for scheduler-grade time and epoch estimates;
 - use `label/scheduler_resource_label.jsonl` for memory and utilization targets;
@@ -238,7 +238,7 @@ Before trusting a trained predictor for realistic model-resource planning, check
 For a realistic predictor, use this rule:
 
 ```text
-Train on real-dataset scheduler/resource labels.
+Train one teacher/student pair per hardware on real-dataset `scheduler_v2_train` labels.
 Use synthetic labels only as warm-up, smoke-test, or fallback data.
 Validate against real training runs before trusting predictions for scheduling.
 ```
