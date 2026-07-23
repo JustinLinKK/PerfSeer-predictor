@@ -1,5 +1,31 @@
 # Information
 
+## A10 Student Deployment
+
+`src/perfseer_student` owns the production student graph featurizer, source
+encoder, model definition, export tool, registry loader, and strict CPU
+TorchScript runtime. Source conversion reuses `perfseer_source_converter`.
+
+The deployment contract is:
+
+- raw node features: 53 (`23` operation categories + `30` continuous values)
+- raw edge features: 3
+- raw global features: 40 (`36` graph values + `4` precision categories)
+- outputs: six training/inference targets; `train_mem` at index `1` is average
+  used GPU VRAM in MiB
+- artifact: `models/nvidia_a10/student_a10_cpu.torchscript.pt`
+- device: CPU only
+
+The artifact embeds input normalization and output de-normalization. Hardware
+aliases, compute capability, VRAM range, schema, output index, path, and SHA-256
+are recorded in `models/registry.json`.
+
+Run the focused deployment verification with:
+
+```bash
+PYTHONPATH=src python -m unittest discover -s tests -v
+```
+
 - Model size depends on GPU, optimizer, dtype
 
 - FLOPs depends on model type, size, optimizer
