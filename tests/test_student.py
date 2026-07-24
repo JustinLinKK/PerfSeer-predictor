@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import ast
+import inspect
 import json
 import tempfile
 import unittest
@@ -13,14 +15,19 @@ from perfseer_student import (
     ModelRegistry,
     ModelUnavailableError,
     StudentRuntime,
+    UnsupportedStudentOperationError,
     encode_source,
 )
+from perfseer_student.features import OP_VOCAB
+from perfseer_source_converter import converter
 
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "models" / "registry.json"
 ARTIFACT_PATH = ROOT / "models" / "nvidia_a10" / "student_a10_cpu.torchscript.pt"
 SOURCE_PATH = ROOT / "tests" / "fixtures" / "tiny_conv.py"
+BATCH_NORM_SOURCE_PATH = ROOT / "tests" / "fixtures" / "tiny_batch_norm.py"
+OPERATION_REPORT_PATH = ROOT / "docs" / "student_operation_coverage_and_dataset_redesign.md"
 
 
 class StudentPredictorTest(unittest.TestCase):
@@ -50,6 +57,62 @@ class StudentPredictorTest(unittest.TestCase):
         self.assertEqual(selected.artifact_path, ARTIFACT_PATH)
         with self.assertRaises(ModelUnavailableError):
             registry.select(HardwareInfo("NVIDIA GeForce RTX 5090", "12.0", 32607))
+
+    def test_converter_label_without_student_slot_is_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            UnsupportedStudentOperationError,
+            "student operation vocabulary does not cover: BatchNormalization",
+        ):
+            encode_source(BATCH_NORM_SOURCE_PATH, "build_model", [[2, 3, 16, 16]])
+
+    def test_operation_report_matches_converter_and_student_vocabularies(self) -> None:
+        tree = ast.parse(inspect.getsource(converter._classify_node))
+        converter_operations = {
+            value.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Return) and node.value is not None
+            for value in ast.walk(node.value)
+            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+        }
+        converter_only = converter_operations - set(OP_VOCAB)
+        student_only = set(OP_VOCAB) - converter_operations
+        self.assertEqual(
+            converter_only,
+            {
+                "AveragePool",
+                "BatchNormalization",
+                "Bmm",
+                "ConvTranspose",
+                "Div",
+                "GroupNormalization",
+                "HardSigmoid",
+                "HardSwish",
+                "MatMul",
+                "Mul",
+                "MultiHeadAttention",
+                "RNN",
+                "Reduce",
+                "Reshape",
+                "Sigmoid",
+                "Sub",
+                "Tanh",
+                "Transpose",
+            },
+        )
+        self.assertEqual(
+            student_only,
+            {
+                "Attention",
+                "DetectorHead",
+                "GraphAttention",
+                "GraphMessage",
+                "SegmentationHead",
+                "TabularFeature",
+            },
+        )
+        report = OPERATION_REPORT_PATH.read_text(encoding="utf-8")
+        for operation in converter_only | student_only:
+            self.assertIn(f"`{operation}`", report)
 
     def test_registry_hash_matches_artifact(self) -> None:
         payload = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))

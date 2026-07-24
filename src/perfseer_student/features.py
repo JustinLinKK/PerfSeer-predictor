@@ -75,6 +75,10 @@ EDGE_DIM = 3
 GLOBAL_DIM = 40
 
 
+class UnsupportedStudentOperationError(ValueError):
+    """Raised when a graph contains an operation with no student feature slot."""
+
+
 def _log1p_nonnegative(value: object) -> float:
     return math.log1p(max(float(value or 0), 0.0))
 
@@ -90,6 +94,17 @@ def featurize_graph(
     nodes = list(graph.nodes())
     if not nodes:
         raise ValueError("cannot featurize an empty graph")
+    unknown_operations = sorted(
+        {
+            str(graph.nodes[node].get("feature", {}).get("type") or "<missing>")
+            for node in nodes
+            if str(graph.nodes[node].get("feature", {}).get("type") or "<missing>") not in OP_INDEX
+        }
+    )
+    if unknown_operations:
+        raise UnsupportedStudentOperationError(
+            "student operation vocabulary does not cover: " + ", ".join(unknown_operations)
+        )
     node_index = {node: index for index, node in enumerate(nodes)}
     indegree = np.asarray([graph.in_degree(node) for node in nodes], dtype=np.float32)
     outdegree = np.asarray([graph.out_degree(node) for node in nodes], dtype=np.float32)
