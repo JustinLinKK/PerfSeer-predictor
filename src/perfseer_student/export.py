@@ -1,4 +1,4 @@
-"""Export the A10 student checkpoint as a self-contained CPU TorchScript model."""
+"""Export compatible student checkpoints as self-contained CPU TorchScript models."""
 
 from __future__ import annotations
 
@@ -11,8 +11,27 @@ import numpy as np
 import torch
 from torch import nn
 
-from .features import EDGE_DIM, GLOBAL_DIM, NODE_DIM, TARGET_NAMES
+from .features import EDGE_DIM, GLOBAL_DIM, NODE_DIM, OP_VOCAB, PRECISIONS, TARGET_NAMES
 from .model import SeerNetConfig, SeerNetMulti
+
+
+LEGACY_GLOBAL_DIM = 14
+LEGACY_GRAPH_FEATURE_DIM = 10
+SUPPORTED_CHECKPOINT_GLOBAL_DIMS = (LEGACY_GLOBAL_DIM, GLOBAL_DIM)
+
+
+def _global_feature_indices(checkpoint_global_dim: int) -> tuple[int, ...]:
+    """Map the raw 53/3/40 deployment layout to a checkpoint's global layout."""
+
+    if checkpoint_global_dim == GLOBAL_DIM:
+        return tuple(range(GLOBAL_DIM))
+    if checkpoint_global_dim == LEGACY_GLOBAL_DIM:
+        precision_start = GLOBAL_DIM - len(PRECISIONS)
+        return (*range(LEGACY_GRAPH_FEATURE_DIM), *range(precision_start, GLOBAL_DIM))
+    raise ValueError(
+        f"unsupported checkpoint global_dim {checkpoint_global_dim}; "
+        f"expected one of {SUPPORTED_CHECKPOINT_GLOBAL_DIMS}"
+    )
 
 
 class _RawFeatureStudent(nn.Module):
@@ -21,23 +40,49 @@ class _RawFeatureStudent(nn.Module):
     def __init__(self, model: SeerNetMulti, stats: dict[str, Any]) -> None:
         super().__init__()
         self.model = model
+        checkpoint_global_dim = int(model.cfg.global_dim)
+        global_feature_indices = _global_feature_indices(checkpoint_global_dim)
+        self.register_buffer(
+            "global_feature_indices",
+            torch.as_tensor(global_feature_indices, dtype=torch.long),
+        )
         self.register_buffer(
             "x_mean",
-            torch.cat([torch.zeros(23), torch.as_tensor(stats["x_mean"], dtype=torch.float32)]),
+            torch.cat(
+                [
+                    torch.zeros(len(OP_VOCAB)),
+                    torch.as_tensor(stats["x_mean"], dtype=torch.float32),
+                ]
+            ),
         )
         self.register_buffer(
             "x_std",
-            torch.cat([torch.ones(23), torch.as_tensor(stats["x_std"], dtype=torch.float32)]),
+            torch.cat(
+                [
+                    torch.ones(len(OP_VOCAB)),
+                    torch.as_tensor(stats["x_std"], dtype=torch.float32),
+                ]
+            ),
         )
         self.register_buffer("edge_mean", torch.as_tensor(stats["e_mean"], dtype=torch.float32))
         self.register_buffer("edge_std", torch.as_tensor(stats["e_std"], dtype=torch.float32))
         self.register_buffer(
             "u_mean",
-            torch.cat([torch.as_tensor(stats["g_mean"], dtype=torch.float32), torch.zeros(4)]),
+            torch.cat(
+                [
+                    torch.as_tensor(stats["g_mean"], dtype=torch.float32),
+                    torch.zeros(len(PRECISIONS)),
+                ]
+            ),
         )
         self.register_buffer(
             "u_std",
-            torch.cat([torch.as_tensor(stats["g_std"], dtype=torch.float32), torch.ones(4)]),
+            torch.cat(
+                [
+                    torch.as_tensor(stats["g_std"], dtype=torch.float32),
+                    torch.ones(len(PRECISIONS)),
+                ]
+            ),
         )
         self.register_buffer("y_mean", torch.as_tensor(stats["y_mean"], dtype=torch.float32))
         self.register_buffer("y_std", torch.as_tensor(stats["y_std"], dtype=torch.float32))
@@ -54,7 +99,10 @@ class _RawFeatureStudent(nn.Module):
             x=(x - self.x_mean) / self.x_std,
             edge_index=edge_index,
             edge_attr=(edge_attr - self.edge_mean) / self.edge_std,
-            u=(u - self.u_mean) / self.u_std,
+            u=(
+                torch.index_select(u, 1, self.global_feature_indices) - self.u_mean
+            )
+            / self.u_std,
             batch=batch,
             num_graphs=1,
         )
@@ -71,10 +119,32 @@ def _load_checkpoint(checkpoint_path: str | Path) -> dict[str, Any]:
         raise ValueError(f"checkpoint is missing fields: {sorted(missing)}")
     cfg = checkpoint["cfg"]
     actual_schema = (cfg["node_dim"], cfg["edge_dim"], cfg["global_dim"])
-    if actual_schema != (NODE_DIM, EDGE_DIM, GLOBAL_DIM):
-        raise ValueError(f"checkpoint schema is {actual_schema}, expected {(NODE_DIM, EDGE_DIM, GLOBAL_DIM)}")
+    if actual_schema[:2] != (NODE_DIM, EDGE_DIM) or actual_schema[2] not in SUPPORTED_CHECKPOINT_GLOBAL_DIMS:
+        raise ValueError(
+            f"checkpoint schema is {actual_schema}, expected {NODE_DIM}/{EDGE_DIM}/"
+            f"{SUPPORTED_CHECKPOINT_GLOBAL_DIMS}"
+        )
     if tuple(checkpoint["targets"]) != TARGET_NAMES:
         raise ValueError(f"checkpoint targets are incompatible: {checkpoint['targets']!r}")
+    stats = checkpoint["stats"]
+    expected_stats = {
+        "x_mean": NODE_DIM - len(OP_VOCAB),
+        "x_std": NODE_DIM - len(OP_VOCAB),
+        "e_mean": EDGE_DIM,
+        "e_std": EDGE_DIM,
+        "g_mean": actual_schema[2] - len(PRECISIONS),
+        "g_std": actual_schema[2] - len(PRECISIONS),
+        "y_mean": len(TARGET_NAMES),
+        "y_std": len(TARGET_NAMES),
+    }
+    for key, expected_size in expected_stats.items():
+        if key not in stats:
+            raise ValueError(f"checkpoint stats are missing {key!r}")
+        actual_size = int(np.asarray(stats[key]).size)
+        if actual_size != expected_size:
+            raise ValueError(
+                f"checkpoint stat {key!r} has {actual_size} values, expected {expected_size}"
+            )
     return checkpoint
 
 

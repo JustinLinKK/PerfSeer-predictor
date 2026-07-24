@@ -1,6 +1,6 @@
 # Information
 
-## A10 Student Deployment
+## Student Predictor Deployment
 
 `src/perfseer_student` owns the production student graph featurizer, source
 encoder, model definition, export tool, registry loader, and strict CPU
@@ -13,12 +13,31 @@ The deployment contract is:
 - raw global features: 40 (`36` graph values + `4` precision categories)
 - outputs: six training/inference targets; `train_mem` at index `1` is average
   used GPU VRAM in MiB
-- artifact: `models/nvidia_a10/student_a10_cpu.torchscript.pt`
+- artifacts:
+  - `models/nvidia_a10/student_a10_cpu.torchscript.pt`
+  - `models/nvidia_rtx_pro_6000_blackwell/student_rtx_pro_6000_blackwell_cpu.torchscript.pt`
 - device: CPU only
 
-The artifact embeds input normalization and output de-normalization. Hardware
-aliases, compute capability, VRAM range, schema, output index, path, and SHA-256
-are recorded in `models/registry.json`.
+Each artifact embeds its own input normalization and output de-normalization.
+Hardware aliases, compute capability, VRAM range, schema, output index, path,
+and SHA-256 are recorded in `models/registry.json`.
+
+### RTX PRO 6000 Blackwell compatibility
+
+The trusted `student_RTX_6000_Blackwell.pt` checkpoint was trained with a
+legacy `53 / 3 / 14` input contract. Its 14 global fields are the first ten
+structural graph features followed by the four precision fields. The deployed
+TorchScript wrapper accepts the current `53 / 3 / 40` scheduler contract and
+selects those original fields before normalization and inference; it does not
+pretend the checkpoint learned the omitted branch/join/depth and operation
+histogram fields.
+
+The registry supports the
+[NVIDIA RTX PRO 6000 Blackwell](https://www.nvidia.com/en-us/products/workstations/professional-desktop-gpus/rtx-pro-6000-family/)
+Server, Workstation, and Max-Q Workstation editions. These variants have 96 GB
+VRAM and CUDA compute capability 12.0. The scheduler still falls back to
+branch profiling when the reported name, compute capability, or VRAM does not
+match.
 
 Run the focused deployment verification with:
 

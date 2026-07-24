@@ -1,5 +1,26 @@
 # A10 Student Predictor Integration Plan
 
+## RTX PRO 6000 Blackwell integration
+
+- Inspect `models/student_RTX_6000_Blackwell.pt` without modifying it and
+  identify its schema, targets, configuration, normalization statistics, and
+  checkpoint integrity.
+  - Verifier: load on CPU, enumerate checkpoint keys and tensor shapes, and
+    compare the declared contract with the production encoder/runtime.
+- Export the trusted checkpoint as a self-contained CPU TorchScript artifact
+  with embedded input normalization and output de-normalization.
+  - Verifier: compare eager and reloaded TorchScript outputs on more than one
+    encoded graph, require finite positive `train_mem`, CPU-only parameters,
+    buffers, inputs, and outputs, and unchanged CUDA allocation.
+- Register normalized RTX PRO 6000 Blackwell aliases, compute capability,
+  VRAM bounds, schema, output index, artifact path, and SHA-256.
+  - Verifier: test exact and real-world GPU-name aliases, reject mismatched
+    capability/VRAM, and detect artifact corruption.
+- Integrate without regressing the A10 artifact or per-job branch fallback.
+  - Verifier: run focused PerfSeer tests, scheduler ML tests with automatic
+    Blackwell selection and explicit override, Stress Test Data v1.0
+    prediction verification, and the full scheduler suite.
+
 ## Completed deployment work
 
 - Consolidated the student model, graph featurizer, source encoder, CPU runtime,
