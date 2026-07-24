@@ -73,7 +73,8 @@ def convert_source_to_networkx(spec: SourceModelSpec) -> nx.DiGraph:
     example_inputs = _example_inputs(spec)
     try:
         traced = symbolic_trace(model)
-        ShapeProp(traced).propagate(*example_inputs)
+        with torch.no_grad():
+            ShapeProp(traced).propagate(*example_inputs)
     except Exception as exc:
         raise RuntimeError(f"failed to trace and shape-propagate {spec.entry!r}: {exc}") from exc
     return _fx_to_networkx(traced)
@@ -267,7 +268,7 @@ def _fx_to_networkx(gm: GraphModule) -> nx.DiGraph:
             continue
         if _tensor_meta(node) is None:
             continue
-        if _is_tensor_getitem(node):
+        if _is_tensor_getitem(node) or _is_passthrough(node, modules):
             for dep in _dependency_nodes(node):
                 src_id = fx_to_graph_id.get(dep)
                 if src_id is not None:
@@ -312,6 +313,14 @@ def _classify_node(node: Node, modules: dict[str, nn.Module]) -> str | None:
             return "Gelu"
         if isinstance(module, nn.SiLU):
             return "Silu"
+        if isinstance(module, nn.Sigmoid):
+            return "Sigmoid"
+        if isinstance(module, nn.Hardswish):
+            return "HardSwish"
+        if isinstance(module, nn.Hardsigmoid):
+            return "HardSigmoid"
+        if isinstance(module, nn.Tanh):
+            return "Tanh"
         if isinstance(module, nn.BatchNorm2d):
             return "BatchNormalization"
         if isinstance(module, nn.LayerNorm):
@@ -373,6 +382,34 @@ def _classify_node(node: Node, modules: dict[str, nn.Module]) -> str | None:
             return "MaxPool"
         if target is F.interpolate or name == "interpolate":
             return "Upsample"
+        if target is F.batch_norm or name == "batch_norm":
+            return "BatchNormalization"
+        if target is F.layer_norm or name == "layer_norm":
+            return "LayerNormalization"
+        if target in {F.conv2d, torch.conv2d} or name == "conv2d":
+            groups = _node_arg(node, 6, "groups", default=1)
+            in_metas = _input_tensor_metas((node.args[:1], {}))
+            in_shape = _shape(in_metas[0]) if in_metas else ()
+            in_channels = int(in_shape[1]) if len(in_shape) >= 2 else 0
+            if isinstance(groups, int) and groups == in_channels and in_channels > 1:
+                return "DepthwiseConv"
+            return "Conv"
+        if target is F.linear or name == "linear":
+            return "Gemm"
+        if target in {torch.sigmoid, F.sigmoid} or name == "sigmoid":
+            return "Sigmoid"
+        if target is F.hardswish or name == "hardswish":
+            return "HardSwish"
+        if target is F.hardsigmoid or name == "hardsigmoid":
+            return "HardSigmoid"
+        if target in {operator.sub, torch.sub} or name == "sub":
+            return "Sub"
+        if target in {operator.truediv, torch.div} or name in {"truediv", "div"}:
+            return "Div"
+        if target is torch.mean or name == "mean":
+            return "GlobalAveragePool" if _is_spatial_mean(node) else "Reduce"
+        if target in {torch.tanh, F.tanh, torch.erf} or name in {"tanh", "erf"}:
+            return "Tanh"
         return None
 
     if node.op == "call_method":
@@ -401,6 +438,16 @@ def _classify_node(node: Node, modules: dict[str, nn.Module]) -> str | None:
             return "MatMul"
         if name == "bmm":
             return "Bmm"
+        if name == "sigmoid":
+            return "Sigmoid"
+        if name in {"tanh", "erf"}:
+            return "Tanh"
+        if name in {"sub", "sub_"}:
+            return "Sub"
+        if name in {"div", "div_"}:
+            return "Div"
+        if name == "mean":
+            return "GlobalAveragePool" if _is_spatial_mean(node) else "Reduce"
         return None
 
     return None
@@ -717,6 +764,33 @@ def _dependency_nodes(node: Node) -> list[Node]:
 
 def _is_tensor_getitem(node: Node) -> bool:
     return node.op == "call_function" and node.target is operator.getitem
+
+
+def _is_passthrough(node: Node, modules: dict[str, nn.Module]) -> bool:
+    if node.op == "call_module":
+        module = modules.get(str(node.target))
+        return isinstance(module, (nn.Dropout, nn.Dropout2d, nn.Dropout3d, nn.Identity))
+    if node.op == "call_function":
+        target = node.target
+        name = _target_name(target)
+        return target in {F.dropout, torch.dropout, torch.squeeze, torch.unsqueeze, F.pad} or name in {"dropout", "squeeze", "unsqueeze", "pad"}
+    if node.op == "call_method":
+        return str(node.target) in {"contiguous", "clone", "detach", "to", "type", "float", "squeeze", "unsqueeze", "chunk", "split"}
+    return False
+
+
+def _is_spatial_mean(node: Node) -> bool:
+    input_metas = _input_tensor_metas((node.args[:1], {}))
+    output_meta = _tensor_meta(node)
+    if not input_metas or output_meta is None:
+        return False
+    in_shape = _shape(input_metas[0])
+    out_shape = _shape(output_meta)
+    if len(in_shape) < 4:
+        return False
+    if _is_global_pool_output(out_shape):
+        return True
+    return len(out_shape) <= 2 and out_shape[: len(out_shape)] == in_shape[: len(out_shape)]
 
 
 def _input_tensor_metas(value: Any) -> list[Any]:

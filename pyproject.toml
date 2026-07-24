@@ -27,9 +27,10 @@ dependencies = [
 perfseer = "src/perfseer"
 perfseer_optimized = "src/perfseer-optimized"
 perfseer_source_converter = "src/perfseer_source_converter"
+perfseer_student = "src/perfseer_student"
 
 [tool.setuptools]
-packages = ["perfseer", "perfseer_optimized", "perfseer_source_converter"]
+packages = ["perfseer", "perfseer_optimized", "perfseer_source_converter", "perfseer_student"]
 
 [tool.setuptools.package-data]
 perfseer_optimized = ["configs/*.yaml", "configs/**/*.yaml"]
