@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "nvidia_a10_student_v1",
+      "hardware": {
+        "aliases": [
+          "NVIDIA A10",
+          "A10"
+        ],
+        "compute_capability": "8.6",
+        "vram_mb": {
+          "min": 22000,
+          "max": 25000
+        }
+      },
+      "schema": {
+        "node_dim": 53,
+        "edge_dim": 3,
+        "global_dim": 40
+      },
+      "outputs": {
+        "targets": [
+          "train_util",
+          "train_mem",
+          "train_time",
+          "infer_util",
+          "infer_mem",
+          "infer_time"
+        ],
+        "train_mem_index": 1
+      },
+      "artifact": {
+        "format": "torchscript",
+        "device": "cpu",
+        "path": "nvidia_a10/student_a10_cpu.torchscript.pt",
+        "sha256": "df4b3028a1f0ddbfe7ef9686af3769ced87d02e95b7d91fd04ac17b8a01f564e"
+      }
+    }
+  ]
+}
