@@ -1,0 +1,123 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: perfseer-graphcode-v2-verifier
+  namespace: ecepxie
+  labels:
+    app.kubernetes.io/name: perfseer-graphcode-v2-verifier
+    app.kubernetes.io/component: verification
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 604800
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: perfseer-graphcode-v2-verifier
+    spec:
+      restartPolicy: Never
+      initContainers:
+        - name: clone-repository
+          image: alpine/git:2.47.2
+          command:
+            - /bin/sh
+            - -lc
+          args:
+            - git clone --branch v2 --single-branch https://github.com/JustinLinKK/PerfSeer-predictor.git /workspace/repo && git -C /workspace/repo checkout a24e13979906f8ea8242ce45408ee7b4d1202f4d
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      containers:
+        - name: verifier
+          image: pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              python - <<'PY'
+              import gc
+              import importlib.util
+              import json
+              from pathlib import Path
+              import sys
+              from types import SimpleNamespace
+              import torch
+              import yaml
+
+              root = Path("/workspace/repo")
+              model_path = root / "src/perfseer-optimized/model.py"
+              spec = importlib.util.spec_from_file_location("perfseer_model_verify", model_path)
+              if spec is None or spec.loader is None:
+                  raise RuntimeError(f"Could not load {model_path}")
+              module = importlib.util.module_from_spec(spec)
+              sys.modules[spec.name] = module
+              spec.loader.exec_module(module)
+              if not torch.cuda.is_available():
+                  raise RuntimeError("The CUDA verifier requires an allocated NVIDIA GPU.")
+              device = torch.device("cuda")
+              configs = [
+                  ("student", root / "src/perfseer-optimized/configs/train_deploy_model/v2_student.yaml", 2, 192, "SynMM", (1,)),
+                  ("teacher", root / "src/perfseer-optimized/configs/train_hardware_teacher/v2_teacher.yaml", 8, 1024, "AttentionGraphPool", (1024,)),
+              ]
+              results = []
+              for name, config_path, blocks, hidden, pool, gate_shape in configs:
+                  values = yaml.safe_load(config_path.read_text(encoding="utf8"))["model"].copy()
+                  values.pop("name")
+                  values.update(node_dim=78, edge_dim=16, global_dim=164, num_outputs=6)
+                  model = module.SeerNetMulti(module.SeerNetConfig.from_dict(values)).to(device).eval()
+                  assert len(model.trunk.blocks) == blocks
+                  assert len(model.heads) == 6
+                  assert all(type(block.agg_u).__name__ == pool for block in model.trunk.blocks)
+                  assert all(tuple(gates["v"].logit.shape) == gate_shape for gates in model.trunk.gates)
+                  data = SimpleNamespace(
+                      x=torch.randn(4, 78, device=device),
+                      edge_index=torch.tensor([[0, 1, 2, 3, 0, 2], [1, 2, 3, 0, 2, 0]], dtype=torch.long, device=device),
+                      edge_attr=torch.randn(6, 16, device=device),
+                      u=torch.randn(1, 164, device=device),
+                      batch=torch.zeros(4, dtype=torch.long, device=device),
+                      num_graphs=1,
+                  )
+                  with torch.no_grad():
+                      output = model(data)
+                  assert tuple(output.shape) == (1, 6)
+                  results.append({
+                      "model": name,
+                      "blocks": blocks,
+                      "hidden": hidden,
+                      "pool": pool,
+                      "gate_shape": list(gate_shape),
+                      "output_shape": list(output.shape),
+                      "parameters": module.count_parameters(model),
+                  })
+                  del model, data, output
+                  gc.collect()
+                  torch.cuda.empty_cache()
+              print(json.dumps({"cuda_device": torch.cuda.get_device_name(0), "results": results}, indent=2), flush=True)
+              PY
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+          resources:
+            requests:
+              cpu: "1"
+              memory: 8Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: 12Gi
+              nvidia.com/gpu: "1"
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 4Gi

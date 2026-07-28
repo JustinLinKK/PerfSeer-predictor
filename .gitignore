@@ -274,3 +274,6 @@ nrp_calibration_pack/template_catalog/*
 nrp_calibration_pack_*
 by_profile_point/*
 nrp_downloads/
+
+# GraphCode local workspace database, layouts, agent runs, and durable memory.
+.graphcode/

@@ -1,0 +1,66 @@
+run:
+  run_id: perfseer_v3_student
+  model_release: perfseer_v3_student
+  label_schema_version: scheduler_resource_label_v3
+  seed: 42
+features:
+  feature_schema_version: perfseer_graph_v3
+  graph_ir_version: perfseer_ir_v3
+  op_registry_version: perfseer_aten_ops_v3
+  capture_backend: torch_export
+  include_training_graph: true
+  include_tensor_liveness: true
+  categorical_encoder: hierarchical_embedding
+  unknown_policy: generic_hash
+  graph_view: coarsened_v3
+  gpu_specific_model_pair: true
+  per_operation_dtype: true
+  optimizer_identity: exact_family_hash
+  scheduler_identity: exact_family_hash
+model:
+  capacity_candidate: S0
+  hidden: 192
+  num_blocks: 2
+  num_outputs: 6
+  exact_embedding_dim: 32
+  family_embedding_dim: 16
+  hash_embedding_dim: 8
+  overload_hash_embedding_dim: 8
+  phase_embedding_dim: 8
+  input_dtype_embedding_dim: 6
+  dtype_embedding_dim: 8
+  accumulation_dtype_embedding_dim: 8
+  backend_embedding_dim: 6
+  feature_quality_embedding_dim: 4
+  layout_embedding_dim: 4
+  rank_embedding_dim: 4
+  optimizer_embedding_dim: 4
+  optimizer_family_embedding_dim: 4
+  optimizer_hash_embedding_dim: 4
+  scheduler_embedding_dim: 4
+  scheduler_family_embedding_dim: 4
+  scheduler_hash_embedding_dim: 4
+  node_identity_fusion: additive
+  pooling_mode: existing
+  predict_uncertainty: true
+  predict_oom: true
+  predict_oom_stage: true
+  predict_peak_live_bytes: true
+training:
+  stage: student_distillation
+  epochs: 600
+  batch_size: 128
+  optimizer: adamw
+  learning_rate: 0.001
+  weight_decay: 0.00001
+  hard_label_weight: 0.6
+  representation_distillation_weight: 0.05
+  teacher_model_release: perfseer_v3_teacher
+  architecture_grouped_split: true
+  require_training_approved_registry: true
+  initialization: random_v3
+gates:
+  minimum_strict_capture_rate: 0.95
+  minimum_complete_encoding_rate: 0.99
+  maximum_unknown_gpu_time_fraction: 0.02
+  require_source_group_isolation: true

@@ -1,0 +1,41 @@
+{
+  "compute_capability": "12.0",
+  "cuda_build": "13.0",
+  "cuda_device": "NVIDIA GeForce RTX 5090",
+  "feature_schema_sha256": "7d7966b124db6d473db2391bffa692cad2c74858985ef2cd2f478b8fbe210e78",
+  "oom_stage_shape": [
+    1,
+    7
+  ],
+  "operator_registry_sha256": "e0cca4384b3a151cc0074e853de430a6493af02b3e669ccba2f8fe76a1f04d77",
+  "output_contract_version": "perfseer_v3_outputs_v2",
+  "peak_cuda_allocated_bytes": 19066880,
+  "phase_embedding_shape": [
+    1,
+    4,
+    32
+  ],
+  "prediction_shape": [
+    1,
+    6
+  ],
+  "profile_step_ms": [
+    0.8306529998662882,
+    2.4795070003165165
+  ],
+  "scripted_prediction_shape": [
+    1,
+    6
+  ],
+  "status": "ok",
+  "strict_capture_edges": 31,
+  "strict_capture_nodes": 18,
+  "torch_version": "2.11.0+cu130",
+  "training_backend": "aot_autograd_joint",
+  "training_phases": [
+    "backward",
+    "forward",
+    "loss",
+    "optimizer"
+  ]
+}

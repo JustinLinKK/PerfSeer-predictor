@@ -1,0 +1,124 @@
+capacity_study_version: perfseer_v3_capacity_study_v1
+feature_schema_version: perfseer_graph_v3
+operator_registry_version: perfseer_aten_ops_v3
+controls:
+  node_identity_fusion: additive
+  pooling_mode: existing
+  num_outputs: 6
+  predict_uncertainty: true
+  predict_oom: true
+  predict_oom_stage: true
+  predict_peak_live_bytes: true
+teacher_candidates:
+  T0:
+    purpose: v2-capacity control with the v3 encoder
+    hidden: 1024
+    num_blocks: 8
+    exact_embedding_dim: 64
+    family_embedding_dim: 32
+    hash_embedding_dim: 16
+    overload_hash_embedding_dim: 16
+    phase_embedding_dim: 16
+    input_dtype_embedding_dim: 12
+    dtype_embedding_dim: 12
+    accumulation_dtype_embedding_dim: 12
+    backend_embedding_dim: 12
+    layout_embedding_dim: 8
+    rank_embedding_dim: 8
+  T1:
+    purpose: recommended larger v3 teacher
+    hidden: 1280
+    num_blocks: 10
+    exact_embedding_dim: 96
+    family_embedding_dim: 48
+    hash_embedding_dim: 24
+    overload_hash_embedding_dim: 24
+    phase_embedding_dim: 24
+    input_dtype_embedding_dim: 16
+    dtype_embedding_dim: 16
+    accumulation_dtype_embedding_dim: 16
+    backend_embedding_dim: 16
+    layout_embedding_dim: 12
+    rank_embedding_dim: 12
+  T2:
+    purpose: high-capacity ceiling, gated on T1 underfitting
+    hidden: 1536
+    num_blocks: 10
+    exact_embedding_dim: 128
+    family_embedding_dim: 64
+    hash_embedding_dim: 32
+    overload_hash_embedding_dim: 32
+    phase_embedding_dim: 32
+    input_dtype_embedding_dim: 24
+    dtype_embedding_dim: 24
+    accumulation_dtype_embedding_dim: 24
+    backend_embedding_dim: 24
+    layout_embedding_dim: 16
+    rank_embedding_dim: 16
+student_candidates:
+  S0:
+    purpose: v2-capacity control with the v3 encoder
+    hidden: 192
+    num_blocks: 2
+    exact_embedding_dim: 32
+    family_embedding_dim: 16
+    hash_embedding_dim: 8
+    overload_hash_embedding_dim: 8
+    phase_embedding_dim: 8
+    input_dtype_embedding_dim: 6
+    dtype_embedding_dim: 8
+    accumulation_dtype_embedding_dim: 8
+    backend_embedding_dim: 6
+    layout_embedding_dim: 4
+    rank_embedding_dim: 4
+  S1:
+    purpose: recommended modest student increase
+    hidden: 224
+    num_blocks: 2
+    exact_embedding_dim: 40
+    family_embedding_dim: 20
+    hash_embedding_dim: 10
+    overload_hash_embedding_dim: 10
+    phase_embedding_dim: 8
+    input_dtype_embedding_dim: 8
+    dtype_embedding_dim: 8
+    accumulation_dtype_embedding_dim: 8
+    backend_embedding_dim: 8
+    layout_embedding_dim: 6
+    rank_embedding_dim: 6
+  S2:
+    purpose: accuracy-oriented student ceiling
+    hidden: 256
+    num_blocks: 2
+    exact_embedding_dim: 48
+    family_embedding_dim: 24
+    hash_embedding_dim: 12
+    overload_hash_embedding_dim: 12
+    phase_embedding_dim: 12
+    input_dtype_embedding_dim: 8
+    dtype_embedding_dim: 10
+    accumulation_dtype_embedding_dim: 10
+    backend_embedding_dim: 8
+    layout_embedding_dim: 6
+    rank_embedding_dim: 6
+  S3:
+    purpose: optional third-block student gated on S2 underfitting and deployment budgets
+    hidden: 256
+    num_blocks: 3
+    exact_embedding_dim: 48
+    family_embedding_dim: 24
+    hash_embedding_dim: 12
+    overload_hash_embedding_dim: 12
+    phase_embedding_dim: 12
+    input_dtype_embedding_dim: 8
+    dtype_embedding_dim: 10
+    accumulation_dtype_embedding_dim: 10
+    backend_embedding_dim: 8
+    layout_embedding_dim: 6
+    rank_embedding_dim: 6
+deployment_gates:
+  maximum_cpu_p95_latency_ratio_vs_v2: 1.25
+  maximum_artifact_size_ratio_vs_v2: 1.5
+selection:
+  teacher: prefer T1 unless T2 has a statistically meaningful family-held-out gain
+  student: select the smallest Pareto candidate that passes accuracy, latency, size, and memory gates

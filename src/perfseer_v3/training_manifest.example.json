@@ -1,0 +1,50 @@
+{
+  "manifest_version": "perfseer_v3_training_manifest_v2",
+  "dataset_gate": {
+    "strict_capture_rate": 1.0,
+    "complete_encoding_rate": 1.0,
+    "unknown_gpu_time_fraction": 0.0,
+    "source_group_isolated": true,
+    "measured_gpu_time": true,
+    "dataset_fingerprint": "replace-with-dataset-fingerprint",
+    "split_fingerprint": "replace-with-split-fingerprint"
+  },
+  "deployment": {
+    "target_hardware_id": "nvidia_h100_sxm_80gb",
+    "hardware_allowlist": ["nvidia_h100_sxm_80gb"],
+    "precision_allowlist": ["float32", "bfloat16", "mixed"],
+    "capture_quality_allowlist": ["strict", "validated_non_strict"],
+    "optimizer_allowlist": ["adamw", "muon"],
+    "scheduler_allowlist": ["none", "cosine_with_warmup", "one_cycle"],
+    "training_mode_allowlist": ["training"]
+  },
+  "samples": [
+    {
+      "sample_id": "replace-train-sample",
+      "graph_path": "graphs/replace-train-graph.json",
+      "split": "train",
+      "source_group": "replace-train-family",
+      "graph_signature": "replace-train-signature",
+      "hardware_id": "nvidia_h100_sxm_80gb",
+      "target": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    },
+    {
+      "sample_id": "replace-validation-sample",
+      "graph_path": "graphs/replace-validation-graph.json",
+      "split": "validation",
+      "source_group": "replace-validation-family",
+      "graph_signature": "replace-validation-signature",
+      "hardware_id": "nvidia_h100_sxm_80gb",
+      "target": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    },
+    {
+      "sample_id": "replace-test-sample",
+      "graph_path": "graphs/replace-test-graph.json",
+      "split": "test",
+      "source_group": "replace-test-family",
+      "graph_signature": "replace-test-signature",
+      "hardware_id": "nvidia_h100_sxm_80gb",
+      "target": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    }
+  ]
+}
