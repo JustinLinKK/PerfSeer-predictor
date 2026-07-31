@@ -1,0 +1,77 @@
+version: perfseer_v3_a10g_18k_quota_v2
+target_hardware_id: nvidia_a10g_24gb_aws_g5
+maximum_cloud_working_set_gib: 600
+cloud_free_space_safety_margin_gib: 40
+
+protocol:
+  workers: auto
+  workers_per_qualified_physical_gpu: 1
+  concurrent_profilers_per_gpu: 1
+  allow_mps: false
+  allow_multi_job_gpu_packing: false
+  require_fresh_process_per_run: true
+  require_memory_release_before_next_run: true
+  total_epochs_per_run: 5
+  warmup_epochs: [1, 2]
+  measured_epochs: [3, 4, 5]
+  maximum_epoch_time_relative_spread: 0.10
+  end_to_end_time_label: directly_measured_complete_training_epoch
+  derive_end_to_end_epoch_time_from_step_time: false
+  failed_attempts_count_toward_quota: false
+  oom_attempts_count_toward_quota: false
+  unstable_attempt_policy: quarantine_and_replace
+
+end_to_end:
+  accepted_successful_configurations: 18000
+  accepted_runs_per_configuration: 1
+  expected_accepted_run_records: 18000
+  expected_measured_epoch_records: 54000
+  family_quotas:
+    - {modality: vision, family_id: resnet50, display_name: ResNet-50, accepted_configurations: 400}
+    - {modality: vision, family_id: efficientnet_b0_b4, display_name: EfficientNet-B0/B4, accepted_configurations: 500}
+    - {modality: vision, family_id: mobilenet_v3_large, display_name: MobileNetV3-Large, accepted_configurations: 350}
+    - {modality: vision, family_id: inception_v3, display_name: Inception-v3, accepted_configurations: 350}
+    - {modality: vision, family_id: vit_s16, display_name: ViT-S/16, accepted_configurations: 500}
+    - {modality: vision, family_id: swin_t, display_name: Swin-T, accepted_configurations: 550}
+    - {modality: vision, family_id: mlp_mixer_s, display_name: MLP-Mixer-S, accepted_configurations: 300}
+    - {modality: vision, family_id: stn_cnn, display_name: Spatial Transformer Network + CNN, accepted_configurations: 250}
+    - {modality: vision, family_id: mish_resnet, display_name: Mish-ResNet, accepted_configurations: 250}
+    - {modality: vision, family_id: prelu_elu_cnn, display_name: PReLU-Net / ELU-CNN, accepted_configurations: 400}
+    - {modality: vision, family_id: unet_groupnorm, display_name: U-Net with GroupNorm, accepted_configurations: 550}
+    - {modality: vision, family_id: pix2pix, display_name: pix2pix generator + discriminator, accepted_configurations: 750}
+    - {modality: vision, family_id: restormer, display_name: Restormer, accepted_configurations: 1000}
+    - {modality: nlp, family_id: bert_base, display_name: BERT-base fine-tuning, accepted_configurations: 550}
+    - {modality: nlp, family_id: gpt2_small, display_name: GPT-2-small classification/fine-tuning, accepted_configurations: 450}
+    - {modality: nlp, family_id: t5_small, display_name: T5-small encoder-decoder, accepted_configurations: 550}
+    - {modality: nlp, family_id: llama_small, display_name: Llama-style small decoder, accepted_configurations: 500}
+    - {modality: nlp, family_id: mla_mini_transformer, display_name: Multi-head Latent Attention mini-transformer, accepted_configurations: 500}
+    - {modality: nlp, family_id: kimi_delta_attention, display_name: Kimi Linear/delta-attention block, accepted_configurations: 500}
+    - {modality: nlp, family_id: switch_moe, display_name: Switch-style Mixture-of-Experts classifier, accepted_configurations: 550}
+    - {modality: nlp, family_id: bilstm_crf, display_name: BiLSTM-CRF, accepted_configurations: 300}
+    - {modality: nlp, family_id: gru_rnn_seq2seq, display_name: GRU/RNN seq2seq, accepted_configurations: 350}
+    - {modality: nlp, family_id: fasttext_embeddingbag, display_name: fastText-style EmbeddingBag classifier, accepted_configurations: 250}
+    - {modality: nlp, family_id: distilbert_distillation, display_name: DistilBERT distillation step, accepted_configurations: 550}
+    - {modality: audio, family_id: panns_cnn14, display_name: PANNs CNN14, accepted_configurations: 550}
+    - {modality: audio, family_id: temporal_convolutional_network, display_name: Temporal Convolutional Network, accepted_configurations: 400}
+    - {modality: audio, family_id: m5_waveform_cnn, display_name: M5 raw-waveform CNN, accepted_configurations: 350}
+    - {modality: tabular, family_id: selu_mlp, display_name: SELU self-normalizing MLP, accepted_configurations: 300}
+    - {modality: tabular, family_id: tabtransformer, display_name: TabTransformer, accepted_configurations: 350}
+    - {modality: tabular, family_id: mixture_density_network, display_name: Mixture Density Network, accepted_configurations: 300}
+    - {modality: graph, family_id: cgcnn, display_name: CGCNN, accepted_configurations: 500}
+    - {modality: graph, family_id: gcn, display_name: GCN, accepted_configurations: 250}
+    - {modality: graph, family_id: gat, display_name: GAT, accepted_configurations: 300}
+    - {modality: graph, family_id: graphsage, display_name: GraphSAGE, accepted_configurations: 250}
+    - {modality: generated, family_id: independent_generated, display_name: Independent generated architectures, accepted_configurations: 3250}
+
+expected_modality_totals:
+  vision: 6150
+  nlp: 5050
+  audio: 1300
+  tabular: 950
+  graph: 1300
+  generated: 3250
+
+generated_lineages:
+  minimum_independent_lineages: 50
+  maximum_accepted_per_lineage: 150
+  minimum_held_out_lineages: 10

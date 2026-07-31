@@ -209,6 +209,23 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 kaggle.json
+.kaggle/
+
+# PerfSeer V3 A10G dataset-pack workspaces must remain external and local.
+/a10g_18k_workspace/
+/perfseer-a10g-18k/
+/.triton/
+/torchinductor_*/
+
+# Local RTX gate internals are deterministic and too large/noisy for review.
+# Keep only the canonical execution results and concise gate summary visible.
+/reports/a10g_18k_local_validation_plan*.json
+/reports/a10g_18k_local_validation_workers*.jsonl
+/reports/a10g_18k_local_execution_failures*.jsonl
+/reports/a10g_18k_local_execution_results_pre_*.jsonl
+/reports/a10g_18k_local_gate_summary_pre_*.json
+/reports/a10g_dataset_pack_phase*.md
+/reports/a10g_dataset_pack_phase*.json
 
 # Local real dataset bodies and prepared masks/profiles are large, regenerated,
 # and must stay outside git. Track approval docs under dataset_sources/ instead.

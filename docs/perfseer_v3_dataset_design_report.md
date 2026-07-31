@@ -1,1102 +1,423 @@
-# PerfSeer v3 target-GPU dataset design report
+# PerfSeer V3 A10G 18K dataset coding plan
 
-Date: 2026-07-27
+Date: 2026-07-30
 
-Implementation root: `src/perfseer_v3`
+Implementation root: `src/perfseer_v3/dataset_pack`
 
-Status: design specification for production data collection. This document does
-not claim that the proposed production dataset has been collected or that a
-production teacher/student pair has passed its accuracy gates.
+This is the decision-complete plan for one 18,000-row, end-to-end dataset. It
+does not claim that production A10G labels have been collected.
 
-## 1. Executive decision
+## 1. Goal and boundaries
 
-PerfSeer v3 uses one teacher/student pair for one concrete **target GPU model**.
-For example, an `nvidia_h100_sxm_80gb` pair predicts workloads whose labels were
-measured on NVIDIA H100 SXM 80 GB GPUs. A separate pair and separate label
-dataset are built for `nvidia_rtx_5090_32gb`.
+The production target is exactly `nvidia_a10g_24gb_aws_g5`. Every accepted
+label must come from a qualified AWS A10G 24 GiB. The local RTX 5090 is only a
+source, task, shape, optimizer, scheduler, and compiler verifier. Measurements
+from the RTX 5090 never become A10G labels and cannot prove A10G memory fit or
+kernel compatibility.
 
-This target-hardware rule applies to the workload being predicted, not to the
-device used to optimize or execute the PerfSeer neural network:
+The frozen contract is:
 
-| Concept | Must match the pair's `target_hardware_id`? | Explanation |
-| --- | --- | --- |
-| GPU that produces workload labels | Yes | Its measurements are the learning target. |
-| GPU named in every graph and manifest row | Yes | It identifies what the row predicts. |
-| Teacher artifact target | Yes | The teacher models that target GPU. |
-| Student artifact target | Yes | The student models the same target GPU. |
-| GPU/CPU used to train the teacher | No | It only executes predictor training. |
-| GPU/CPU used for student distillation | No | It may differ from both the label GPU and teacher-training GPU. |
-| Device used to run the deployed predictor | No | CPU deployment is valid; the prediction request must still name the artifact's target GPU. |
-
-During one distillation process, the teacher and student tensors must be on the
-same **execution device**, but that execution device does not have to be the
-target/label GPU. Teacher training and student distillation may occur on
-different execution GPUs at different times.
-
-The implementation already exposes these as separate values:
-
-- `TrainingManifestV3.target_hardware_id` binds the dataset and artifact to the
-  predicted GPU.
-- `run_training(..., device_name=...)` independently chooses the predictor
-  training or distillation execution device.
-- The training report contains both `target_hardware_id` and `device`.
-- Runtime `hardware_mismatch` compares the graph's requested workload target
-  with the artifact target; it does not inspect the CPU/GPU executing the
-  predictor.
-
-## 2. Dataset objective and scope
-
-The dataset should teach a hardware-specific model to map:
-
-```text
-captured training graph
-+ model and tensor shapes
-+ per-operation dtype behavior
-+ optimizer and parameter groups
-+ LR scheduler and training progress
-+ workload controls
-+ target-GPU characteristics
-        -> training time, utilization, memory, OOM, and uncertainty
+```json
+{
+  "target_hardware_id": "nvidia_a10g_24gb_aws_g5",
+  "accepted_configurations": 18000,
+  "accepted_runs_per_configuration": 1,
+  "epochs_per_run": 5,
+  "warmup_epochs": [1, 2],
+  "measured_epochs": [3, 4, 5],
+  "accepted_run_records": 18000,
+  "measured_epoch_records": 54000
+}
 ```
 
-The first production revision should predict **single-GPU training workloads**
-on one target GPU model. Keep `world_size=1`, no MIG partitioning, and no MPS
-sharing. Multi-GPU jobs introduce communication topology, rank-local memory,
-collective overlap, sharding, and network features that are not in the current
-schema. They should become a separately versioned extension rather than being
-silently mixed into the single-GPU dataset.
-
-The production dataset must use real or faithfully replayed training workloads.
-Synthetic operator and composite workloads remain useful for encoder
-pretraining, cost calibration, boundary search, and coverage, but they are not
-a substitute for scheduler-grade labels from representative end-to-end
-training steps.
-
-## 3. Normative terminology
-
-The words **MUST**, **SHOULD**, and **MAY** describe required, recommended, and
-optional dataset behavior.
-
-- **Target hardware**: the concrete GPU model whose workload behavior is being
-  predicted.
-- **Label device**: the physical target-GPU card that executes a profiling run.
-- **Target hardware ID**: canonical product identity shared by every row in one
-  pair, such as `nvidia_h100_sxm_80gb`.
-- **Device UUID**: identity of one physical label device. Several UUIDs may
-  contribute to the same target-GPU dataset if they are the same qualified SKU.
-- **Predictor execution device**: CPU/GPU that trains the teacher, performs
-  distillation, or executes the deployed student.
-- **Workload configuration**: immutable model, input, precision, optimizer,
-  scheduler, and training-control configuration.
-- **Raw run**: one fresh-process measurement repetition of one workload
-  configuration.
-- **Aggregated sample**: one training row produced from accepted repeated raw
-  runs.
-- **Source group**: all variants derived from the same architecture/source
-  family that must remain in one dataset partition.
-- **Graph signature**: immutable v3 graph SHA-256 used for integrity and
-  leakage checks.
-
-## 4. Pair identity and hardware qualification
-
-### 4.1 What belongs in the target hardware ID
-
-The ID SHOULD distinguish performance- or capacity-relevant product variants:
-
-```text
-vendor + product + form factor + memory capacity + partition profile
-```
-
-Examples:
-
-```text
-nvidia_h100_sxm_80gb
-nvidia_h100_pcie_80gb
-nvidia_a100_sxm_80gb
-nvidia_a100_pcie_40gb
-nvidia_rtx_5090_32gb
-nvidia_h100_sxm_80gb_mig_3g_40gb   # future separate pair, not v1
-```
-
-Do not use marketing-family-only values such as `h100`, `gpu`, `cuda`,
-`unknown`, `mixed`, or `any` for production rows. H100 PCIe and H100 SXM should
-not be pooled merely because both contain `H100` in their name.
-
-### 4.2 Hardware provenance recorded on every raw run
-
-Record the following even when some fields are constant within a dataset:
-
-- canonical target hardware ID;
-- physical device UUID and PCI bus ID;
-- exact product name and total VRAM;
-- compute capability and SM count;
-- ECC state and MIG mode/profile;
-- driver, CUDA runtime/build, cuDNN, PyTorch, and compiler versions;
-- VBIOS when available;
-- configured and observed power limits;
-- application/default SM and memory clocks;
-- temperature, power, and clocks throughout the measured window;
-- host CPU model, RAM, NUMA relationship, OS/kernel, and container digest;
-- whether the GPU was exclusive and which other GPU processes were observed.
-
-The pair identity may stay stable across driver revisions, but a driver,
-framework, kernel, or compiler change creates a new **measurement environment
-revision**. Do not pool revisions until a golden overlap set demonstrates that
-their label distributions are compatible, because the current predictor does
-not encode driver/library versions.
-
-### 4.3 Multiple physical cards of one model
-
-It is valid—and preferable—to collect on multiple physical cards with the same
-qualified target ID. Record UUIDs, randomize work across cards, and reserve a
-device-UUID-held-out audit slice. This measures card-to-card variability while
-retaining one model pair for the hardware model.
-
-## 5. Unit of observation and data layers
-
-Do not write profiler output directly into the training manifest. Preserve
-three independently auditable layers.
-
-### 5.1 Raw measurement layer
-
-One row per fresh-process repetition. It contains raw step durations, raw NVML
-samples, PyTorch allocator peaks, environment, status, failure stage, and all
-identity hashes. Raw data is append-only and is never normalized in place.
-
-### 5.2 Aggregated sample layer
-
-One row per unique workload configuration after quality checks. It contains the
-six robust labels, uncertainty/dispersion summaries, OOM information, replicate
-IDs, aggregation method, and quality flags. Model training consumes this layer.
-
-### 5.3 Training manifest layer
-
-The versioned `perfseer_v3_training_manifest_v2` selects graph/sample rows,
-assigns train/validation/test partitions, freezes fingerprints, and declares
-the deployment allowlists for one target GPU pair.
-
-Repeated runs MUST be aggregated before splitting. Never put repetitions of the
-same configuration in different partitions.
-
-## 6. Canonical model outputs and label definitions
-
-Successful samples have six ordered targets:
-
-| Index | Target | Unit | Canonical production definition |
-| ---: | --- | --- | --- |
-| 0 | `train_epoch_ms` | ms/epoch | Steady-state optimizer-step wall time multiplied by the exact optimizer steps per epoch, with golden full-epoch validation. |
-| 1 | `train_avg_sm_util_percent` | % | Time-weighted mean NVML GPU utilization during accepted measured windows. |
-| 2 | `train_p95_sm_util_percent` | % | Time-weighted 95th percentile of the same valid utilization samples. |
-| 3 | `train_peak_vram_used_mib` | MiB | Peak isolated-device framebuffer use attributable to the workload, with idle baseline and contamination recorded. |
-| 4 | `train_peak_torch_reserved_mib` | MiB | `torch.cuda.max_memory_reserved()` after resetting peak statistics at the measurement boundary. |
-| 5 | `train_peak_memory_controller_util_percent` | % | Maximum valid NVML memory-utilization sample during the accepted measured windows. |
-
-The optimizer step measured by the primary timing label includes:
-
-```text
-zero_grad
-+ gradient-accumulation forward/loss/backward passes
-+ gradient scaling/unscaling when configured
-+ gradient clipping when configured
-+ optimizer.step
-+ required synchronization at the timing boundary
-```
-
-It excludes one-time initialization, source loading, graph capture, compilation,
-autotuning, checkpointing, validation, and dataset download. Compilation and
-autotuning receive separate auxiliary labels. Input loading should either be
-preloaded/prefetched so it cannot starve the GPU, or measured as a separate
-`data_wait_ms` auxiliary target. Do not mix data-loader-bound and GPU-compute
-labels unless host/storage inputs are added to the model.
-
-Calculate:
-
-```text
-microbatches_per_epoch = ceil_or_drop_last(dataset_examples / micro_batch_size)
-optimizer_steps_per_epoch = ceil(microbatches_per_epoch / gradient_accumulation_steps)
-train_epoch_ms = robust_optimizer_step_wall_ms * optimizer_steps_per_epoch
-```
-
-Store the exact `drop_last` behavior and the number of shorter final steps.
-Measure a full steady-state epoch on a golden subset to quantify extrapolation
-error. Keep both `train_epoch_ms_measured` and
-`train_epoch_ms_step_extrapolated` in raw/auxiliary data even though the current
-six-target contract exposes one canonical `train_epoch_ms`.
-
-### 6.1 Required auxiliary labels
-
-Retain these for audits, uncertainty modeling, future outputs, and debugging:
-
-- median, mean, standard deviation, p90, p95, and maximum optimizer-step wall
-  time;
-- CUDA-event GPU elapsed time and host wall time;
-- measured and extrapolated epoch time plus extrapolation error;
-- peak PyTorch allocated, active, inactive-split, and reserved bytes;
-- average and peak device framebuffer use;
-- raw SM/memory utilization samples and timestamps;
-- average/peak power, temperature, SM clock, and memory clock;
-- compilation/autotuning time and steady-state flag;
-- OOM status and phase;
-- peak analytical live bytes from the graph;
-- repeat count, accepted count, rejection reasons, coefficient of variation,
-  confidence interval, and aggregation rule.
-
-### 6.2 OOM rows
-
-OOM is a valid label, not a failed data-pipeline row. Collect deliberate boundary
-cases and classify the stage using the model's current vocabulary:
-
-```text
-capture, forward, loss, backward, optimizer, allocator
-```
-
-For an OOM row, the six regression targets are undefined unless the full
-measurement completed. They MUST be stored as null with a target-validity mask;
-never insert zero or the last partial measurement as if it were a successful
-label.
-
-Current implementation blocker: `TrainingManifestRowV3` requires six finite
-targets and `_supervised_loss` does not mask regression loss for OOM rows.
-Before production OOM training, add a per-target validity mask and regress only
-valid targets. Until then, keep collected OOM rows in a versioned auxiliary
-corpus rather than fabricating six values.
-
-## 7. Inputs that must accompany every label
-
-### 7.1 Graph and workload identity
-
-- immutable source fingerprint and model parameter fingerprint;
-- strict-first exported `GraphIRV3` file and graph SHA-256;
-- architecture family, modality, task, source group, and generator version;
-- input pytree schema, shapes, strides, dtypes, dynamic constraints, and actual
-  sampled values or deterministic value fingerprint;
-- parameter count, trainable parameter count, buffer bytes, graph nodes/edges,
-  phase counts, and analytical cost/liveness summaries;
-- loss function and its configuration;
-- dataset ID/revision, subset ID, examples per epoch, and steps per epoch.
-
-The executable profiled callable, input signature, optimizer, and captured
-graph MUST match. The current source-first profiler already checks callable
-identity, parameter fingerprint, input signature, precision, train/eval mode,
-and optimizer class before measurement.
-
-### 7.2 Batch and execution controls
-
-- microbatch size;
-- gradient accumulation steps;
-- effective batch size;
-- total epochs, current epoch, total/current optimizer steps, and steps/epoch;
-- `drop_last` and variable-length batching/bucketing policy;
-- activation checkpointing policy and checkpoint segments;
-- gradient clip norm and loss scale;
-- eager versus compiled execution, compiler/backend/version, and compile mode;
-- deterministic/benchmark flags, TF32 policy, and matmul precision;
-- optimizer `foreach`, `fused`, `capturable`, and differentiable settings.
-
-### 7.3 Optimizer identity and hyperparameters
-
-V3 currently has first-class exact identities for:
-
-```text
-SGD, ASGD, Adadelta, Adafactor, Adagrad, Adam, Adamax, AdamW,
-LBFGS, Muon, NAdam, RAdam, RMSprop, Rprop, SparseAdam,
-LAMB, LARS, Lion
-```
-
-Store the raw implementation name in addition to exact/family/hash identity.
-For composite optimizers, store every component and parameter assignment. A
-Muon workload should normally distinguish the Muon-controlled 2-D hidden
-weights from AdamW-controlled embeddings, biases, normalization parameters, and
-other tensors.
-
-Required optimizer configuration includes:
-
-- initial and current learning rate;
-- all parameter-group learning rates and parameter fractions;
-- weight decay per group and coupled/decoupled mode;
-- momentum, dampening, Nesterov, betas, epsilon, rho, and alpha;
-- AMSGrad, maximize, relative-step, scale-parameter, and warmup-init flags;
-- LAMB/LARS trust coefficient;
-- clipping threshold and decay rate;
-- Muon Newton-Schulz coefficients/steps and LR-adjustment policy;
-- optimizer state dtype/bit width and master-weight dtype;
-- implementation/backend, fused/foreach status, paging, sharding, and offload.
-
-The last four implementation dimensions are not yet fully represented by the
-current feature schema. Preserve them in raw records now and do not mark those
-variants deployment-approved until dedicated features and cost/state formulas
-exist.
-
-### 7.4 Scheduler identity and progress
-
-Current first-class scheduler identities are:
-
-```text
-none, constant, constant_with_warmup, linear, linear_with_warmup,
-step, multi_step, exponential, cosine, cosine_warm_restarts,
-cosine_with_warmup, polynomial, one_cycle, cyclic,
-reduce_on_plateau, inverse_sqrt, warmup_stable_decay
-```
-
-Record:
-
-- scheduler raw/exact/family/hash identity and chained components;
-- warmup steps, epochs, and ratio;
-- decay rate, step size, milestones, minimum/maximum LR;
-- cycles/restarts, polynomial power, patience, threshold, and cooldown;
-- current epoch/step and current LR;
-- metric history/state for `reduce_on_plateau`;
-- whether `scheduler.step()` occurs per microbatch, optimizer step, or epoch.
-
-Sample schedule progress at meaningful points rather than generating duplicate
-rows for every step: initialization, warmup midpoint/end, 25%, 50%, 75%, 90%,
-and final 5% of training. For performance labels, several points may have
-similar cost; retaining progress lets evidence determine whether the field is
-predictive instead of assuming it is.
-
-### 7.5 Per-operation dtype policy
-
-Do not rely on a single declared graph precision. Preserve actual node and edge
-dtypes and explicit casts. Required policies include:
-
-- homogeneous FP32;
-- BF16 autocast with FP32 reductions/state;
-- FP16 autocast with gradient scaling and FP32 reductions/state;
-- FP32 first/last layers with BF16 or FP16 internal layers;
-- FP32 normalization/reduction islands;
-- parameter, gradient, accumulation, master-weight, and optimizer-state dtype;
-- alternating/cast-heavy diagnostic graphs;
-- TF32 permission as an execution flag even though tensor storage is FP32.
-
-The current encoder detects FP32-to-BF16 tensor transitions and emits a `mixed`
-precision category. The current bootstrap `WorkloadDescriptor`, however, only
-enumerates homogeneous `float32`, `float16`, and `bfloat16`; production workload
-generation must add structured mixed-dtype policies.
-
-## 8. Workload coverage matrix
-
-A full Cartesian product is infeasible and would overrepresent artificial
-combinations. Use a coverage-driven, constrained design with logarithmic grids,
-pairwise interaction coverage, Latin-hypercube sampling for continuous values,
-and adaptive sampling near OOM/performance boundaries.
-
-### 8.1 Data layers
-
-| Layer | Purpose | Use in training |
-| --- | --- | --- |
-| Exact-operation microbenchmarks | Registry cost/state calibration and kernel coverage | Encoder pretraining; not sufficient alone for six-target training |
-| Composite kernels/blocks | Interactions, fusion, liveness, dtype transitions | Encoder pretraining and auxiliary teacher rows |
-| Representative real models | Scheduler-grade distribution | Main teacher/student supervised dataset |
-| Generated architectures | Broader topology/shape coverage | Main data after correctness and source-quality gates |
-| Boundary/OOM search | Memory frontier and failure stages | OOM/uncertainty heads; successful near-boundary rows also train regression |
-| Custom/OOV suite | Future/custom operation behavior | Held-out confidence and fallback evaluation |
-
-### 8.2 Architecture and modality families
-
-The target dataset SHOULD include, subject to intended deployment:
-
-- CNNs: residual, depthwise, dense-connectivity, detection/segmentation blocks;
-- encoder transformers and vision transformers;
-- decoder-only and encoder-decoder transformers, including KV/sequence regimes;
-- recurrent/sequence models: RNN, LSTM, GRU, temporal convolution;
-- graph neural networks and sparse/scatter-heavy models;
-- diffusion/UNet and attention-heavy image models;
-- audio/speech convolutional, recurrent, and transformer models;
-- recommendation/embedding-heavy and tabular models;
-- mixture-of-experts/routing diagnostics;
-- custom/fused and generated-code workloads.
-
-For every important family, span parameter count, activation footprint,
-arithmetic intensity, graph depth, branching, residual lifetime, and dynamic
-shape behavior rather than selecting models only by parameter count.
-
-### 8.3 Shape and size regimes
-
-Use at least five regimes per applicable axis:
-
-```text
-tiny / small / medium / large / boundary
-```
-
-Axes include batch, sequence length, hidden size, attention heads, vocabulary,
-image resolution, channels, audio duration, graph nodes/edges, embedding table
-size, and expert count. Include non-power-of-two and tensor-core-misaligned
-shapes. Boundary values should be discovered adaptively for each configuration,
-not hard-coded globally.
-
-### 8.4 Batch and memory frontier design
-
-For each representative base workload:
-
-1. Probe a logarithmic microbatch ladder, normally powers of two plus one or two
-   irregular values.
-2. Bracket the largest successful batch/shape.
-3. Binary-search or staircase-search the boundary.
-4. Collect successful rows around approximately 50%, 75%, 90%, 95%, and 99%
-   of the observed memory frontier.
-5. Preserve at least one true OOM beyond the boundary when safe.
-6. Cross selected microbatches with accumulation values such as 1, 2, 4, and 8
-   while controlling effective batch size.
-
-Near-OOM observations must be intentionally oversampled; random workload grids
-usually contain too few positive OOM examples to calibrate the OOM head.
-
-## 9. Optimizer sampling plan
-
-The bootstrap workload generator currently instantiates only SGD, Adam, and
-AdamW even though the encoder recognizes 18 optimizers. Production collection
-must close this gap.
-
-Use deployment telemetry when available. Until then, a reasonable starting
-allocation of successful real-model configurations is:
-
-| Stratum | Approximate share | Contents |
-| --- | ---: | --- |
-| Core | 55–65% | AdamW, Adam, SGD, Muon+AdamW |
-| Other first-class | 25–35% | ASGD, Adadelta, Adafactor, Adagrad, Adamax, LBFGS, NAdam, RAdam, RMSprop, Rprop, SparseAdam, LAMB, LARS, Lion |
-| Custom/implementation diagnostics | 5–10% | OOV names and variants below; held out from deployment approval until modeled |
-
-Every first-class optimizer needs coverage across more than one architecture
-family, parameter scale, batch regime, and precision. Rare/specialized
-optimizers should use compatible workloads—for example sparse gradients for
-SparseAdam and suitable 2-D parameter groups for Muon—rather than meaningless
-Cartesian combinations.
-
-### 9.1 First-class gaps to retain in raw records
-
-Prioritize future schema/collector work for:
-
-1. 8-bit/paged states: Adam8bit, AdamW8bit, PagedAdamW, PagedLion, and related
-   bitsandbytes variants;
-2. fused/vendor kernels: Apex FusedAdam, FusedLAMB,
-   FusedMixedPrecisionLAMB, FusedNovoGrad, and FusedSGD;
-3. state sharding/offload: ZeRO, CPU/NVMe offload, and rank-local state;
-4. preconditioners: Distributed Shampoo, SOAP, KL-Shampoo, K-FAC, and PSGD;
-5. low-memory projection/update: GaLore, Q-GaLore, LOMO, and AdaLOMO;
-6. schedule-free AdamW/SGD/RAdam;
-7. AdEMAMix, Adan, SophiaG, NovoGrad, Prodigy/D-Adaptation,
-   Lookahead/Ranger, and SAM/ASAM.
-
-Unknown names are structurally encoded as `other` plus family/hash, but that is
-not equivalent to having correct state-memory and optimizer-step cost models.
-
-## 10. Scheduler and hyperparameter experimental design
-
-### 10.1 Core scheduler coverage
-
-Prioritize no schedule/constant, linear warmup-decay, cosine with warmup,
-one-cycle, step/multi-step, inverse-square-root, and reduce-on-plateau. Cover all
-other first-class schedulers with smaller diagnostic strata.
-
-### 10.2 Learning-rate grid
-
-For each optimizer/model family, define a safe reference LR and sample a
-log-scale relative grid, for example:
-
-```text
-0.1x, 0.3x, 1x, 3x, and—only after a stability probe—10x reference LR
-```
-
-Do not use one absolute LR grid for all optimizers. Record stability failures
-separately from CUDA OOM. Include parameter groups with different LRs and weight
-decays, especially bias/norm exclusions and Muon+AdamW components.
-
-### 10.3 Other common controls
-
-Cover meaningful ranges for:
-
-- weight decay, momentum, betas, epsilon, trust coefficient, and clipping;
-- warmup ratio and decay horizon;
-- gradient accumulation and effective batch size;
-- activation checkpointing;
-- fused and foreach implementations;
-- gradient scaler enabled/disabled and representative scale states;
-- current epoch/step and schedule progress.
-
-Use pairwise/three-way interaction coverage for the most consequential
-interactions:
-
-```text
-optimizer × state precision × model scale
-precision × dtype policy × tensor shape
-batch × accumulation × checkpointing
-optimizer × scheduler × LR range
-compile mode × dynamic shape × model family
-```
-
-## 11. Production measurement protocol on the target GPU
-
-### 11.1 Isolation and setup
-
-Each raw run MUST:
-
-1. verify the exact target hardware ID and physical UUID;
-2. reject active unrelated GPU processes;
-3. record idle framebuffer use and free memory before allocation;
-4. use a pinned container digest and immutable source/workload fingerprints;
-5. record clocks, power, temperature, throttle reasons, driver, and libraries;
-6. seed Python, NumPy, PyTorch CPU, and all CUDA RNGs;
-7. restore the model/optimizer starting state for each repetition;
-8. validate eager/exported output equivalence before profiling;
-9. execute warmup outside the measured window;
-10. synchronize CUDA or use CUDA events at timing boundaries.
-
-CUDA work is asynchronous; unsynchronized host timers are not valid GPU timing.
-The official PyTorch CUDA guidance recommends synchronization or CUDA events for
-precise elapsed time. PyTorch also warns that exact reproducibility is not
-guaranteed across releases/platforms, which is why environment revisions and
-raw repetitions are mandatory.
-
-### 11.2 Warmup and sustained window
-
-- Use at least 10–20 optimizer warmup steps for normal eager workloads.
-- Compiled workloads must complete compilation and reach stable generated code
-  before measurement.
-- Continue warmup until recent step times stabilize, subject to a maximum and a
-  recorded `warmup_not_stable` failure.
-- Measure at least 50 optimizer steps **and** a sustained window long enough to
-  contain many real NVML samples; 30–60 seconds is a suitable production
-  default for utilization labels.
-- For very slow workloads, require at least 10 measured optimizer steps and
-  report the shorter statistical window.
-
-Polling NVML every 20 ms does not create 20 ms sensor resolution. NVIDIA states
-that ordinary device utilization samples may cover roughly 1/6 second to one
-second depending on the product. Short microbenchmarks can measure CUDA time but
-cannot produce reliable average/p95 utilization labels by repeating cached
-NVML readings.
-
-### 11.3 Memory measurement
-
-At the post-warmup boundary:
-
-```text
-torch.cuda.synchronize()
-torch.cuda.reset_peak_memory_stats()
-capture idle/device baseline
-start raw NVML sampling
-```
-
-After the sustained window, record both allocator peaks and device memory.
-PyTorch defines `max_memory_allocated` as peak bytes occupied by tensors and
-`max_memory_reserved` as peak bytes managed by the caching allocator. Preserve
-both; the canonical output uses reserved memory because scheduler capacity must
-account for the allocator's retained pool.
-
-### 11.4 Repetitions and run order
-
-- Pilot collection: at least 3 fresh-process repetitions per configuration.
-- Production training rows: normally 5 accepted repetitions.
-- Golden, unstable, near-OOM, or high-variance rows: 7–10 repetitions.
-- Randomize workload order within safe size bands.
-- Interleave stable sentinel workloads to detect temporal drift.
-- Use cooldown or temperature-aware scheduling rather than running every large
-  workload consecutively.
-
-Do not silently delete outliers. Mark contamination, throttling, correctness
-failure, clock drift, or allocator residue and rerun. Retain rejected raw runs
-with their reasons.
-
-## 12. Aggregation and quality policy
-
-For each workload configuration:
-
-- aggregate successful fresh-process repetitions using the median for timing
-  and memory peaks;
-- derive utilization from the union of valid time-stamped samples, weighting
-  by sample duration where available;
-- retain median absolute deviation, coefficient of variation, min/max, and
-  confidence intervals;
-- require identical graph, source, input, optimizer, scheduler, target GPU,
-  environment revision, and workload hashes;
-- never average successful and OOM runs into one regression target;
-- if identical configurations alternate between success and OOM, mark the
-  aggregate as a boundary/unstable sample and retain the success probability.
-
-Suggested initial quality thresholds, to be calibrated with pilot data:
-
-| Check | Initial rule |
+The exact 35-family quotas and modality totals remain frozen in
+`src/perfseer_v3/configs/a10g_18k_dataset_pack.yaml`. The generated quota uses
+50 independent source lineages. The initial manifest and every repaired final
+manifest must preserve those quota cells and total exactly 18,000 successful
+configurations.
+
+Only end-to-end configurations enter the AWS production dataset. Existing
+operation and composite generators remain local QA utilities; they do not
+create additional AWS corpora or regression rows.
+
+The workflow is instance-local. It requires no S3, SQS, DynamoDB, Spot
+manager, remote lease service, storage controller, or other AWS API. The
+operator clones the repository, supplies Kaggle credentials outside the
+checkout, and runs one resumable command.
+
+## 2. Exact observation contract
+
+One accepted configuration means one fresh child process and one complete
+five-epoch training run. Epochs 1 and 2 update the model normally but are
+warmup. Epochs 3, 4, and 5 are the only measured epochs. A successful
+configuration is never repeated.
+
+Each accepted `LabelRunRecord` contains exactly three `EpochMeasurement`
+objects for epochs 3, 4, and 5. A measured epoch stores only:
+
+- synchronized complete-epoch wall time;
+- examples, batches, microsteps, and optimizer-step counts;
+- finite-loss and finite-gradient flags;
+- timestamped SM utilization, memory-controller utilization, used device
+  memory, sample duration, and throttle-reason bits;
+- peak PyTorch reserved memory; and
+- requested/observed backend, telemetry-completeness, and contamination flags.
+
+The run envelope stores source, graph, dataset, environment, hardware, and
+configuration identities plus process/GPU cleanup evidence. These are
+provenance or acceptance evidence, not predictor inputs or additional labels.
+
+The six V3 supervised outputs are unchanged:
+
+| Target | Epochs 3–5 aggregate |
 | --- | --- |
-| Correctness | All accepted runs pass eager/export equivalence and finite-loss checks |
-| Timing variability | Fresh-process step-time CV ≤ 3%; otherwise add repeats or quarantine |
-| Peak reserved variability | Range ≤ 2% of median; otherwise investigate allocator/process state |
-| Target GPU | Exact canonical ID in graph, run, aggregate, and manifest |
-| Environment | One immutable environment revision per aggregate |
-| Throttling | No thermal/power/reliability throttle unless explicitly modeled |
-| Utilization samples | Sustained window with enough distinct sensor timestamps |
-| Capture | Strict preferred; validated non-strict tracked separately |
-| Encoding | No tensor-producing operation silently dropped |
+| `train_epoch_ms` | Arithmetic mean of the three direct complete-epoch times |
+| `train_avg_sm_util_percent` | Time-weighted mean over all valid SM samples |
+| `train_p95_sm_util_percent` | Nearest-rank P95 over all valid SM samples |
+| `train_peak_vram_used_mib` | Maximum sampled used device memory |
+| `train_peak_torch_reserved_mib` | Maximum PyTorch reserved-memory peak |
+| `train_peak_memory_controller_util_percent` | Maximum valid memory-controller sample |
 
-The repository's current training gates remain mandatory:
+The three peak values are required outputs, not `GraphFeaturesV3` inputs. The
+live `perfseer_v3.training.TARGET_NAMES` and dataset-pack `TARGET_NAMES`
+contracts both contain them. Removing them would change the V3 model, artifact,
+runtime, and scheduler interfaces; it would not merely simplify collection.
 
-- strict capture rate at least 95%;
-- complete encoding rate at least 99%;
-- measured unknown-operation GPU-time fraction at most 2%;
-- source-group isolation;
-- frozen dataset, split, feature-schema, registry, normalization, and
-  coarsening hashes.
+Routine accepted records do not collect these unused measurements:
 
-## 13. Split and leakage policy
+- PyTorch allocated-memory peak;
+- step-time extrapolations or separate CUDA-active time;
+- forward/backward/optimizer phase timings;
+- operator or profiler traces;
+- power, temperature, or clock histories; or
+- separate data-stall telemetry.
 
-Use the current deterministic 80%/10%/10% train/validation/test allocation by
-whole source group, stratified by data layer.
+The source-level `AUXILIARY_TARGET_NAMES` tuple is retained only for local
+operation/composite QA records. None of its ten fields is part of an AWS
+`EpochMeasurement`, `LabelRunRecord`, or successful regression row.
 
-Rules:
+Loss/gradient flags, traversal counts, throttle bits, process contamination,
+backend identity, and cleanup evidence remain because they decide whether a
+run is valid. They are not additional regression targets.
 
-1. Aggregate repetitions before assigning partitions.
-2. Keep every variant from one source/model family in one partition.
-3. Keep identical or equivalent graph signatures in one partition.
-4. Keep generated mutations of the same source template together unless the
-   generator can prove independent architecture provenance.
-5. Fit continuous normalization on training only.
-6. Fit linear, uncertainty, and OOM calibration on validation only.
-7. Freeze test before capacity/model selection.
-8. Never move failed test rows into training after seeing errors.
+The separate OOM probability/stage, uncertainty, confidence, and peak-live-byte
+heads do not expand this successful-run measurement contract. OOM identity and
+stage come from retained failed attempts; uncertainty and confidence are learned;
+and optional peak-live bytes come from graph-liveness data rather than another
+NVML measurement. When peak-live data is absent, its auxiliary loss is masked.
 
-Maintain the eight explicit evaluation suites already defined by v3:
-
-```text
-in_distribution_validation
-architecture_source_family_held_out
-operation_combination_held_out
-generated_code_robustness
-dynamic_shape_extrapolation
-precision_optimizer_held_out
-custom_oov_suite
-v2_compatible_matched_test
-```
-
-Add dataset-specific audits for:
-
-- physical-device-UUID held out within the target SKU;
-- memory-frontier/near-OOM rows;
-- LR/scheduler progress;
-- mixed-layer dtype policies;
-- fused versus foreach implementation;
-- rare optimizer families;
-- driver/framework overlap revisions.
-
-## 14. Balancing and weighting
-
-The natural collection distribution will be dominated by small successful
-AdamW/FP32 or AdamW/BF16 workloads. Avoid allowing this to erase rare but
-important regimes.
-
-- Select configurations with stratified quotas before measurement.
-- Use log buckets for parameter count, FLOPs, activation bytes, graph size,
-  batch, sequence/resolution, and label magnitude.
-- Oversample near-OOM, mixed dtype, dynamic shape, custom/OOV, and long-tail
-  optimizer strata.
-- Use `domain_weight` only after reporting unweighted counts and metrics.
-- Cap weights so a small stratum cannot dominate gradients.
-- Do not duplicate aggregated rows to balance; sample or weight them in the
-  loader while preserving one canonical row.
-- Report macro metrics across families and regimes in addition to global
-  micro-averages.
-
-## 15. Proposed raw measurement record
-
-The following is a design record, not yet a checked-in parser contract:
-
-```json
-{
-  "record_version": "perfseer_v3_target_gpu_measurement_v1",
-  "run_id": "h100sxm80-workload123-rep03",
-  "workload_config_id": "sha256-of-complete-workload-config",
-  "repetition": 3,
-  "target_hardware": {
-    "hardware_id": "nvidia_h100_sxm_80gb",
-    "device_uuid": "GPU-...",
-    "product_name": "NVIDIA H100 80GB HBM3",
-    "total_memory_bytes": 85899345920,
-    "compute_capability": "9.0",
-    "sm_count": 120,
-    "mig_mode": "disabled"
-  },
-  "environment": {
-    "container_digest": "sha256:...",
-    "source_revision": "...",
-    "driver_version": "...",
-    "cuda_version": "...",
-    "pytorch_version": "...",
-    "compiler": {"mode": "eager", "backend": null}
-  },
-  "identity": {
-    "source_group": "decoder_transformer_family_17",
-    "source_fingerprint": "...",
-    "model_fingerprint": "...",
-    "graph_path": "graphs/....json",
-    "graph_sha256": "...",
-    "input_value_fingerprint": "..."
-  },
-  "workload": {
-    "dataset_id": "...",
-    "dataset_revision": "...",
-    "examples_per_epoch": 100000,
-    "micro_batch_size": 8,
-    "gradient_accumulation_steps": 4,
-    "optimizer_steps_per_epoch": 3125,
-    "activation_checkpointing": true,
-    "precision_policy": "mixed_bf16_fp32_norm",
-    "optimizer": {
-      "name": "muon",
-      "components": ["muon", "adamw"],
-      "parameter_groups": [
-        {"component": "muon", "lr": 0.02, "parameter_fraction": 0.8},
-        {"component": "adamw", "lr": 0.0003, "parameter_fraction": 0.2}
-      ]
-    },
-    "scheduler": {
-      "name": "cosine_with_warmup",
-      "warmup_steps": 1000,
-      "total_steps": 100000,
-      "current_step": 25000,
-      "current_lr": 0.015
-    }
-  },
-  "measurement": {
-    "status": "ok",
-    "warmup_steps": 20,
-    "measured_steps": 100,
-    "measured_window_seconds": 42.7,
-    "raw_step_ms": [13.5, 13.6],
-    "raw_nvml_samples": [],
-    "peak_torch_allocated_bytes": 0,
-    "peak_torch_reserved_bytes": 0
-  },
-  "quality": {
-    "correctness_validated": true,
-    "exclusive_gpu": true,
-    "steady_state": true,
-    "throttling_detected": false,
-    "accepted": true,
-    "rejection_reasons": []
-  }
-}
-```
-
-The actual record must preserve the complete raw arrays; the shortened example
-does not prescribe truncation.
-
-## 16. Proposed aggregated sample record
-
-```json
-{
-  "sample_version": "perfseer_v3_target_gpu_sample_v1",
-  "sample_id": "h100sxm80-workload123",
-  "workload_config_id": "...",
-  "target_hardware_id": "nvidia_h100_sxm_80gb",
-  "graph_path": "graphs/....json",
-  "graph_sha256": "...",
-  "source_group": "decoder_transformer_family_17",
-  "accepted_run_ids": ["...rep01", "...rep02", "...rep03"],
-  "rejected_run_ids": [],
-  "targets": {
-    "train_epoch_ms": 42500.0,
-    "train_avg_sm_util_percent": 91.0,
-    "train_p95_sm_util_percent": 98.0,
-    "train_peak_vram_used_mib": 62300.0,
-    "train_peak_torch_reserved_mib": 61800.0,
-    "train_peak_memory_controller_util_percent": 87.0
-  },
-  "target_validity": [true, true, true, true, true, true],
-  "oom": false,
-  "oom_stage": "none",
-  "dispersion": {
-    "step_time_cv": 0.012,
-    "peak_reserved_range_fraction": 0.006
-  },
-  "aggregation": "median_across_fresh_process_runs",
-  "quality_status": "accepted"
-}
-```
-
-Values above are illustrative placeholders, not measurements.
-
-## 17. Repository storage layout
-
-Recommended per-target dataset layout:
+The canonical epoch label is direct wall time for a complete epoch; multiplying
+a sampled step time is forbidden. Acceptance requires all five epochs to
+finish, finite loss and gradients in every epoch, complete telemetry in epochs
+3–5, no foreign GPU process, no harmful throttle reason, matching backend
+identity, and successful cleanup. The three measured epoch times must satisfy:
 
 ```text
-datasets/perfseer_v3/<target_hardware_id>/<dataset_revision>/
-  metadata/
-    dataset.json
-    target_hardware.json
-    environment_revisions.jsonl
-    collection_protocol.md
-  sources/
-    source_manifest.jsonl
-  graphs/
-    <graph_sha256>.json
-  raw_runs/
-    shard-00000.jsonl.zst
-    shard-00001.jsonl.zst
-  aggregates/
-    samples.jsonl
-    oom_samples.jsonl
-    rejected_samples.jsonl
-  splits/
-    grouped_split.json
-    evaluation_slices.json
-  manifests/
-    training_manifest_v2.json
-  audits/
-    coverage.json
-    repeatability.json
-    leakage.json
-    label_distribution.json
-    golden_epoch_validation.json
+(max_epoch_ms - min_epoch_ms) / mean_epoch_ms <= 0.10
 ```
 
-Raw telemetry can be compressed and sharded, but graph files, aggregate rows,
-split declarations, and manifests must remain content-addressed and easy to
-audit. Do not overwrite a dataset revision after its fingerprint is used in a
-checkpoint.
+Partial, failed, OOM, timed-out, contaminated, unstable, or cleanup-failed
+attempts retain null targets and do not count toward 18,000.
 
-## 18. Mapping into the current training manifest
+## 3. Lightweight local RTX 5090 verification
 
-For successful aggregate rows, create one manifest sample:
+Local verification must not train all 18,000 configurations for five epochs.
+It uses two gates.
 
-```json
-{
-  "sample_id": "h100sxm80-workload123",
-  "graph_path": "../graphs/<graph_sha256>.json",
-  "split": "train",
-  "source_group": "decoder_transformer_family_17",
-  "graph_signature": "<graph_sha256>",
-  "hardware_id": "nvidia_h100_sxm_80gb",
-  "target": [42500.0, 91.0, 98.0, 62300.0, 61800.0, 87.0],
-  "oom": 0.0,
-  "oom_stage": "none",
-  "peak_live_bytes": 64172851200,
-  "domain_weight": 1.0
-}
-```
+First, statically validate every manifest row:
 
-The manifest's deployment section MUST contain exactly the same target GPU in
-`target_hardware_id` and its one-element `hardware_allowlist`. Optimizer,
-scheduler, precision, capture-quality, and training-mode allowlists should be
-generated from accepted training coverage, not manually broadened after model
-training.
+- canonical configuration ID and all source/task/protocol hashes;
+- exact registered factory and generated lineage;
+- task adapter, task kind, output width, and specialized training step;
+- architecture fields, input shapes, precision, checkpoint, and batch policy;
+- optimizer implementation and parameter-group compatibility;
+- scheduler implementation, progress, and step unit;
+- eager/compiled request and backend compatibility; and
+- exact family, modality, task, regime, and generated-lineage quotas.
 
-Before manifest creation:
+Second, derive an immutable execution-signature hash from fields that choose
+different executable behavior. Group equivalent rows and deterministically
+select a pairwise covering set containing every:
 
-1. validate every graph and aggregate hash;
-2. compute grouped splits;
-3. calculate measured capture/encoding/unknown-time gates;
-4. freeze the operation registry selected from target-GPU time coverage;
-5. regenerate the feature schema;
-6. calculate dataset and split fingerprints;
-7. fit normalization on train only during materialization.
+- model family and all 50 generated lineages;
+- task adapter and task kind;
+- precision, gradient-scaler, and checkpoint policy;
+- optimizer, parameter-group, scheduler, and scheduler-step implementation;
+- eager and compiled path;
+- architecture/shape regime; and
+- specialized training step.
 
-## 19. Collection scale and capacity planning
+For each selected signature, the RTX 5090 gate builds its tiny real-format
+task fixture, runs one eager reference update, compiles the training path, and
+runs two compiled forward/loss/backward/optimizer/scheduler updates. It checks
+finite output, loss, gradients, optimizer/scheduler state, parameter changes,
+output shape, and eager/compiled equivalence.
 
-These are planning ranges, not accuracy guarantees.
+Each manifest row retains its own exact execution-signature hash. It also maps
+to a deterministic, factor-complete evidence bundle from the selected set: the
+bundle includes the row's exact source/task route and collectively covers every
+required executable factor and pair for that row. All signatures in that
+bundle must pass before the row is locally cleared. This pairwise gate verifies
+the selected implementation paths and interactions; it does not falsely claim
+that the row's entire unique cross-product was executed locally.
 
-| Stage | Unique configurations per target GPU | Fresh-process repeats | Purpose |
-| --- | ---: | ---: | --- |
-| Protocol pilot | 200–500 | 3–5 | Debug correctness, stability, telemetry, and aggregation |
-| Coverage pilot | 1,500–3,000 | ≥3 | Exercise all major families/axes and estimate learning curves |
-| Initial production | 10,000–20,000 | normally 5 | Train/validate first serious teacher and students |
-| Adaptive expansion | +2,000–10,000 per round | 3–7 | Fill high-error, OOD, rare, and boundary regions |
-
-Estimate label-GPU time before launching:
+The frozen source statically validates exactly 18,000 rows and maps every row
+to factor-complete evidence drawn from 522 planned representatives. The final
+local identities are:
 
 ```text
-GPU-hours = configurations × attempted_repetitions
-            × mean(warmup + measured + setup seconds) / 3600
+target manifest:        bf805655d2a9fe978ce2ad4d8bb1f0c0efa400b013e2d1f1fa258ffc83cbeb8e
+local plan:             25e2c6946d91620f028acbfea3962d7ca7498bfa601a05e44ba14b7562783a36
+validation harness:     cd54878db34da69c061b85136eff6316225a4091bf7a9547626880b5409dc52b
+validation environment: 9f9393d5395136a2b045b98f42c6af240892c191d6e57a572ac80b386109ac24
+gate summary:           267ac8e527156d86a88083013d4282075309ff23438ff61ad6bef537eba16fd4
 ```
 
-For example, 10,000 configurations × 5 repetitions × 45 seconds is about 625
-label-GPU hours before reruns. Parallel collection may use several physical
-cards only when they share the exact qualified target ID and pass overlap
-repeatability checks.
+Tiny real-data decoders for vision, NLP, audio, tabular, and graph tasks pass
+locally. Cross-modality short update checks pass, including unequal
+encoder/decoder lengths for T5, Kimi, and GRU seq2seq paths, and the corrected
+CGCNN/PyG source path passes its focused regression. Generated configurations
+bind both the immutable lineage DSL and the executable interpreter source.
+Graph reductions use a sorted segment reduction with FP32 accumulation while
+retaining the declared BF16 autocast behavior for linear layers and
+activations.
 
-Use learning curves after each collection stage. Stop adding random rows when
-held-out errors plateau; redirect collection toward the worst family,
-optimizer, dtype, graph-size, and OOM slices.
+All 522 representatives passed in independent fresh processes on the local
+RTX 5090. The gate reports zero unresolved failures, covers all 18,000 row
+mappings, spans all 35 families and 22 task adapters, and passes an independent
+`--verify-only` reconstruction. Every durable pass is bound to the complete
+dataset-pack Python source closure, gate driver, and
+Torch/CUDA/driver/backend environment. Older superseded passes are preserved
+only as diagnostics. The fail-closed gate validates every result and hash
+against the current source-built plan, and every record says
+`accepted_a10g_measurement: false`.
 
-## 20. Staged execution plan
+## 4. Smart batch policy and OOM repair
 
-### Stage A: freeze the protocol
+Initial planning uses full power-of-two ladders:
 
-- qualify target GPU(s) and environment;
-- implement immutable raw/aggregate schemas;
-- add sustained target-GPU training measurement;
-- validate timing, allocator, NVML, correctness, and contamination checks;
-- compare derived epoch time with full measured epochs.
+| Tier | Batch ladder | Initial families |
+| --- | --- | --- |
+| Light | 16, 32, 64, 128, 256, 512 | MobileNetV3, PReLU/ELU CNN, fastText, SELU MLP, MDN, lightweight generated models |
+| Standard | 8, 16, 32, 64, 128, 256 | ResNet, EfficientNet-B0, Inception, ordinary transformers/RNNs, audio CNNs, TabTransformer, GCN/GAT/GraphSAGE, most generated models |
+| Heavy | 1, 2, 4, 8, 16, 32, 64 | EfficientNet-B4, high-shape ViT/Swin, U-Net, pix2pix, Restormer, T5, Llama, MoE, DistilBERT joint step, PANNs, CGCNN |
 
-Exit: sentinel workloads meet repeatability thresholds and independent
-aggregation reproduces identical sample rows.
+Every one of the 35 registry families has an initial tier.
+`independent_generated` is classified dynamically for each of its 50 lineages.
+A configuration is promoted for high resolution, sequence length, depth,
+width, audio duration, graph size, expert count, dual-model training, FP32,
+LBFGS, or disabled checkpointing when those choices raise memory pressure.
 
-### Stage B: close collector/schema blockers
+The prepared training view contains 4,096 examples. The selected batch is
+capped so every epoch contains at least eight batches, and planned rows are
+distributed over the complete eligible ladder.
 
-- add mixed-dtype workload policies;
-- instantiate all first-class optimizers and composite Muon+AdamW;
-- capture full scheduler/training progress;
-- distinguish fused/foreach/state precision/paging/offload;
-- add OOM target masks and phase instrumentation;
-- add environment and physical-device provenance.
+An OOM authorizes exactly one kind of retry: a new configuration ID using the
+next lower power of two. A Light configuration that fails at 16 may continue
+through 8, 4, 2, and 1. Each failure is retained diagnostically; only the first
+successful child in the repair chain fills the quota slot. Batch-1 OOM, other
+failures, or instability quarantine the candidate and create a deterministic
+same-cell replacement with a genuinely changed architecture/input signature.
 
-Exit: every requested input is either encoded or explicitly retained as
-provenance with a documented constant scope.
+The initial manifest remains immutable. Repair and replacement records link
+the frozen quota slot to the accepted final configuration.
 
-### Stage C: coverage pilot
+## 5. Simple dataset-by-dataset AWS workflow
 
-- collect microbenchmark, composite, real, generated, boundary, and OOV layers;
-- run operation-time coverage and unknown-time analysis;
-- produce grouped splits and all available challenge suites;
-- train a small pilot model and generate slice errors/uncertainty.
+The frozen production environment requires Python 3.11, 3.12, or 3.13. From a
+fresh clone, install exactly the checked-in lock:
 
-Exit: capture ≥95%, complete encoding ≥99%, measured unknown GPU time ≤2%, no
-source leakage, and actionable learning curves.
+```bash
+uv sync --frozen --extra a10g-dataset-pack
+```
 
-### Stage D: production collection
+Clone MLE-bench separately, leave it clean, and check out exactly revision
+`507f92e1138bb6e40dac5c6ee7a6758e6424bf97`. Kaggle credentials must remain
+outside the repository, and the production account must manually accept the
+rules for all 22 frozen competitions before collection.
 
-- expand representative real workloads and target deployment distributions;
-- collect five fresh-process repeats by default;
-- fill optimizer, scheduler, mixed-dtype, dynamic-shape, and near-OOM quotas;
-- freeze immutable dataset/registry/schema/split revisions.
+The implemented operator command is:
 
-Exit: dataset audit passes and no required evaluation slice is unintentionally
-empty.
+```bash
+uv run --frozen --extra a10g-dataset-pack python scripts/run_a10g_18k_pack.py \
+  --workspace /mnt/perfseer-a10g-18k \
+  --mlebench-checkout /opt/mle-bench
+```
 
-### Stage E: teacher and student training
+The entrypoint adds this checkout's `src` directory to the parent and child
+import paths. Before changing workspace state, it checks the exact frozen
+Torch 2.11.0, PyG 2.7.0, torchvision 0.26.0, torchaudio 2.11.0, Transformers
+5.7.0, and Triton 3.6.0 versions; imports every required runtime dependency in
+an isolated child; requires a working CUDA PyTorch build; validates and imports
+every pinned MLE-bench preparer; authenticates the Kaggle account; and retrieves
+a complete paginated inventory for all 22 tasks. Missing rules acceptance
+therefore fails before a task is downloaded or labeled.
 
-- train T0/T1/T2 on any suitable predictor-training device(s);
-- select teacher capacity using family-held-out accuracy/calibration;
-- distill S0–S3 on any suitable execution GPU(s), possibly different from the
-  teacher-training GPU and target label GPU;
-- preserve target hardware, dataset, split, normalization, schema, registry,
-  and coarsening identities across teacher/student artifacts.
+Kaggle credentials are supplied through the normal external Kaggle credential
+mechanism. Dependency probes use a private temporary `KAGGLE_CONFIG_DIR` and
+inert import-only credentials, so they cannot inspect the operator's real
+Kaggle file. Token variables are removed from model/preparation child
+environments, and each child receives a private empty `KAGGLE_CONFIG_DIR`
+instead of the operator's external credential path. Credentials must not be
+copied into this repository or the workspace records.
 
-Exit: prediction, calibration, OOM, artifact, latency, and all required
-ablation/acceptance gates pass.
+The first labeling invocation writes one hash-bound campaign-environment lock
+covering Python, PyTorch, CUDA, cuDNN, NVIDIA driver, and the optional
+`PERFSEER_CONTAINER_DIGEST`. Every resume must match it exactly.
 
-### Stage F: deployment
+The command performs one resumable loop:
 
-- run the student on CPU or a chosen deployment accelerator;
-- select the artifact by the workload's requested target GPU;
-- return fallback for target, schema, precision, optimizer, scheduler,
-  confidence, or coverage mismatches;
-- shadow and canary before scheduler authority.
+1. Build, validate, and freeze the exact 18K manifest before any download.
+2. Select the next incomplete task in the frozen 22-task order.
+3. Check conservative archive/extraction/preparation estimates against the
+   600 GiB workspace limit while retaining 40 GiB safety headroom.
+4. Download only that Kaggle task. An unverified stale or partial download is
+   discarded and downloaded again rather than trusted.
+5. Hash and safely inspect the archive, reject traversal/symlink/duplicate
+   entries, extract it, and run the pinned MLE-bench preparation boundary.
+6. Build one shared 4,096-example prepared view whose selected files or ZIP
+   members are size- and SHA-bound; revalidate all view and source bytes on
+   resume.
+7. Run every frozen quota slot assigned to the task, with one isolated worker
+   per visible qualified A10G.
+8. Atomically save accepted records, failed attempts, repair links, hashes,
+   slot state, and task-loop state.
+9. Require a completion receipt proving a one-to-one mapping from every task
+   quota slot to a validated durable accepted record.
+10. Recheck the receipt and record hashes, then delete only that task's
+    archive, extracted tree, and reconstructible prepared cache. Resume
+    completes an interrupted receipt-first deletion before advancing, and
+    revalidates every previously completed receipt and accepted record.
+11. Continue to the next task.
 
-## 21. Dataset readiness checklist
-
-### Target and provenance
-
-- [ ] Exactly one canonical target hardware ID per dataset/manifest.
-- [ ] Every label was measured on a qualified physical device of that model.
-- [ ] Device UUID, driver, libraries, container, clocks, power, and temperature recorded.
-- [ ] Predictor training/distillation execution device kept separate from target identity.
-
-### Workload inputs
-
-- [ ] Source, model, graph, input, optimizer, scheduler, and configuration hashes frozen.
-- [ ] Representative families, scales, shapes, batches, and dynamic regimes covered.
-- [ ] Per-operation mixed dtype policies present.
-- [ ] All first-class optimizers have executable, semantically valid workloads.
-- [ ] Core schedulers and meaningful progress points covered.
-- [ ] LR, decay, warmup, parameter groups, accumulation, clipping, and checkpointing recorded.
-
-### Measurements
-
-- [ ] CUDA timing synchronized or event-based.
-- [ ] Warmup/compile/autotune excluded and steady state demonstrated.
-- [ ] Utilization window long enough for real NVML sampling resolution.
-- [ ] PyTorch allocated/reserved and device framebuffer memory retained separately.
-- [ ] Fresh-process repetitions, dispersion, rejection reasons, and raw samples retained.
-- [ ] Full-epoch golden rows validate step extrapolation.
-- [ ] OOM phases and target-validity masks implemented before OOM training.
-
-### Splits and quality
-
-- [ ] Repetitions aggregated before split.
-- [ ] Source groups and equivalent graph signatures isolated.
-- [ ] Normalization fit on train only; calibration fit on validation only.
-- [ ] Frozen test and challenge suites remain untouched by model selection.
-- [ ] Capture, encoding, unknown-time, repeatability, and contamination gates pass.
-- [ ] Label and feature distributions audited for imbalance and missing regimes.
-
-### Training and release
-
-- [ ] Teacher/student target hardware IDs match the label dataset.
-- [ ] Teacher/student dataset, split, normalization, schema, registry, and coarsening hashes match.
-- [ ] Training reports identify predictor execution devices separately.
-- [ ] Accuracy, uncertainty, OOM, slice, ablation, latency, and artifact gates pass.
-- [ ] Runtime allowlists are derived from validated coverage and fail closed.
-
-## 22. Current implementation gaps before production collection
-
-The v3 encoder/model supports the intended semantics, but the existing local
-diagnostic corpus is not yet the dataset specified here. Close these concrete
-gaps first:
-
-1. `WorkloadDescriptor` only allows homogeneous FP32/FP16/BF16 and needs
-   structured mixed-dtype policies.
-2. The default training microbenchmark factory only constructs SGD, Adam, and
-   AdamW; it needs all first-class and composite optimizer factories.
-3. OOM manifest/training needs nullable target masks so regression is not
-   trained on fabricated OOM values.
-4. Profiling failure stages currently collapse most OOMs to warmup/measurement;
-   instrument capture/forward/loss/backward/optimizer/allocator explicitly.
-5. Optimizer state precision, paging, fused backend, sharding, and offload need
-   dedicated features and state/cost formulas.
-6. TF32 and detailed AMP/master-weight policies need explicit execution fields.
-7. Production NVML windows need sustained duration; 10 fast microbenchmark
-   steps are insufficient for utilization labels.
-8. Real dataset adapters should replay actual decoded values/batches rather
-   than only deterministic shape-compatible tensors.
-9. The approved operation registry must be rebuilt from measured target-GPU
-   production workload time; the checked-in registry remains intentionally
-   unapproved.
-10. Generated evaluation slices currently lack some production-only suites and
-    must remain fail-closed until populated.
-
-## 23. Primary references
-
-- Current v3 target order and training contract:
-  `src/perfseer_v3/training.py`
-- Manifest, split fingerprint, materialization, and execution-device selection:
-  `src/perfseer_v3/training_runner.py`
-- Training graph capture and optimizer/scheduler inputs:
-  `src/perfseer_v3/capture_training.py`
-- Exact feature layout and hyperparameters:
-  `src/perfseer_v3/schema.py` and `src/perfseer_v3/training_semantics.py`
-- Source-first profiling and raw record contract:
-  `src/perfseer_v3/profiling.py`
-- Workload descriptors and current bootstrap limits:
-  `src/perfseer_v3/workloads.py`
-- Leakage-safe splitting and required evaluation suites:
-  `src/perfseer_v3/splits.py`
-- Acceptance gates and slice metrics:
-  `src/perfseer_v3/evaluation.py`
-- Example current manifest:
-  `src/perfseer_v3/training_manifest.example.json`
-- [PyTorch optimizer catalog](https://docs.pytorch.org/docs/stable/optim.html)
-- [PyTorch CUDA timing and memory semantics](https://docs.pytorch.org/docs/stable/notes/cuda.html)
-- [PyTorch reproducibility guidance](https://docs.pytorch.org/docs/stable/notes/randomness.html)
-- [PyTorch peak allocated-memory API](https://docs.pytorch.org/docs/stable/generated/torch.cuda.max_memory_allocated.html)
-- [NVIDIA NVML utilization definitions and sampling period](https://docs.nvidia.com/deploy/nvml-api/structnvmlUtilization__t.html)
-- [bitsandbytes 8-bit optimizer catalog](https://huggingface.co/docs/bitsandbytes/v0.43.0/optimizers)
-- [NVIDIA Apex fused optimizers](https://github.com/NVIDIA/apex/tree/master/apex/optimizers)
-- [Meta Distributed Shampoo](https://github.com/facebookresearch/optimizers/blob/main/distributed_shampoo/README.md)
-- [GaLore official implementation](https://github.com/jiaweizzhao/GaLore)
-- [Schedule-Free official implementation](https://github.com/facebookresearch/schedule_free)
-- [Apple AdEMAMix implementation](https://github.com/apple/ml-ademamix)
-
-## 24. Final rule
-
-For each target GPU model:
+Disk admission uses one free-space calculation, not a persistent storage
+ledger:
 
 ```text
-collect labels on that GPU model
--> build one immutable target-GPU dataset
--> train one target-specific teacher on any suitable execution device
--> distill one target-specific student on any suitable execution device
--> deploy the student on CPU or another suitable device
--> use it only to predict workloads requested for its target GPU model
+current durable bytes
++ task archive estimate or exact size
++ extracted/nested/prepared-view bound
++ extraction temporary bound
++ 40 GiB safety margin
+< 600 GiB
 ```
 
-The target GPU determines the meaning of the labels and predictions. It does
-not determine where PerfSeer itself must be trained or executed.
+The materializer and resumable production call site are implemented. All 22
+task layouts pass tiny local archive/schema/resume/integrity/cleanup tests; no
+real Kaggle task data was downloaded during local verification.
+
+## 6. AWS labeling behavior
+
+Eager/compiled mode remains part of the immutable configuration ID. A compiled
+row completes compilation and autotuning before epoch 1. Immediately before
+epoch 3 the child synchronizes CUDA, resets peak memory counters, and starts
+asynchronous target-producing telemetry. Telemetry runs continuously through
+epochs 3–5.
+
+Each physical GPU has one parent supervisor. Each attempt runs in a fresh child
+whose `CUDA_VISIBLE_DEVICES` exposes exactly that GPU. The child must see one
+qualified A10G. The supervisor rejects a busy GPU, enforces a timeout, kills
+the complete process group when needed, and requires process exit plus a stable
+return to the pre-run NVML memory baseline before reusing the GPU.
+
+Every child writes stdout/stderr to a private `0600` attempt log under the
+external workspace. Successful logs are removed; failed logs remain and the
+parent error reports their path. A missing or corrupt envelope, unexpected
+child exception, dependency/data/compiler failure, or unsafe cleanup aborts
+the campaign instead of consuming deterministic quota replacements. Only an
+explicit CUDA OOM enters batch descent; a completed but unstable measurement
+enters the same-cell quarantine/replacement path.
+
+Compiled attempts use per-attempt `TORCHINDUCTOR_CACHE_DIR` and
+`TRITON_CACHE_DIR` directories inside the guarded workspace. The supervisor
+deletes these reconstructible caches after the child exits, preventing
+compiler artifacts from filling an unguarded instance-root `/tmp`.
+
+The runner preserves only the samples needed to derive the six outputs and
+the integrity flags needed for acceptance. It never copies measured VRAM or
+utilization into the model's input feature graph.
+
+The finalized regression row stores the six aggregate labels and hashes its
+accepted evidence record; it does not duplicate raw telemetry into the model's
+feature tensor. Raw samples remain audit evidence for recomputing aggregates and
+checking throttling; the accepted evidence separately retains the contamination
+flag.
+
+An unchanged unstable run is not repeated. It is quarantined and replaced in
+the same quota cell. OOM descent is allowed only because each smaller batch is
+a new configuration. Failed/OOM attempts remain outside the successful
+regression manifest.
+
+The fresh-process supervisor, five-epoch runner, mixed eager/compiled dispatch,
+minimal telemetry, aggregation, stability gate, repair handoff, atomic output,
+and cleanup proof are implemented and pass CPU-only protocol fixtures. There is
+no separate A10G smoke corpus or preliminary campaign. The parent qualifies
+every visible GPU as an A10G before the first attempt, and every production row
+then passes or fails the same fail-closed runner; the task loop resumes and
+repairs failures normally.
+
+## 7. Finalization and completion gates
+
+Finalization may run only over validated accepted A10G records. It must prove:
+
+- exactly 18,000 unique accepted configuration IDs and run IDs;
+- exactly 54,000 ordered epoch measurements, always epochs 3, 4, and 5;
+- exact family, modality, task, regime, precision, optimizer, scheduler,
+  execution, and generated-lineage quotas after repairs;
+- every batch or effective-tier change is a legal, linked OOM repair and is
+  reported as a delta from the frozen manifest rather than treated as quota
+  drift;
+- no accepted record with a failed stability, telemetry, contamination,
+  backend, traversal, finite-state, or cleanup gate;
+- canonical source and graph identities that keep every related row in one
+  leakage group;
+- complete repair/quarantine lineage and no failed attempt in the successful
+  manifest; and
+- hash-bound raw hardware and environment sidecars plus source, task, dataset,
+  receipt, and support-contract provenance.
+
+Create deterministic 80%/10%/10% train/validation/test splits by whole source
+group. Equivalent graphs and mutations of one source lineage remain in one
+split, and at least 10 generated lineages are held out completely. Fit the six
+target transforms using training rows only. Feature normalization remains a
+later GraphIR/training-manifest concern because this label pack deliberately
+does not materialize `GraphIRV3` files.
+
+Produce concise quota, failure, batch-repair, stability, execution-signature,
+provenance, deduplication, split-leakage, and normalization reports. Preserve
+failed/OOM attempts outside the successful training manifest.
+
+The deterministic finalizer is implemented in
+`src/perfseer_v3/dataset_pack/finalization.py` and is invoked automatically
+after the 22nd task receipt. It writes canonical `accepted_labels.jsonl`,
+`failed_attempts.jsonl`, `target_transform.json`, `audit_report.json`, and
+`dataset_manifest.json`, then writes `completion_receipt.json` last. An
+explicit `scripts/finalize_a10g_18k_pack.py --verify-only` recomputes every
+artifact byte without creating or changing workspace state.
+
+Exact fixtures cover 18,000 accepted rows, 54,000 actual epoch subrecords, all
+22 completion receipts, direct/OOM/quarantine/substitution lineages, exact
+grouped splits, train-only target transforms, provenance tampering, deterministic
+publication, CLI read-only verification, and workflow auto-finalization. The
+output declares `artifact_scope: a10g_label_pack`,
+`accepted_a10g_measurement: true`, and `graph_ir_materialized: false`; it does
+not claim to be a complete V3 training manifest.
+
+On the final source snapshot, all 13 exact finalization tests and all 99
+dataset-pack tests pass. An independent verifier separately reproduced all 112
+tests and 294 subtests, the read-only failure behavior, actual epoch counts, all
+receipts, workflow integration, and both repair-lineage forms.
+
+Remaining production completion gates are:
+
+1. Collect task by task until exactly 18,000 A10G records are accepted.
+2. Run the implemented finalizer and its independent `--verify-only` pass over
+   those real accepted records.
+
+Documentation and source verification must parse every JSON example; confirm
+18,000/54,000 and warmup/measured epoch counts; reject stale repetition,
+multi-run aggregation, step-extrapolation, production operation/composite, storage
+ledger, or AWS-service requirements; map all 35 families and 50 generated
+lineages to batch policies; map all 18K rows to factor-complete local evidence;
+distinguish RTX validation from A10G labels; and pass focused tests,
+Markdown/link checks, `git diff --check`, and independent review.

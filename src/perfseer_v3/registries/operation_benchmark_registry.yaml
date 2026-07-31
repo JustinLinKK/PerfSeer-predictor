@@ -1,0 +1,5425 @@
+generators:
+- aliases: []
+  canonical_operation_id: aten.linear
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_linear
+  golden_test_id: a10g_golden:aten_linear
+  raw_target: aten::linear
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.matmul
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_matmul
+  golden_test_id: a10g_golden:aten_matmul
+  raw_target: aten::matmul
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.convolution.2d
+  composite_block_ids:
+  - a10g_composite:convolution_sequential
+  - a10g_composite:convolution_residual_or_branch
+  - a10g_composite:convolution_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.convolution
+  family: convolution
+  generator_id: a10g_microbenchmark:aten_convolution_2d
+  golden_test_id: a10g_golden:aten_convolution_2d
+  raw_target: aten::conv2d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::add_.Tensor
+  - aten::add.out
+  - <built-in function add>
+  canonical_operation_id: aten.add.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_add_tensor
+  golden_test_id: a10g_golden:aten_add_tensor
+  raw_target: aten::add.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.batch_norm
+  composite_block_ids:
+  - a10g_composite:normalization_sequential
+  - a10g_composite:normalization_residual_or_branch
+  - a10g_composite:normalization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.normalization
+  family: normalization
+  generator_id: a10g_microbenchmark:aten_batch_norm
+  golden_test_id: a10g_golden:aten_batch_norm
+  raw_target: aten::batch_norm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.layer_norm
+  composite_block_ids:
+  - a10g_composite:normalization_sequential
+  - a10g_composite:normalization_residual_or_branch
+  - a10g_composite:normalization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.normalization
+  family: normalization
+  generator_id: a10g_microbenchmark:aten_layer_norm
+  golden_test_id: a10g_golden:aten_layer_norm
+  raw_target: aten::layer_norm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::silu_
+  - aten::silu.out
+  canonical_operation_id: aten.silu
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_silu
+  golden_test_id: a10g_golden:aten_silu
+  raw_target: aten::silu
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.embedding
+  composite_block_ids:
+  - a10g_composite:embedding_sequence_sequential
+  - a10g_composite:embedding_sequence_residual_or_branch
+  - a10g_composite:embedding_sequence_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.embedding_sequence
+  family: embedding_sequence
+  generator_id: a10g_microbenchmark:aten_embedding
+  golden_test_id: a10g_golden:aten_embedding
+  raw_target: aten::embedding
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::transpose_
+  - aten::transpose.int_out
+  canonical_operation_id: aten.transpose
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_transpose
+  golden_test_id: a10g_golden:aten_transpose
+  raw_target: aten::transpose.int
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: prim.getitem
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: capture_observed_python_semantics
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:prim_getitem
+  golden_test_id: a10g_golden:prim_getitem
+  raw_target: prim::getitem
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::div_.Tensor
+  - aten::div.out
+  - aten::div.Scalar
+  canonical_operation_id: aten.div.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_div_tensor
+  golden_test_id: a10g_golden:aten_div_tensor
+  raw_target: aten::div.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::_softmax
+  canonical_operation_id: aten.softmax
+  composite_block_ids:
+  - a10g_composite:loss_probability_sequential
+  - a10g_composite:loss_probability_residual_or_branch
+  - a10g_composite:loss_probability_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.loss_probability
+  family: loss_probability
+  generator_id: a10g_microbenchmark:aten_softmax
+  golden_test_id: a10g_golden:aten_softmax
+  raw_target: aten::softmax.int
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - loss
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.gather
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_gather
+  golden_test_id: a10g_golden:aten_gather
+  raw_target: aten::gather
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.topk
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_topk
+  golden_test_id: a10g_golden:aten_topk
+  raw_target: aten::topk
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::clamp_min_
+  - aten::clamp_min.out
+  canonical_operation_id: aten.clamp_min
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_clamp_min
+  golden_test_id: a10g_golden:aten_clamp_min
+  raw_target: aten::clamp_min
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.logsumexp
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_logsumexp
+  golden_test_id: a10g_golden:aten_logsumexp
+  raw_target: aten::logsumexp
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.convolution.1d
+  composite_block_ids:
+  - a10g_composite:convolution_sequential
+  - a10g_composite:convolution_residual_or_branch
+  - a10g_composite:convolution_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.convolution
+  family: convolution
+  generator_id: a10g_microbenchmark:aten_convolution_1d
+  golden_test_id: a10g_golden:aten_convolution_1d
+  raw_target: aten::conv1d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.convolution.3d
+  composite_block_ids:
+  - a10g_composite:convolution_sequential
+  - a10g_composite:convolution_residual_or_branch
+  - a10g_composite:convolution_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.convolution
+  family: convolution
+  generator_id: a10g_microbenchmark:aten_convolution_3d
+  golden_test_id: a10g_golden:aten_convolution_3d
+  raw_target: aten::conv3d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.convolution_transpose.1d
+  composite_block_ids:
+  - a10g_composite:convolution_sequential
+  - a10g_composite:convolution_residual_or_branch
+  - a10g_composite:convolution_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.convolution
+  family: convolution
+  generator_id: a10g_microbenchmark:aten_convolution_transpose_1d
+  golden_test_id: a10g_golden:aten_convolution_transpose_1d
+  raw_target: aten::conv_transpose1d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.convolution_transpose.2d
+  composite_block_ids:
+  - a10g_composite:convolution_sequential
+  - a10g_composite:convolution_residual_or_branch
+  - a10g_composite:convolution_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.convolution
+  family: convolution
+  generator_id: a10g_microbenchmark:aten_convolution_transpose_2d
+  golden_test_id: a10g_golden:aten_convolution_transpose_2d
+  raw_target: aten::conv_transpose2d.input
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.convolution_transpose.3d
+  composite_block_ids:
+  - a10g_composite:convolution_sequential
+  - a10g_composite:convolution_residual_or_branch
+  - a10g_composite:convolution_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.convolution
+  family: convolution
+  generator_id: a10g_microbenchmark:aten_convolution_transpose_3d
+  golden_test_id: a10g_golden:aten_convolution_transpose_3d
+  raw_target: aten::conv_transpose3d.input
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.addmm
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_addmm
+  golden_test_id: a10g_golden:aten_addmm
+  raw_target: aten::addmm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.mm
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_mm
+  golden_test_id: a10g_golden:aten_mm
+  raw_target: aten::mm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.bmm
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_bmm
+  golden_test_id: a10g_golden:aten_bmm
+  raw_target: aten::bmm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.einsum
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_einsum
+  golden_test_id: a10g_golden:aten_einsum
+  raw_target: aten::einsum
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.scaled_dot_product_attention
+  composite_block_ids:
+  - a10g_composite:attention_sequential
+  - a10g_composite:attention_residual_or_branch
+  - a10g_composite:attention_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.attention
+  family: attention
+  generator_id: a10g_microbenchmark:aten_scaled_dot_product_attention
+  golden_test_id: a10g_golden:aten_scaled_dot_product_attention
+  raw_target: aten::scaled_dot_product_attention
+  required_backends:
+  - cuda_requested_and_observed
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.scaled_dot_product_attention.flash
+  composite_block_ids:
+  - a10g_composite:attention_sequential
+  - a10g_composite:attention_residual_or_branch
+  - a10g_composite:attention_saved_activation_or_alias
+  execution_route: a10g_environment_gated_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.attention
+  family: attention
+  generator_id: a10g_microbenchmark:aten_scaled_dot_product_attention_flash
+  golden_test_id: a10g_golden:aten_scaled_dot_product_attention_flash
+  raw_target: aten::_scaled_dot_product_flash_attention
+  required_backends:
+  - cuda_requested_and_observed
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::_native_batch_norm_legit_functional
+  - aten::_native_batch_norm_legit_no_training
+  - aten::cudnn_batch_norm
+  canonical_operation_id: aten.native_batch_norm
+  composite_block_ids:
+  - a10g_composite:normalization_sequential
+  - a10g_composite:normalization_residual_or_branch
+  - a10g_composite:normalization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.normalization
+  family: normalization
+  generator_id: a10g_microbenchmark:aten_native_batch_norm
+  golden_test_id: a10g_golden:aten_native_batch_norm
+  raw_target: aten::native_batch_norm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.native_layer_norm
+  composite_block_ids:
+  - a10g_composite:normalization_sequential
+  - a10g_composite:normalization_residual_or_branch
+  - a10g_composite:normalization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.normalization
+  family: normalization
+  generator_id: a10g_microbenchmark:aten_native_layer_norm
+  golden_test_id: a10g_golden:aten_native_layer_norm
+  raw_target: aten::native_layer_norm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::native_group_norm
+  canonical_operation_id: aten.group_norm
+  composite_block_ids:
+  - a10g_composite:normalization_sequential
+  - a10g_composite:normalization_residual_or_branch
+  - a10g_composite:normalization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.normalization
+  family: normalization
+  generator_id: a10g_microbenchmark:aten_group_norm
+  golden_test_id: a10g_golden:aten_group_norm
+  raw_target: aten::group_norm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.instance_norm
+  composite_block_ids:
+  - a10g_composite:normalization_sequential
+  - a10g_composite:normalization_residual_or_branch
+  - a10g_composite:normalization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.normalization
+  family: normalization
+  generator_id: a10g_microbenchmark:aten_instance_norm
+  golden_test_id: a10g_golden:aten_instance_norm
+  raw_target: aten::instance_norm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::_fused_rms_norm
+  canonical_operation_id: aten.rms_norm
+  composite_block_ids:
+  - a10g_composite:normalization_sequential
+  - a10g_composite:normalization_residual_or_branch
+  - a10g_composite:normalization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.normalization
+  family: normalization
+  generator_id: a10g_microbenchmark:aten_rms_norm
+  golden_test_id: a10g_golden:aten_rms_norm
+  raw_target: aten::rms_norm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::sub_.Tensor
+  - aten::sub.out
+  canonical_operation_id: aten.sub.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_sub_tensor
+  golden_test_id: a10g_golden:aten_sub_tensor
+  raw_target: aten::sub.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::mul_.Tensor
+  - aten::mul.out
+  - aten::mul.Scalar
+  canonical_operation_id: aten.mul.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_mul_tensor
+  golden_test_id: a10g_golden:aten_mul_tensor
+  raw_target: aten::mul.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::pow.Tensor_Scalar
+  canonical_operation_id: aten.pow.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_pow_tensor
+  golden_test_id: a10g_golden:aten_pow_tensor
+  raw_target: aten::pow.Tensor_Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.where
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_where
+  golden_test_id: a10g_golden:aten_where
+  raw_target: aten::where.self
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::relu_
+  - aten::relu.out
+  canonical_operation_id: aten.relu
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_relu
+  golden_test_id: a10g_golden:aten_relu
+  raw_target: aten::relu
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.gelu
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_gelu
+  golden_test_id: a10g_golden:aten_gelu
+  raw_target: aten::gelu
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.sigmoid
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_sigmoid
+  golden_test_id: a10g_golden:aten_sigmoid
+  raw_target: aten::sigmoid
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.tanh
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_tanh
+  golden_test_id: a10g_golden:aten_tanh
+  raw_target: aten::tanh
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::sum
+  canonical_operation_id: aten.sum
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_sum
+  golden_test_id: a10g_golden:aten_sum
+  raw_target: aten::sum.dim_IntList
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::mean
+  canonical_operation_id: aten.mean
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_mean
+  golden_test_id: a10g_golden:aten_mean
+  raw_target: aten::mean.dim
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.amax
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_amax
+  golden_test_id: a10g_golden:aten_amax
+  raw_target: aten::amax
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.mse_loss
+  composite_block_ids:
+  - a10g_composite:loss_probability_sequential
+  - a10g_composite:loss_probability_residual_or_branch
+  - a10g_composite:loss_probability_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.loss_probability
+  family: loss_probability
+  generator_id: a10g_microbenchmark:aten_mse_loss
+  golden_test_id: a10g_golden:aten_mse_loss
+  raw_target: aten::mse_loss
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - loss
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::nll_loss_nd
+  canonical_operation_id: aten.nll_loss
+  composite_block_ids:
+  - a10g_composite:loss_probability_sequential
+  - a10g_composite:loss_probability_residual_or_branch
+  - a10g_composite:loss_probability_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.loss_probability
+  family: loss_probability
+  generator_id: a10g_microbenchmark:aten_nll_loss
+  golden_test_id: a10g_golden:aten_nll_loss
+  raw_target: aten::nll_loss_forward
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - loss
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.max_pool.2d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_max_pool_2d
+  golden_test_id: a10g_golden:aten_max_pool_2d
+  raw_target: aten::max_pool2d_with_indices
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.avg_pool.2d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_avg_pool_2d
+  golden_test_id: a10g_golden:aten_avg_pool_2d
+  raw_target: aten::avg_pool2d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::_adaptive_avg_pool2d
+  canonical_operation_id: aten.adaptive_avg_pool.2d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_adaptive_avg_pool_2d
+  golden_test_id: a10g_golden:aten_adaptive_avg_pool_2d
+  raw_target: aten::adaptive_avg_pool2d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.upsample.bilinear2d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_upsample_bilinear2d
+  golden_test_id: a10g_golden:aten_upsample_bilinear2d
+  raw_target: aten::upsample_bilinear2d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - prims::collapse_view
+  - prims::view_of
+  - aten::as_strided
+  - aten::_unsafe_view
+  canonical_operation_id: aten.view
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_view
+  golden_test_id: a10g_golden:aten_view
+  raw_target: aten::view
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.reshape
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_reshape
+  golden_test_id: a10g_golden:aten_reshape
+  raw_target: aten::reshape
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.permute
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_permute
+  golden_test_id: a10g_golden:aten_permute
+  raw_target: aten::permute
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.cat
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_cat
+  golden_test_id: a10g_golden:aten_cat
+  raw_target: aten::cat
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.stack
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_stack
+  golden_test_id: a10g_golden:aten_stack
+  raw_target: aten::stack
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.clone
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_clone
+  golden_test_id: a10g_golden:aten_clone
+  raw_target: aten::clone
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::expand_as
+  canonical_operation_id: aten.expand
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_expand
+  golden_test_id: a10g_golden:aten_expand
+  raw_target: aten::expand
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.repeat
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_repeat
+  golden_test_id: a10g_golden:aten_repeat
+  raw_target: aten::repeat
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.index
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_index
+  golden_test_id: a10g_golden:aten_index
+  raw_target: aten::index.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.scatter
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_scatter
+  golden_test_id: a10g_golden:aten_scatter
+  raw_target: aten::scatter.src
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.sort
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_sort
+  golden_test_id: a10g_golden:aten_sort
+  raw_target: aten::sort
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::dropout_
+  canonical_operation_id: aten.dropout
+  composite_block_ids:
+  - a10g_composite:random_regularization_sequential
+  - a10g_composite:random_regularization_residual_or_branch
+  - a10g_composite:random_regularization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.random_regularization
+  family: random_regularization
+  generator_id: a10g_microbenchmark:aten_dropout
+  golden_test_id: a10g_golden:aten_dropout
+  raw_target: aten::dropout
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::to.device
+  - aten::to.dtype_layout
+  canonical_operation_id: aten.to_copy
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_to_copy
+  golden_test_id: a10g_golden:aten_to_copy
+  raw_target: aten::_to_copy
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.loss.generic
+  composite_block_ids:
+  - a10g_composite:loss_probability_sequential
+  - a10g_composite:loss_probability_residual_or_branch
+  - a10g_composite:loss_probability_saved_activation_or_alias
+  execution_route: training_graph_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.loss_probability
+  family: loss_probability
+  generator_id: a10g_microbenchmark:perfseer_loss_generic
+  golden_test_id: a10g_golden:perfseer_loss_generic
+  raw_target: perfseer::loss.generic
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - loss
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.training.analytical_backward
+  composite_block_ids:
+  - a10g_composite:training_sequential
+  - a10g_composite:training_residual_or_branch
+  - a10g_composite:training_saved_activation_or_alias
+  execution_route: training_graph_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.training
+  family: training
+  generator_id: a10g_microbenchmark:perfseer_training_analytical_backward
+  golden_test_id: a10g_golden:perfseer_training_analytical_backward
+  raw_target: perfseer::analytical_backward
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.sgd
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_sgd
+  golden_test_id: a10g_golden:perfseer_optimizer_sgd
+  raw_target: perfseer::optimizer.sgd
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.adam
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_adam
+  golden_test_id: a10g_golden:perfseer_optimizer_adam
+  raw_target: perfseer::optimizer.adam
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.adamw
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_adamw
+  golden_test_id: a10g_golden:perfseer_optimizer_adamw
+  raw_target: perfseer::optimizer.adamw
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.asgd
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_asgd
+  golden_test_id: a10g_golden:perfseer_optimizer_asgd
+  raw_target: perfseer::optimizer.asgd
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.adadelta
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_adadelta
+  golden_test_id: a10g_golden:perfseer_optimizer_adadelta
+  raw_target: perfseer::optimizer.adadelta
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.adafactor
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_adafactor
+  golden_test_id: a10g_golden:perfseer_optimizer_adafactor
+  raw_target: perfseer::optimizer.adafactor
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.adagrad
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_adagrad
+  golden_test_id: a10g_golden:perfseer_optimizer_adagrad
+  raw_target: perfseer::optimizer.adagrad
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.adamax
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_adamax
+  golden_test_id: a10g_golden:perfseer_optimizer_adamax
+  raw_target: perfseer::optimizer.adamax
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.lbfgs
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_lbfgs
+  golden_test_id: a10g_golden:perfseer_optimizer_lbfgs
+  raw_target: perfseer::optimizer.lbfgs
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.muon
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_muon
+  golden_test_id: a10g_golden:perfseer_optimizer_muon
+  raw_target: perfseer::optimizer.muon
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.nadam
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_nadam
+  golden_test_id: a10g_golden:perfseer_optimizer_nadam
+  raw_target: perfseer::optimizer.nadam
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.radam
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_radam
+  golden_test_id: a10g_golden:perfseer_optimizer_radam
+  raw_target: perfseer::optimizer.radam
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.rmsprop
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_rmsprop
+  golden_test_id: a10g_golden:perfseer_optimizer_rmsprop
+  raw_target: perfseer::optimizer.rmsprop
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.rprop
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_rprop
+  golden_test_id: a10g_golden:perfseer_optimizer_rprop
+  raw_target: perfseer::optimizer.rprop
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.sparse_adam
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_sparse_adam
+  golden_test_id: a10g_golden:perfseer_optimizer_sparse_adam
+  raw_target: perfseer::optimizer.sparse_adam
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.lamb
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_lamb
+  golden_test_id: a10g_golden:perfseer_optimizer_lamb
+  raw_target: perfseer::optimizer.lamb
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.lars
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_lars
+  golden_test_id: a10g_golden:perfseer_optimizer_lars
+  raw_target: perfseer::optimizer.lars
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: perfseer.optimizer.lion
+  composite_block_ids:
+  - a10g_composite:optimizer_sequential
+  - a10g_composite:optimizer_residual_or_branch
+  - a10g_composite:optimizer_saved_activation_or_alias
+  execution_route: optimizer_step_annotation
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.optimizer
+  family: optimizer
+  generator_id: a10g_microbenchmark:perfseer_optimizer_lion
+  golden_test_id: a10g_golden:perfseer_optimizer_lion
+  raw_target: perfseer::optimizer.lion
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - optimizer
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - <built-in function getitem>
+  canonical_operation_id: operator.getitem
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: capture_observed_python_semantics
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:operator_getitem
+  golden_test_id: a10g_golden:operator_getitem
+  raw_target: operator::getitem
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.abs
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_abs
+  golden_test_id: a10g_golden:aten_abs
+  raw_target: aten::abs
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.adaptive_avg_pool1d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_adaptive_avg_pool1d
+  golden_test_id: a10g_golden:aten_adaptive_avg_pool1d
+  raw_target: aten::adaptive_avg_pool1d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::_adaptive_avg_pool3d
+  canonical_operation_id: aten.adaptive_avg_pool3d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_adaptive_avg_pool3d
+  golden_test_id: a10g_golden:aten_adaptive_avg_pool3d
+  raw_target: aten::adaptive_avg_pool3d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.amin
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_amin
+  golden_test_id: a10g_golden:aten_amin
+  raw_target: aten::amin
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::arange.start
+  canonical_operation_id: aten.arange
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_arange
+  golden_test_id: a10g_golden:aten_arange
+  raw_target: aten::arange
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.argmax
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_argmax
+  golden_test_id: a10g_golden:aten_argmax
+  raw_target: aten::argmax
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.argmin
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_argmin
+  golden_test_id: a10g_golden:aten_argmin
+  raw_target: aten::argmin
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.avg_pool1d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_avg_pool1d
+  golden_test_id: a10g_golden:aten_avg_pool1d
+  raw_target: aten::avg_pool1d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.avg_pool3d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_avg_pool3d
+  golden_test_id: a10g_golden:aten_avg_pool3d
+  raw_target: aten::avg_pool3d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.bernoulli
+  composite_block_ids:
+  - a10g_composite:random_regularization_sequential
+  - a10g_composite:random_regularization_residual_or_branch
+  - a10g_composite:random_regularization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.random_regularization
+  family: random_regularization
+  generator_id: a10g_microbenchmark:aten_bernoulli
+  golden_test_id: a10g_golden:aten_bernoulli
+  raw_target: aten::bernoulli
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.bilinear
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_bilinear
+  golden_test_id: a10g_golden:aten_bilinear
+  raw_target: aten::bilinear
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.binary_cross_entropy_with_logits
+  composite_block_ids:
+  - a10g_composite:loss_probability_sequential
+  - a10g_composite:loss_probability_residual_or_branch
+  - a10g_composite:loss_probability_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.loss_probability
+  family: loss_probability
+  generator_id: a10g_microbenchmark:aten_binary_cross_entropy_with_logits
+  golden_test_id: a10g_golden:aten_binary_cross_entropy_with_logits
+  raw_target: aten::binary_cross_entropy_with_logits
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - loss
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - prims::broadcast_in_dim
+  canonical_operation_id: aten.broadcast_tensors
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_broadcast_tensors
+  golden_test_id: a10g_golden:aten_broadcast_tensors
+  raw_target: aten::broadcast_tensors
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.chunk
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_chunk
+  golden_test_id: a10g_golden:aten_chunk
+  raw_target: aten::chunk
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.clamp
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_clamp
+  golden_test_id: a10g_golden:aten_clamp
+  raw_target: aten::clamp
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.contiguous
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_contiguous
+  golden_test_id: a10g_golden:aten_contiguous
+  raw_target: aten::contiguous
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.cos
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_cos
+  golden_test_id: a10g_golden:aten_cos
+  raw_target: aten::cos
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.cross_entropy_loss
+  composite_block_ids:
+  - a10g_composite:loss_probability_sequential
+  - a10g_composite:loss_probability_residual_or_branch
+  - a10g_composite:loss_probability_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.loss_probability
+  family: loss_probability
+  generator_id: a10g_microbenchmark:aten_cross_entropy_loss
+  golden_test_id: a10g_golden:aten_cross_entropy_loss
+  raw_target: aten::cross_entropy_loss
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - loss
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.elu
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_elu
+  golden_test_id: a10g_golden:aten_elu
+  raw_target: aten::elu
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::_embedding_bag
+  canonical_operation_id: aten.embedding_bag
+  composite_block_ids:
+  - a10g_composite:embedding_sequence_sequential
+  - a10g_composite:embedding_sequence_residual_or_branch
+  - a10g_composite:embedding_sequence_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.embedding_sequence
+  family: embedding_sequence
+  generator_id: a10g_microbenchmark:aten_embedding_bag
+  golden_test_id: a10g_golden:aten_embedding_bag
+  raw_target: aten::embedding_bag.padding_idx
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.erf
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_erf
+  golden_test_id: a10g_golden:aten_erf
+  raw_target: aten::erf
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.exp
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_exp
+  golden_test_id: a10g_golden:aten_exp
+  raw_target: aten::exp
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.flatten
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_flatten
+  golden_test_id: a10g_golden:aten_flatten
+  raw_target: aten::flatten.using_ints
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::grid_sampler_2d
+  canonical_operation_id: aten.grid_sampler
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_grid_sampler
+  golden_test_id: a10g_golden:aten_grid_sampler
+  raw_target: aten::grid_sampler
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.gru
+  composite_block_ids:
+  - a10g_composite:embedding_sequence_sequential
+  - a10g_composite:embedding_sequence_residual_or_branch
+  - a10g_composite:embedding_sequence_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.embedding_sequence
+  family: embedding_sequence
+  generator_id: a10g_microbenchmark:aten_gru
+  golden_test_id: a10g_golden:aten_gru
+  raw_target: aten::gru.input
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.index_put
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_index_put
+  golden_test_id: a10g_golden:aten_index_put
+  raw_target: aten::index_put
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.index_select
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_index_select
+  golden_test_id: a10g_golden:aten_index_select
+  raw_target: aten::index_select
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.kl_div
+  composite_block_ids:
+  - a10g_composite:loss_probability_sequential
+  - a10g_composite:loss_probability_residual_or_branch
+  - a10g_composite:loss_probability_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.loss_probability
+  family: loss_probability
+  generator_id: a10g_microbenchmark:aten_kl_div
+  golden_test_id: a10g_golden:aten_kl_div
+  raw_target: aten::kl_div
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - loss
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.leaky_relu
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_leaky_relu
+  golden_test_id: a10g_golden:aten_leaky_relu
+  raw_target: aten::leaky_relu
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.linalg_vector_norm
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_linalg_vector_norm
+  golden_test_id: a10g_golden:aten_linalg_vector_norm
+  raw_target: aten::linalg_vector_norm
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.log
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_log
+  golden_test_id: a10g_golden:aten_log
+  raw_target: aten::log
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::_log_softmax
+  canonical_operation_id: aten.log_softmax
+  composite_block_ids:
+  - a10g_composite:loss_probability_sequential
+  - a10g_composite:loss_probability_residual_or_branch
+  - a10g_composite:loss_probability_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.loss_probability
+  family: loss_probability
+  generator_id: a10g_microbenchmark:aten_log_softmax
+  golden_test_id: a10g_golden:aten_log_softmax
+  raw_target: aten::log_softmax.int
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - loss
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.lstm
+  composite_block_ids:
+  - a10g_composite:embedding_sequence_sequential
+  - a10g_composite:embedding_sequence_residual_or_branch
+  - a10g_composite:embedding_sequence_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.embedding_sequence
+  family: embedding_sequence
+  generator_id: a10g_microbenchmark:aten_lstm
+  golden_test_id: a10g_golden:aten_lstm
+  raw_target: aten::lstm.input
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::masked_fill_.Scalar
+  canonical_operation_id: aten.masked_fill
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_masked_fill
+  golden_test_id: a10g_golden:aten_masked_fill
+  raw_target: aten::masked_fill.Scalar
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.masked_select
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_masked_select
+  golden_test_id: a10g_golden:aten_masked_select
+  raw_target: aten::masked_select
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.max_pool1d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_max_pool1d
+  golden_test_id: a10g_golden:aten_max_pool1d
+  raw_target: aten::max_pool1d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.max_pool2d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_max_pool2d
+  golden_test_id: a10g_golden:aten_max_pool2d
+  raw_target: aten::max_pool2d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::max_pool3d_with_indices
+  canonical_operation_id: aten.max_pool3d
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_max_pool3d
+  golden_test_id: a10g_golden:aten_max_pool3d
+  raw_target: aten::max_pool3d
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.maximum
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_maximum
+  golden_test_id: a10g_golden:aten_maximum
+  raw_target: aten::maximum
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.minimum
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_minimum
+  golden_test_id: a10g_golden:aten_minimum
+  raw_target: aten::minimum
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.mish
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_mish
+  golden_test_id: a10g_golden:aten_mish
+  raw_target: aten::mish
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.mv
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_mv
+  golden_test_id: a10g_golden:aten_mv
+  raw_target: aten::mv
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.narrow
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_narrow
+  golden_test_id: a10g_golden:aten_narrow
+  raw_target: aten::narrow
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.ones_like
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_ones_like
+  golden_test_id: a10g_golden:aten_ones_like
+  raw_target: aten::ones_like
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.pad
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_pad
+  golden_test_id: a10g_golden:aten_pad
+  raw_target: aten::pad
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.prod
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_prod
+  golden_test_id: a10g_golden:aten_prod
+  raw_target: aten::prod.dim_int
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.rand_like
+  composite_block_ids:
+  - a10g_composite:random_regularization_sequential
+  - a10g_composite:random_regularization_residual_or_branch
+  - a10g_composite:random_regularization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.random_regularization
+  family: random_regularization
+  generator_id: a10g_microbenchmark:aten_rand_like
+  golden_test_id: a10g_golden:aten_rand_like
+  raw_target: aten::rand_like
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.remainder.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_remainder_tensor
+  golden_test_id: a10g_golden:aten_remainder_tensor
+  raw_target: aten::remainder.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.rnn_tanh
+  composite_block_ids:
+  - a10g_composite:embedding_sequence_sequential
+  - a10g_composite:embedding_sequence_residual_or_branch
+  - a10g_composite:embedding_sequence_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.embedding_sequence
+  family: embedding_sequence
+  generator_id: a10g_microbenchmark:aten_rnn_tanh
+  golden_test_id: a10g_golden:aten_rnn_tanh
+  raw_target: aten::rnn_tanh.input
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.rsqrt
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_rsqrt
+  golden_test_id: a10g_golden:aten_rsqrt
+  raw_target: aten::rsqrt
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.scatter_reduce
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_scatter_reduce
+  golden_test_id: a10g_golden:aten_scatter_reduce
+  raw_target: aten::scatter_reduce.two
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.select
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_select
+  golden_test_id: a10g_golden:aten_select
+  raw_target: aten::select.int
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.selu
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_selu
+  golden_test_id: a10g_golden:aten_selu
+  raw_target: aten::selu
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.sin
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_sin
+  golden_test_id: a10g_golden:aten_sin
+  raw_target: aten::sin
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.slice
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_slice
+  golden_test_id: a10g_golden:aten_slice
+  raw_target: aten::slice.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.softplus
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_softplus
+  golden_test_id: a10g_golden:aten_softplus
+  raw_target: aten::softplus
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - prims::split_dim
+  canonical_operation_id: aten.split
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_split
+  golden_test_id: a10g_golden:aten_split
+  raw_target: aten::split.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.sqrt
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_sqrt
+  golden_test_id: a10g_golden:aten_sqrt
+  raw_target: aten::sqrt
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.squeeze
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_squeeze
+  golden_test_id: a10g_golden:aten_squeeze
+  raw_target: aten::squeeze.dim
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::std.correction
+  canonical_operation_id: aten.std
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_std
+  golden_test_id: a10g_golden:aten_std
+  raw_target: aten::std.dim
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.sym_size
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: capture_observed_python_semantics
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_sym_size
+  golden_test_id: a10g_golden:aten_sym_size
+  raw_target: aten::sym_size.int
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.tile
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_tile
+  golden_test_id: a10g_golden:aten_tile
+  raw_target: aten::tile
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.unbind
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_unbind
+  golden_test_id: a10g_golden:aten_unbind
+  raw_target: aten::unbind.int
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.unflatten
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_unflatten
+  golden_test_id: a10g_golden:aten_unflatten
+  raw_target: aten::unflatten.int
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.unsqueeze
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_unsqueeze
+  golden_test_id: a10g_golden:aten_unsqueeze
+  raw_target: aten::unsqueeze
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.upsample_bilinear2d.vec
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_upsample_bilinear2d_vec
+  golden_test_id: a10g_golden:aten_upsample_bilinear2d_vec
+  raw_target: aten::upsample_bilinear2d.vec
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::var.correction
+  canonical_operation_id: aten.var
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_var
+  golden_test_id: a10g_golden:aten_var
+  raw_target: aten::var.dim
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.zeros
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_zeros
+  golden_test_id: a10g_golden:aten_zeros
+  raw_target: aten::zeros
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.zeros_like
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_zeros_like
+  golden_test_id: a10g_golden:aten_zeros_like
+  raw_target: aten::zeros_like
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.bitwise_and.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_bitwise_and_tensor
+  golden_test_id: a10g_golden:aten_bitwise_and_tensor
+  raw_target: aten::__and__.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.eq.Scalar
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_eq_scalar
+  golden_test_id: a10g_golden:aten_eq_scalar
+  raw_target: aten::eq.Scalar
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.ge.Scalar
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_ge_scalar
+  golden_test_id: a10g_golden:aten_ge_scalar
+  raw_target: aten::ge.Scalar
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.ne.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_ne_tensor
+  golden_test_id: a10g_golden:aten_ne_tensor
+  raw_target: aten::ne.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.hardsigmoid
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_hardsigmoid
+  golden_test_id: a10g_golden:aten_hardsigmoid
+  raw_target: aten::hardsigmoid
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::hardswish_
+  canonical_operation_id: aten.hardswish
+  composite_block_ids:
+  - a10g_composite:activation_unary_sequential
+  - a10g_composite:activation_unary_residual_or_branch
+  - a10g_composite:activation_unary_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.activation_unary
+  family: activation_unary
+  generator_id: a10g_microbenchmark:aten_hardswish
+  golden_test_id: a10g_golden:aten_hardswish
+  raw_target: aten::hardswish
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.new_ones
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_new_ones
+  golden_test_id: a10g_golden:aten_new_ones
+  raw_target: aten::new_ones
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.new_zeros
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_new_zeros
+  golden_test_id: a10g_golden:aten_new_zeros
+  raw_target: aten::new_zeros
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.ones
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_ones
+  golden_test_id: a10g_golden:aten_ones
+  raw_target: aten::ones
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.pow.Scalar
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_pow_scalar
+  golden_test_id: a10g_golden:aten_pow_scalar
+  raw_target: aten::pow_.Scalar
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases:
+  - aten::scatter_add_
+  canonical_operation_id: aten.scatter_add
+  composite_block_ids:
+  - a10g_composite:index_scatter_sequential
+  - a10g_composite:index_scatter_residual_or_branch
+  - a10g_composite:index_scatter_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.index_scatter
+  family: index_scatter
+  generator_id: a10g_microbenchmark:aten_scatter_add
+  golden_test_id: a10g_golden:aten_scatter_add
+  raw_target: aten::scatter_add
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.t
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_t
+  golden_test_id: a10g_golden:aten_t
+  raw_target: aten::t
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.cudnn_rnn
+  composite_block_ids:
+  - a10g_composite:embedding_sequence_sequential
+  - a10g_composite:embedding_sequence_residual_or_branch
+  - a10g_composite:embedding_sequence_saved_activation_or_alias
+  execution_route: a10g_environment_gated_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.embedding_sequence
+  family: embedding_sequence
+  generator_id: a10g_microbenchmark:aten_cudnn_rnn
+  golden_test_id: a10g_golden:aten_cudnn_rnn
+  raw_target: aten::_cudnn_rnn
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.local_scalar_dense
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_local_scalar_dense
+  golden_test_id: a10g_golden:aten_local_scalar_dense
+  raw_target: aten::_local_scalar_dense
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.detach
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_detach
+  golden_test_id: a10g_golden:aten_detach
+  raw_target: aten::detach
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.all
+  composite_block_ids:
+  - a10g_composite:reduction_sequential
+  - a10g_composite:reduction_residual_or_branch
+  - a10g_composite:reduction_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.reduction
+  family: reduction
+  generator_id: a10g_microbenchmark:aten_all
+  golden_test_id: a10g_golden:aten_all
+  raw_target: aten::all
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.empty
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_empty
+  golden_test_id: a10g_golden:aten_empty
+  raw_target: aten::empty.memory_format
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.set.source_storage
+  composite_block_ids:
+  - a10g_composite:layout_shape_sequential
+  - a10g_composite:layout_shape_residual_or_branch
+  - a10g_composite:layout_shape_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.layout_shape
+  family: layout_shape
+  generator_id: a10g_microbenchmark:aten_set_source_storage
+  golden_test_id: a10g_golden:aten_set_source_storage
+  raw_target: aten::set_.source_Storage
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.convolution.generic
+  composite_block_ids:
+  - a10g_composite:convolution_sequential
+  - a10g_composite:convolution_residual_or_branch
+  - a10g_composite:convolution_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.convolution
+  family: convolution
+  generator_id: a10g_microbenchmark:aten_convolution_generic
+  golden_test_id: a10g_golden:aten_convolution_generic
+  raw_target: aten::convolution
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.scaled_dot_product_attention.efficient
+  composite_block_ids:
+  - a10g_composite:attention_sequential
+  - a10g_composite:attention_residual_or_branch
+  - a10g_composite:attention_saved_activation_or_alias
+  execution_route: a10g_environment_gated_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.attention
+  family: attention
+  generator_id: a10g_microbenchmark:aten_scaled_dot_product_attention_efficient
+  golden_test_id: a10g_golden:aten_scaled_dot_product_attention_efficient
+  raw_target: aten::_scaled_dot_product_efficient_attention
+  required_backends:
+  - cuda_requested_and_observed
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.native_multi_head_attention
+  composite_block_ids:
+  - a10g_composite:attention_sequential
+  - a10g_composite:attention_residual_or_branch
+  - a10g_composite:attention_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.attention
+  family: attention
+  generator_id: a10g_microbenchmark:aten_native_multi_head_attention
+  golden_test_id: a10g_golden:aten_native_multi_head_attention
+  raw_target: aten::_native_multi_head_attention
+  required_backends:
+  - cuda_requested_and_observed
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.trilinear
+  composite_block_ids:
+  - a10g_composite:dense_matrix_sequential
+  - a10g_composite:dense_matrix_residual_or_branch
+  - a10g_composite:dense_matrix_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.dense_matrix
+  family: dense_matrix
+  generator_id: a10g_microbenchmark:aten_trilinear
+  golden_test_id: a10g_golden:aten_trilinear
+  raw_target: aten::_trilinear
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.constant_pad_nd
+  composite_block_ids:
+  - a10g_composite:pool_resample_sequential
+  - a10g_composite:pool_resample_residual_or_branch
+  - a10g_composite:pool_resample_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.pool_resample
+  family: pool_resample
+  generator_id: a10g_microbenchmark:aten_constant_pad_nd
+  golden_test_id: a10g_golden:aten_constant_pad_nd
+  raw_target: aten::constant_pad_nd
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.native_dropout
+  composite_block_ids:
+  - a10g_composite:random_regularization_sequential
+  - a10g_composite:random_regularization_residual_or_branch
+  - a10g_composite:random_regularization_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.random_regularization
+  family: random_regularization
+  generator_id: a10g_microbenchmark:aten_native_dropout
+  golden_test_id: a10g_golden:aten_native_dropout
+  raw_target: aten::native_dropout
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.native_dropout_backward
+  composite_block_ids:
+  - a10g_composite:training_sequential
+  - a10g_composite:training_residual_or_branch
+  - a10g_composite:training_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.training
+  family: training
+  generator_id: a10g_microbenchmark:aten_native_dropout_backward
+  golden_test_id: a10g_golden:aten_native_dropout_backward
+  raw_target: aten::native_dropout_backward
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.sigmoid_backward
+  composite_block_ids:
+  - a10g_composite:training_sequential
+  - a10g_composite:training_residual_or_branch
+  - a10g_composite:training_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.training
+  family: training
+  generator_id: a10g_microbenchmark:aten_sigmoid_backward
+  golden_test_id: a10g_golden:aten_sigmoid_backward
+  raw_target: aten::sigmoid_backward
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+- aliases: []
+  canonical_operation_id: aten.xlogy.Tensor
+  composite_block_ids:
+  - a10g_composite:elementwise_sequential
+  - a10g_composite:elementwise_residual_or_branch
+  - a10g_composite:elementwise_saved_activation_or_alias
+  execution_route: direct_or_higher_level_dispatcher
+  factory_id: perfseer_v3.dataset_pack.operation_benchmarks.elementwise
+  family: elementwise
+  generator_id: a10g_microbenchmark:aten_xlogy_tensor
+  golden_test_id: a10g_golden:aten_xlogy_tensor
+  raw_target: aten::xlogy.Tensor
+  required_backends:
+  - cuda_eager
+  required_dtypes:
+  - float32
+  - float16
+  - bfloat16
+  required_layouts:
+  - contiguous
+  - non_contiguous
+  required_phases:
+  - forward
+  - backward
+  required_shape_regimes:
+  - tiny
+  - small
+  - medium
+  - large
+  - boundary
+operation_registry_sha256: e0cca4384b3a151cc0074e853de430a6493af02b3e669ccba2f8fe76a1f04d77
+support_contract_sha256: 48b721aa4ddab7791a2d2cdf69b2b5c1ea430dbb40c8174761d1a442132a23ac
+target_hardware_id: nvidia_a10g_24gb_aws_g5
+version: perfseer_v3_a10g_operation_generator_registry_v1
+generator_registry_sha256: 84c31463b8c6460a9876ee13601f6b102f4954ec61a9855d1f185514734ea6ee
