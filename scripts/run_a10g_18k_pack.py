@@ -32,6 +32,7 @@ from perfseer_v3.dataset_pack.kaggle import (
     validate_external_credentials,
 )
 from perfseer_v3.dataset_pack.task_registry import load_task_registry
+from perfseer_v3.dataset_pack.sharding import SHARD_IDS, task_entries_for_shard
 REQUIRED_RUNTIME_MODULES = {
     "appdirs": "appdirs",
     "kaggle": "kaggle",
@@ -169,13 +170,22 @@ def verify_runtime_dependencies() -> None:
                     raise RuntimeError("A10G dataset runtime requires a working CUDA PyTorch build")
 
 
-def verify_all_kaggle_access(kaggle_executable: str) -> None:
-    """Fail before collection unless the account can inventory every frozen task."""
+def verify_all_kaggle_access(
+    kaggle_executable: str,
+    *,
+    task_group: str | None = None,
+) -> None:
+    """Fail unless the account can inventory every task this command will run."""
 
     validate_external_credentials(REPOSITORY_ROOT)
     client = KaggleCliClient(executable=kaggle_executable)
     client.authenticate()
-    for entry in load_task_registry().entries:
+    entries = (
+        load_task_registry().entries
+        if task_group is None
+        else task_entries_for_shard(task_group)
+    )
+    for entry in entries:
         try:
             client.probe_competition(entry.kaggle_slug)
         except KaggleMaterializationError as error:
@@ -190,20 +200,49 @@ def main() -> None:
     parser.add_argument("--mlebench-checkout", type=Path, required=True)
     parser.add_argument("--kaggle-executable", default="kaggle")
     parser.add_argument("--materialize-only", action="store_true")
+    parser.add_argument(
+        "--max-new-accepted",
+        type=int,
+        default=None,
+        help=(
+            "return at a safe worker-batch boundary after approximately this many "
+            "new accepted rows; omit for production completion"
+        ),
+    )
+    parser.add_argument(
+        "--task-group",
+        choices=SHARD_IDS,
+        default=None,
+        help="run one deterministic whole-task shard; omit for the full 18K workflow",
+    )
     arguments = parser.parse_args()
     validate_external_credentials(REPOSITORY_ROOT)
     verify_runtime_dependencies()
+    selected_entries = (
+        load_task_registry().entries
+        if arguments.task_group is None
+        else task_entries_for_shard(arguments.task_group)
+    )
     verify_frozen_preparers(
         arguments.mlebench_checkout,
-        load_task_registry().entries,
+        selected_entries,
     )
-    verify_all_kaggle_access(arguments.kaggle_executable)
+    if arguments.task_group is None:
+        # Preserve the original entrypoint call contract for the default full run.
+        verify_all_kaggle_access(arguments.kaggle_executable)
+    else:
+        verify_all_kaggle_access(
+            arguments.kaggle_executable,
+            task_group=arguments.task_group,
+        )
     run_task_workflow(
         workspace=arguments.workspace,
         repository_root=REPOSITORY_ROOT,
         mlebench_checkout=arguments.mlebench_checkout,
         kaggle_executable=arguments.kaggle_executable,
         materialize_only=arguments.materialize_only,
+        task_group=arguments.task_group,
+        max_new_accepted=arguments.max_new_accepted,
     )
 
 

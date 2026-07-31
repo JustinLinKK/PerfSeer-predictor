@@ -1043,10 +1043,25 @@ def _resolve_workspace_slots(
     resolutions: Mapping[str, str],
     accepted: Mapping[str, LabelRunRecord],
     failures: Sequence[LabelRunRecord],
+    *,
+    root_candidates: Sequence[TargetCandidate] | None = None,
 ) -> tuple[ResolvedAcceptedSlot, ...]:
     from .workflow import _load_slot
 
-    roots = {row.candidate_id: row for row in manifest.candidates}
+    selected_roots = tuple(
+        manifest.candidates if root_candidates is None else root_candidates
+    )
+    manifest_roots = {row.candidate_id: row for row in manifest.candidates}
+    if (
+        not selected_roots
+        or len({row.candidate_id for row in selected_roots}) != len(selected_roots)
+        or any(manifest_roots.get(row.candidate_id) != row for row in selected_roots)
+        or set(resolutions) != {row.candidate_id for row in selected_roots}
+    ):
+        raise FinalizationError(
+            "workspace resolution roots differ from the selected frozen manifest roots"
+        )
+    roots = {row.candidate_id: row for row in selected_roots}
     task_by_id = {row.task_id: row for row in load_task_registry().entries}
     failures_by_configuration = {row.configuration_id: row for row in failures}
     if len(failures_by_configuration) != len(failures):
@@ -1063,7 +1078,7 @@ def _resolve_workspace_slots(
     referenced_substitution: set[str] = set()
     referenced_failures: set[str] = set()
     resolved: list[ResolvedAcceptedSlot] = []
-    for root in manifest.candidates:
+    for root in selected_roots:
         expected_final_id = resolutions.get(root.candidate_id)
         if expected_final_id is None:
             raise FinalizationError("workspace receipt omitted a frozen root")

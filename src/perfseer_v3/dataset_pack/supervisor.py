@@ -431,9 +431,14 @@ class AttemptSupervisor:
             environment.pop(name, None)
         credential_sandbox_root = self.workspace / "state" / "credential_sandboxes"
         credential_sandbox_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        credential_prefix = f"{candidate.candidate_id[:12]}-"
+        for stale in credential_sandbox_root.glob(f"{credential_prefix}*"):
+            if stale.is_symlink() or not stale.is_dir():
+                raise SupervisorError("stale credential sandbox path is unsafe")
+            shutil.rmtree(stale)
         credential_directory = Path(
             tempfile.mkdtemp(
-                prefix=f"{candidate.candidate_id[:12]}-",
+                prefix=credential_prefix,
                 dir=credential_sandbox_root,
             )
         )
@@ -517,6 +522,8 @@ class AttemptSupervisor:
             shutil.rmtree(compiler_cache_directory)
         def publish_failure(record: LabelRunRecord) -> LabelRunRecord:
             path = self.workspace / "attempts" / "failed" / f"{record.run_id}.json"
+            output.unlink(missing_ok=True)
+            dispatch.unlink(missing_ok=True)
             atomic_write_json(path, asdict(record))
             return record
 
@@ -617,6 +624,8 @@ class AttemptSupervisor:
             hardware_provenance,
         )
         record_path = self.workspace / "attempts" / "accepted" / f"{record.configuration_id}.json"
+        output.unlink(missing_ok=True)
+        dispatch.unlink(missing_ok=True)
         atomic_write_json(record_path, asdict(record))
         log_path.unlink(missing_ok=True)
         return record

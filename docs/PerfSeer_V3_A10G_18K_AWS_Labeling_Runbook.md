@@ -1,11 +1,13 @@
 # PerfSeer V3 A10G 18K AWS labeling runbook
 
-Date: 2026-07-30
+Date: 2026-07-31
 
 This runbook is the operator procedure for collecting the final PerfSeer V3
 label pack on AWS A10G 24 GiB GPUs. The coding contract and validation evidence
 are defined in
 [perfseer_v3_dataset_design_report.md](perfseer_v3_dataset_design_report.md).
+The cost model, ownership split, and three-workspace commands are summarized in
+the [three-person budget and execution plan](PerfSeer_V3_A10G_18K_Three_Person_Budget.md).
 
 ## 1. What this campaign produces
 
@@ -40,17 +42,30 @@ paths only. It is not part of the A10G label dataset.
 
 ## 2. What is and is not automated
 
-One repository command performs the complete instance-local campaign:
+The repository supports two instance-local execution modes:
+
+- the original command processes all 22 tasks in one persistent workspace; or
+- `--task-group nlp|vision|rest` processes one deterministic whole-task shard
+  in its own persistent workspace for the three-person campaign.
+
+Both modes perform the same collection work:
 
 1. verify the locked Python/CUDA environment;
 2. verify the pinned MLE-bench checkout;
-3. authenticate Kaggle and check access to all 22 competitions;
+3. authenticate Kaggle and check access to all competitions selected by that
+   invocation;
 4. freeze the exact 18,000-row manifest;
 5. download, verify, prepare, label, and delete one Kaggle task at a time;
 6. run one isolated worker per visible physical A10G;
 7. resume from durable atomic state after interruption;
 8. repair explicit OOMs and replace unstable configurations; and
-9. finalize the pack automatically after the 22nd task.
+9. write either the full final pack after task 22 or a shard-completion receipt
+   after the selected group's final task.
+
+A shard never finalizes a partial regression pack. The separate merge command
+requires `nlp`, `vision`, and `rest`, proves their disjoint union is the frozen
+18,000 rows, constructs the canonical 22-task workspace, and then invokes the
+unchanged full finalizer.
 
 This revision does not provision EC2 instances, attach disks, manage Spot
 instances, call S3/SQS/DynamoDB, or upload the completed pack. Provisioning and
@@ -112,36 +127,37 @@ missing, modified, dirty, or differently pinned MLE-bench checkout.
 
 ## 5. Accept all Kaggle competition rules
 
-The Kaggle account must be able to list files for all 22 frozen competitions.
-Accept each competition's rules in the Kaggle web interface before running the
-campaign:
+The Kaggle account must be able to list files for every competition assigned to
+its invocation. An unsharded operator therefore needs all 22; each shard owner
+needs the rows marked for that group in the table below. Accept the applicable
+competition rules in the Kaggle web interface before starting:
 
-| # | Task | Kaggle competition slug |
-| ---: | --- | --- |
-| 1 | Histopathologic cancer | `histopathologic-cancer-detection` |
-| 2 | Dogs vs. cats | `dogs-vs-cats-redux-kernels-edition` |
-| 3 | Dog breed | `dog-breed-identification` |
-| 4 | SIIM-ISIC melanoma | `siim-isic-melanoma-classification` |
-| 5 | APTOS 2019 | `aptos2019-blindness-detection` |
-| 6 | Aerial cactus | `aerial-cactus-identification` |
-| 7 | Plant pathology | `plant-pathology-2020-fgvc7` |
-| 8 | RANZCR CLiP | `ranzcr-clip-catheter-line-classification` |
-| 9 | Leaf classification | `leaf-classification` |
-| 10 | Denoising dirty documents | `denoising-dirty-documents` |
-| 11 | Jigsaw toxic comments | `jigsaw-toxic-comment-classification-challenge` |
-| 12 | Detecting insults | `detecting-insults-in-social-commentary` |
-| 13 | Spooky author | `spooky-author-identification` |
-| 14 | Random acts of pizza | `random-acts-of-pizza` |
-| 15 | English text normalization | `text-normalization-challenge-english-language` |
-| 16 | Russian text normalization | `text-normalization-challenge-russian-language` |
-| 17 | MLSP 2013 birds | `mlsp-2013-birds` |
-| 18 | ICML 2013 whale | `the-icml-2013-whale-challenge-right-whale-redux` |
-| 19 | NYC taxi fare | `new-york-city-taxi-fare-prediction` |
-| 20 | NOMAD 2018 | `nomad2018-predict-transparent-conductors` |
-| 21 | Tabular playground December 2021 | `tabular-playground-series-dec-2021` |
-| 22 | Tabular playground May 2022 | `tabular-playground-series-may-2022` |
+| # | Group | Task | Kaggle competition slug |
+| ---: | --- | --- | --- |
+| 1 | `vision` | Histopathologic cancer | `histopathologic-cancer-detection` |
+| 2 | `vision` | Dogs vs. cats | `dogs-vs-cats-redux-kernels-edition` |
+| 3 | `vision` | Dog breed | `dog-breed-identification` |
+| 4 | `vision` | SIIM-ISIC melanoma | `siim-isic-melanoma-classification` |
+| 5 | `vision` | APTOS 2019 | `aptos2019-blindness-detection` |
+| 6 | `vision` | Aerial cactus | `aerial-cactus-identification` |
+| 7 | `vision` | Plant pathology | `plant-pathology-2020-fgvc7` |
+| 8 | `vision` | RANZCR CLiP | `ranzcr-clip-catheter-line-classification` |
+| 9 | `vision` | Leaf classification | `leaf-classification` |
+| 10 | `vision` | Denoising dirty documents | `denoising-dirty-documents` |
+| 11 | `nlp` | Jigsaw toxic comments | `jigsaw-toxic-comment-classification-challenge` |
+| 12 | `nlp` | Detecting insults | `detecting-insults-in-social-commentary` |
+| 13 | `nlp` | Spooky author | `spooky-author-identification` |
+| 14 | `nlp` | Random acts of pizza | `random-acts-of-pizza` |
+| 15 | `nlp` | English text normalization | `text-normalization-challenge-english-language` |
+| 16 | `nlp` | Russian text normalization | `text-normalization-challenge-russian-language` |
+| 17 | `rest` | MLSP 2013 birds | `mlsp-2013-birds` |
+| 18 | `rest` | ICML 2013 whale | `the-icml-2013-whale-challenge-right-whale-redux` |
+| 19 | `rest` | NYC taxi fare | `new-york-city-taxi-fare-prediction` |
+| 20 | `rest` | NOMAD 2018 | `nomad2018-predict-transparent-conductors` |
+| 21 | `rest` | Tabular playground December 2021 | `tabular-playground-series-dec-2021` |
+| 22 | `rest` | Tabular playground May 2022 | `tabular-playground-series-may-2022` |
 
-The entrypoint checks the complete paginated file inventory for every
+The entrypoint checks the complete paginated file inventory for every selected
 competition before it creates or changes campaign state. Missing rules access
 therefore fails before any task is downloaded or labeled.
 
@@ -222,8 +238,9 @@ export PERFSEER_LABEL_WORKSPACE=/mnt/perfseer-a10g-18k
 mkdir -p "$PERFSEER_LABEL_WORKSPACE/operator-logs"
 ```
 
-Run the campaign in a persistent terminal such as `tmux`. Preserve the Python
-exit code when also writing an operator log:
+For the original single-workspace mode, run the campaign in a persistent
+terminal such as `tmux`. Preserve the Python exit code when also writing an
+operator log:
 
 ```bash
 cd "$PERFSEER_REPO_ROOT"
@@ -233,6 +250,31 @@ uv run --frozen --extra a10g-dataset-pack python scripts/run_a10g_18k_pack.py \
   --mlebench-checkout "$PERFSEER_MLEBENCH_ROOT" \
   2>&1 | tee -a "$PERFSEER_LABEL_WORKSPACE/operator-logs/campaign.log"
 ```
+
+For the three-person mode, each owner instead uses a different persistent gp3
+workspace and appends exactly one group argument:
+
+```bash
+export PERFSEER_TASK_GROUP=nlp  # Person 2: vision; Person 3: rest
+export PERFSEER_LABEL_WORKSPACE="/mnt/perfseer-a10g-18k-$PERFSEER_TASK_GROUP"
+mkdir -p "$PERFSEER_LABEL_WORKSPACE/operator-logs"
+set -o pipefail
+uv run --frozen --extra a10g-dataset-pack python scripts/run_a10g_18k_pack.py \
+  --workspace "$PERFSEER_LABEL_WORKSPACE" \
+  --mlebench-checkout "$PERFSEER_MLEBENCH_ROOT" \
+  --task-group "$PERFSEER_TASK_GROUP" \
+  2>&1 | tee -a "$PERFSEER_LABEL_WORKSPACE/operator-logs/campaign.log"
+```
+
+Never change or omit `--task-group` when resuming a shard workspace. The
+contract binds the group, ordered tasks, selected frozen roots, manifest, task
+registry, reviewed source, and campaign environment.
+
+For the bounded A10G pilot only, append `--max-new-accepted 32`. The runner
+returns after the complete in-flight worker batch has published durable terminal
+records; it never stops a child mid-configuration. Omit this option for the
+production continuation. Accepted pilot rows and repair state are resumed, not
+repeated.
 
 Do not use `--materialize-only` for the production campaign. That option
 prepares only the next task and returns without producing labels.
@@ -265,7 +307,9 @@ nvidia-smi
 
 ```bash
 jq '{active_task_id, completed_task_ids}' \
-  "$PERFSEER_LABEL_WORKSPACE/state/task_loop.json"
+  "$PERFSEER_LABEL_WORKSPACE/state/task_loop.json" 2>/dev/null || \
+jq '{active_task_id, completed_task_ids}' \
+  "$PERFSEER_LABEL_WORKSPACE/state/shard_task_loop.json"
 ```
 
 ```bash
@@ -290,14 +334,16 @@ After a reboot, terminal loss, or corrected hard failure:
 3. use the same clean pinned MLE-bench checkout;
 4. restore external Kaggle credentials;
 5. restore the exact locked Python/CUDA/driver/container environment; and
-6. rerun the exact command from section 8.
+6. rerun the exact command from section 8, including the same task group when
+   using a shard.
 
 Do not add a `--resume` flag; the production entrypoint is inherently
 resumable. It revalidates the frozen manifest, environment lock, completed task
 receipts, accepted records, and active task state before continuing.
 
 If the process was interrupted after a task receipt but before cleanup, resume
-finishes the receipt-bound cleanup before advancing.
+finishes the receipt-bound cleanup before advancing. Accepted IDs are immutable,
+so neither an instance stop nor a process kill duplicates a completed label.
 
 ## 11. Failure handling
 
@@ -333,9 +379,10 @@ For a hard failure:
 Never convert a hard failure into an OOM record, manually advance a slot, delete
 an accepted record, or modify a completion receipt.
 
-## 12. Finalization and verification
+## 12. Finalization, merge, and verification
 
-After the 22nd task receipt, the production command automatically finalizes:
+After the 22nd task receipt, the unsharded production command automatically
+finalizes:
 
 ```text
 $PERFSEER_LABEL_WORKSPACE/final/accepted_labels.jsonl
@@ -371,6 +418,40 @@ Verification must prove:
 Preserve the complete verified workspace until the final pack and audit
 evidence have been transferred and checked independently. The repository does
 not perform that transfer.
+
+For the three-person mode, each completed shard first writes
+`state/shard_completion.json` and does not create a partial `final/` directory.
+Stop all shard runners, keep their workspaces unchanged, and merge from the same
+clean reviewed commit:
+
+```bash
+uv run --frozen --extra a10g-dataset-pack python \
+  scripts/merge_a10g_18k_shards.py \
+  --nlp-workspace /mnt/perfseer-a10g-18k-nlp \
+  --vision-workspace /mnt/perfseer-a10g-18k-vision \
+  --rest-workspace /mnt/perfseer-a10g-18k-rest \
+  --output-workspace /mnt/perfseer-a10g-18k-merged
+```
+
+The output path must not already exist. An interrupted merge resumes only from
+the matching hidden sibling staging directory; publication is an atomic rename.
+The source workspaces are read-only merge inputs. After publication, run both
+independent checks:
+
+```bash
+uv run --frozen --extra a10g-dataset-pack python \
+  scripts/merge_a10g_18k_shards.py \
+  --nlp-workspace /mnt/perfseer-a10g-18k-nlp \
+  --vision-workspace /mnt/perfseer-a10g-18k-vision \
+  --rest-workspace /mnt/perfseer-a10g-18k-rest \
+  --output-workspace /mnt/perfseer-a10g-18k-merged \
+  --verify-only
+
+uv run --frozen --extra a10g-dataset-pack python \
+  scripts/finalize_a10g_18k_pack.py \
+  --workspace /mnt/perfseer-a10g-18k-merged \
+  --verify-only
+```
 
 ## 13. Files that must never be committed
 

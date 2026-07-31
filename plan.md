@@ -86,3 +86,39 @@ distributed AWS service, storage ledger, or AWS API integration is in scope.
 5. Create one local commit on branch `v2`; do not push.
    - Status: complete. The reviewed allowlist is committed locally on `v2`;
      no push is part of this task.
+
+## Three-person A10G sharding and budget implementation
+
+1. Freeze one deterministic shard contract for `nlp`, `vision`, or `rest`
+   beside the unchanged full 18K manifest.
+   - Status: complete. Each shard binds its task order, root IDs, exact row
+     count, task-registry hash, and full-manifest hash, and resume rejects a
+     different group. The verified partition is NLP 6/5,700, vision 10/6,800,
+     and rest 6/5,500, with an exact 22-task/18,000-root union.
+2. Run only the selected shard's tasks and rows in its persistent workspace.
+   - Status: complete. The existing unsharded command remains the default; a
+     separate versioned shard loop is bound to the contract/order hash, and a
+     completed shard writes a separate receipt without changing task-receipt
+     bytes. The receipt binds clean reviewed source, the exact environment,
+     flat semantic artifact closure, repair lineages, and A10G provenance.
+3. Merge three completed shard workspaces into one canonical campaign
+   workspace and invoke the unchanged exact-18K finalizer.
+   - Status: complete. Merge rejects missing/duplicate groups, overlapping
+     roots or artifacts, environment/manifest/source drift, incomplete task
+     receipts, and any non-exact union. It copies only receipt-bound evidence
+     into a hash-bound sibling staging workspace, resumes only an identical
+     journal, atomically publishes, then re-verifies the unchanged final pack.
+4. Document the Ohio `g5.12xlarge` three-person budget, persistent gp3 setup,
+   pilot gate, Spot refresh/fallback policy, per-person caps, and merge commands.
+   - Status: complete. The USD 5,500 expected authorization, USD 11,000
+     conservative authorization, exact owner caps, current planning inputs,
+     commands, pilot gate, and strict merge procedure are documented without
+     AWS provisioning code or credential material.
+5. Verify shard selection, resume safety, interruption idempotence, strict
+   merge behavior, exact finalization, CLI compatibility, documentation, and
+   the complete existing test suite with an independent verifier.
+   - Status: complete. The original 112 tests pass; 16 focused shard tests
+     pass; and the real 18K integration test passed three shard finalizations,
+     tamper rejection, interrupted-merge resume, atomic publication, exact
+     18,000/54,000 finalization, and verify-only replay. The independent
+     verifier issued PASS after reproducing focused checks.

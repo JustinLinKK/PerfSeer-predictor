@@ -42,6 +42,11 @@ _LAZY_EXPORTS = {
         "build_campaign_finalization",
     ),
     "finalize_workspace": (".finalization", "finalize_workspace"),
+    "ShardContract": (".sharding", "ShardContract"),
+    "ShardCompletionReceipt": (".sharding", "ShardCompletionReceipt"),
+    "ShardError": (".sharding", "ShardError"),
+    "build_shard_contract": (".sharding", "build_shard_contract"),
+    "merge_shard_workspaces": (".sharding", "merge_shard_workspaces"),
 }
 
 
@@ -72,16 +77,21 @@ __all__ = [
     "FinalizationError",
     "LabelRunRecord",
     "TaskRegistry",
+    "ShardCompletionReceipt",
+    "ShardContract",
+    "ShardError",
     "TelemetrySample",
     "TARGET_HARDWARE_ID",
     "canonical_sha256",
     "build_operation_support_contract",
     "build_campaign_finalization",
+    "build_shard_contract",
     "file_sha256",
     "finalize_workspace",
     "load_quota_plan",
     "load_model_registry",
     "load_task_registry",
+    "merge_shard_workspaces",
     "run_model_factory_audit",
     "WorkloadConfiguration",
 ]

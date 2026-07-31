@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, replace
+from itertools import combinations
 import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -188,7 +189,60 @@ def _record_indexes(workspace: Path) -> tuple[dict[str, LabelRunRecord], dict[st
             raise WorkflowError("one configuration has both accepted and failed terminal records")
         failure_run_ids.add(record.run_id)
         failures.setdefault(record.configuration_id, []).append(record)
+    terminal_configuration_ids = {*accepted, *failures}
+    for configuration_id in terminal_configuration_ids:
+        (workspace / "attempts" / "staging" / f"{configuration_id}.json").unlink(
+            missing_ok=True
+        )
+        (workspace / "state" / "dispatch" / f"{configuration_id}.json").unlink(
+            missing_ok=True
+        )
     return accepted, failures
+
+
+def _pilot_factor_tokens(candidate: TargetCandidate) -> tuple[tuple[str, str], ...]:
+    return (
+        ("family", candidate.family_id),
+        ("mode", str(candidate.execution.get("mode", ""))),
+        ("batch_tier", candidate.batch_plan.effective_tier),
+        ("precision", str(candidate.precision_policy.get("policy_id", ""))),
+        (
+            "checkpoint",
+            str(bool(candidate.activation_checkpointing.get("enabled", False))),
+        ),
+        ("optimizer", str(candidate.optimizer.get("name", ""))),
+        ("scheduler", str(candidate.scheduler.get("name", ""))),
+        ("regime", candidate.regime),
+        ("training_step", candidate.training_step_id),
+    )
+
+
+def _pilot_candidate_order(
+    candidates: Sequence[TargetCandidate],
+    covering_prefix_size: int,
+) -> tuple[TargetCandidate, ...]:
+    """Put a deterministic factor-covering pilot prefix before canonical rows."""
+
+    remaining = list(candidates)
+    selected: list[TargetCandidate] = []
+    covered_values: set[tuple[str, str]] = set()
+    covered_pairs: set[tuple[tuple[str, str], tuple[str, str]]] = set()
+    while remaining and len(selected) < min(covering_prefix_size, len(candidates)):
+        scored = []
+        for candidate in remaining:
+            values = _pilot_factor_tokens(candidate)
+            pairs = set(combinations(values, 2))
+            new_values = len(set(values) - covered_values)
+            new_pairs = len(pairs - covered_pairs)
+            scored.append((new_values * 1_000 + new_pairs, -candidate.ordinal, candidate))
+        _, _, chosen = max(scored, key=lambda row: (row[0], row[1]))
+        values = _pilot_factor_tokens(chosen)
+        covered_values.update(values)
+        covered_pairs.update(combinations(values, 2))
+        selected.append(chosen)
+        remaining.remove(chosen)
+    selected_ids = {row.candidate_id for row in selected}
+    return (*selected, *(row for row in candidates if row.candidate_id not in selected_ids))
 
 
 def _latest_failure(rows: Sequence[LabelRunRecord]) -> LabelRunRecord | None:
@@ -327,15 +381,50 @@ def run_task_workflow(
     kaggle_executable: str = "kaggle",
     materialize_only: bool = False,
     probes: Sequence[GpuProbe] | None = None,
+    task_group: str | None = None,
+    max_new_accepted: int | None = None,
 ) -> None:
-    """Resume until all 22 tasks have verified completion receipts."""
+    """Resume the full campaign or one contracted whole-task shard."""
 
+    if max_new_accepted is not None and (
+        type(max_new_accepted) is not int or max_new_accepted < 1
+    ):
+        raise WorkflowError("maximum new accepted count must be a positive integer")
+    if materialize_only and max_new_accepted is not None:
+        raise WorkflowError("materialize-only mode cannot use an accepted-row limit")
     root = Path(workspace).resolve()
     manifest, _ = freeze_initial_target_manifest(root)
     tasks = load_task_registry()
-    order = tuple(row.task_id for row in tasks.entries)
-    loop_path = root / "state" / "task_loop.json"
-    loop = load_task_loop_state(loop_path, manifest=manifest)
+    if task_group is None:
+        if (
+            (root / "state" / "shard_contract.json").exists()
+            or (root / "state" / "shard_task_loop.json").exists()
+        ):
+            raise WorkflowError("unsharded workflow cannot resume a shard-bound workspace")
+        order = tuple(row.task_id for row in tasks.entries)
+        loop_path = root / "state" / "task_loop.json"
+        loop = load_task_loop_state(loop_path, manifest=manifest)
+
+        def persist_loop(value: Any) -> None:
+            save_task_loop_state(loop_path, value, order)
+
+        shard_contract = None
+    else:
+        from .sharding import (
+            freeze_production_source_lock,
+            freeze_shard_contract,
+            load_shard_task_loop,
+            save_shard_task_loop,
+        )
+
+        shard_contract = freeze_shard_contract(root, manifest, task_group)
+        freeze_production_source_lock(root, repository_root)
+        order = shard_contract.task_ids
+        loop_path = root / "state" / "shard_task_loop.json"
+        loop = load_shard_task_loop(loop_path, shard_contract)
+
+        def persist_loop(value: Any) -> None:
+            save_shard_task_loop(loop_path, value, shard_contract)
     materializer = TaskMaterializer(
         workspace=root,
         repository_root=Path(repository_root),
@@ -346,13 +435,22 @@ def run_task_workflow(
     workers = tuple(probes or (() if materialize_only else discover_a10g_probes()))
     if not materialize_only:
         lock_campaign_environment(root)
+    accepted_at_start_index = (
+        _record_indexes(root)[0] if max_new_accepted is not None else {}
+    )
+    accepted_at_start = len(accepted_at_start_index)
     while True:
         task_id = loop.select_next(order)
         if task_id is None:
             if not materialize_only:
-                from .finalization import finalize_workspace
+                if shard_contract is None:
+                    from .finalization import finalize_workspace
 
-                finalize_workspace(root)
+                    finalize_workspace(root)
+                else:
+                    from .sharding import finalize_shard_workspace
+
+                    finalize_shard_workspace(root, repository_root)
             return
         receipt_path = root / "state" / "completed_materializations" / f"{task_id}.json"
         if loop.active_task_id == task_id and receipt_path.is_file():
@@ -360,11 +458,11 @@ def run_task_workflow(
             _verify_recovered_receipt(root, receipt, manifest)
             materializer.cleanup_recovered_task(receipt)
             loop = loop.complete(task_id, receipt, order)
-            save_task_loop_state(loop_path, loop, order)
+            persist_loop(loop)
             continue
         if loop.active_task_id is None:
             loop = loop.begin(task_id, order)
-            save_task_loop_state(loop_path, loop, order)
+            persist_loop(loop)
         entry = next(row for row in tasks.entries if row.task_id == task_id)
         materialized = materializer.materialize(entry)
         if materialize_only:
@@ -374,12 +472,25 @@ def run_task_workflow(
             row.candidate_id: root / "state" / "slots" / f"{row.candidate_id}.json"
             for row in roots
         }
-        slots = {row.candidate_id: _load_slot(slot_paths[row.candidate_id], row) for row in roots}
+        slots = {
+            row.candidate_id: _load_slot(slot_paths[row.candidate_id], row)
+            for row in roots
+        }
+        processing_roots = roots
+        if max_new_accepted is not None:
+            already_accepted_here = sum(
+                slot.current_candidate.candidate_id in accepted_at_start_index
+                for slot in slots.values()
+            )
+            processing_roots = _pilot_candidate_order(
+                roots,
+                already_accepted_here + max_new_accepted + len(workers),
+            )
         supervisor = AttemptSupervisor(root)
         while True:
             accepted, failures = _record_indexes(root)
             unresolved = []
-            for root_candidate in roots:
+            for root_candidate in processing_roots:
                 slot = slots[root_candidate.candidate_id]
                 if slot.current_candidate.candidate_id in accepted:
                     continue
@@ -416,6 +527,10 @@ def run_task_workflow(
                     )
                 for future in futures:
                     future.result()
+            if max_new_accepted is not None:
+                accepted_now, _ = _record_indexes(root)
+                if len(accepted_now) - accepted_at_start >= max_new_accepted:
+                    return
         accepted, _ = _record_indexes(root)
         resolutions = {
             root_candidate.candidate_id: slots[root_candidate.candidate_id].current_candidate
@@ -433,7 +548,7 @@ def run_task_workflow(
         )
         materializer.cleanup_completed_task(materialized, completion=receipt)
         loop = loop.complete(task_id, receipt, order)
-        save_task_loop_state(loop_path, loop, order)
+        persist_loop(loop)
 
 
 __all__ = [
