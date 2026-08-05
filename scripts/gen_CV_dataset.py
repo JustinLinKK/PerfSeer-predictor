@@ -1,4 +1,4 @@
-"""Generate the CV model-architecture corpus defined by dataset/cv_model_families.md.
+"""Generate the CV-dataset defined by dataset/cv_model_families.md.
 
 The corpus is the predictor's training data: one entry is one model architecture
 file to be generated and profiled. It is independent of the GPU used for labeling.
@@ -9,10 +9,10 @@ Each entry = family x architecture-field grid x operator substitutions:
   upsample    conv_transpose, conv + Upsample, or conv + PixelShuffle
   attention   mha, gqa, or mla
 
-Size target: 6,320 architectures, matching the original CV corpus
+Size target: 6,320 architectures, matching the original CV-dataset
 (6,320 of the 10,005-template calibration pack; x4 precisions = 25,280 labels).
 
-Output: dataset/cv_corpus/architectures.jsonl + per-family summary on stdout.
+Output: dataset/CV-dataset/architectures.jsonl + per-family summary on stdout.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "dataset/cv_corpus"
+OUT = ROOT / "dataset/CV-dataset"
 
 # ConvNeXt version rule from the family document: V1 for small models, V2 with
 # global response normalization for large ones. Threshold in millions of params,
@@ -169,7 +169,7 @@ def expand(family: str, grid: dict, subs: dict, cap: int) -> list[dict]:
     return [entries[int(i * stride)] for i in range(cap)]
 
 
-# Quotas scaled from the original CV corpus proportions (resnet-heavy, then
+# Quotas scaled from the original CV-dataset proportions (resnet-heavy, then
 # efficientnet, then transformers), summing to 6,320.
 QUOTAS = {
     "resnet50": 1300,
