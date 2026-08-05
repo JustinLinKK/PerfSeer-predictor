@@ -1,0 +1,20 @@
+extends: ../train_hardware_teacher/v3_teacher.yaml
+run:
+  run_id: perfseer_v3_a10_t0_base_teacher
+model:
+  capacity_candidate: T0
+  hidden: 1024
+  num_blocks: 8
+  exact_embedding_dim: 64
+  family_embedding_dim: 32
+  hash_embedding_dim: 16
+  overload_hash_embedding_dim: 16
+  phase_embedding_dim: 16
+  input_dtype_embedding_dim: 12
+  dtype_embedding_dim: 12
+  accumulation_dtype_embedding_dim: 12
+  backend_embedding_dim: 12
+  layout_embedding_dim: 8
+  rank_embedding_dim: 8
+  adapter_rank: 32
+  adapter_policy: base

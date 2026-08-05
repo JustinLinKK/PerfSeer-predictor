@@ -14,7 +14,10 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT = ROOT / "record" / "perfseer_v3_cuda_verifier_job.yaml"
+DEFAULT_OUTPUT = ROOT / "record" / "perfseer_v3_transfer_cuda_verifier_job.yaml"
+BASE_COMMIT = "ec36bdc39e6674f6b0dda2b0fed7895ebaf0cd95"
+SOURCE_CONFIG_MAP = "perfseer-v3-transfer-cuda-source"
+JOB_NAME = "perfseer-v3-transfer-cuda-verifier"
 
 
 def source_bundle() -> bytes:
@@ -55,7 +58,7 @@ def build_manifest(namespace: str) -> tuple[dict, dict]:
         "apiVersion": "v1",
         "kind": "ConfigMap",
         "metadata": {
-            "name": "perfseer-v3-cuda-source",
+            "name": SOURCE_CONFIG_MAP,
             "namespace": namespace,
             "annotations": {"perfseer.openai/source-bundle-sha256": digest},
         },
@@ -67,10 +70,10 @@ def build_manifest(namespace: str) -> tuple[dict, dict]:
         "apiVersion": "batch/v1",
         "kind": "Job",
         "metadata": {
-            "name": "perfseer-v3-cuda-verifier",
+            "name": JOB_NAME,
             "namespace": namespace,
             "labels": {
-                "app.kubernetes.io/name": "perfseer-v3-cuda-verifier",
+                "app.kubernetes.io/name": JOB_NAME,
                 "app.kubernetes.io/component": "verification",
             },
             "annotations": {"perfseer.openai/source-bundle-sha256": digest},
@@ -82,7 +85,7 @@ def build_manifest(namespace: str) -> tuple[dict, dict]:
             "template": {
                 "metadata": {
                     "labels": {
-                        "app.kubernetes.io/name": "perfseer-v3-cuda-verifier",
+                        "app.kubernetes.io/name": JOB_NAME,
                     }
                 },
                 "spec": {
@@ -97,7 +100,7 @@ def build_manifest(namespace: str) -> tuple[dict, dict]:
                                 "https://github.com/JustinLinKK/PerfSeer-predictor.git "
                                 "/workspace/repo && "
                                 "git -C /workspace/repo checkout "
-                                "f1f28e358c134e9acfaab819bddd64fb6360f6a3 && "
+                                f"{BASE_COMMIT} && "
                                 "tar -xzf /bundle/perfseer-v3-source.tgz -C /workspace/repo"
                             ],
                             "volumeMounts": [
@@ -127,7 +130,8 @@ def build_manifest(namespace: str) -> tuple[dict, dict]:
                                 "python -m pip install --quiet pyyaml && "
                                 "cd /workspace/repo && "
                                 "python scripts/run_perfseer_v3_cuda_verifier.py "
-                                "2>&1 | tee /workspace/perfseer_v3_cuda_verifier.log"
+                                "--output /workspace/perfseer_v3_transfer_cuda_verifier.json "
+                                "2>&1 | tee /workspace/perfseer_v3_transfer_cuda_verifier.log"
                             ],
                             "env": [{"name": "PYTHONUNBUFFERED", "value": "1"}],
                             "volumeMounts": [{"name": "workspace", "mountPath": "/workspace"}],
@@ -151,7 +155,7 @@ def build_manifest(namespace: str) -> tuple[dict, dict]:
                         {"name": "workspace", "emptyDir": {"sizeLimit": "4Gi"}},
                         {
                             "name": "source-bundle",
-                            "configMap": {"name": "perfseer-v3-cuda-source"},
+                            "configMap": {"name": SOURCE_CONFIG_MAP},
                         },
                     ],
                 },

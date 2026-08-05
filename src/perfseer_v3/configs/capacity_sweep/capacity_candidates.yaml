@@ -1,5 +1,5 @@
 capacity_study_version: perfseer_v3_capacity_study_v1
-feature_schema_version: perfseer_graph_v3
+feature_schema_version: perfseer_graph_v3_transfer_v1
 operator_registry_version: perfseer_aten_ops_v3
 controls:
   node_identity_fusion: additive
@@ -9,6 +9,8 @@ controls:
   predict_oom: true
   predict_oom_stage: true
   predict_peak_live_bytes: true
+  hardware_profile_embedding_dim: 64
+  adapter_policy: base
 teacher_candidates:
   T0:
     purpose: v2-capacity control with the v3 encoder
@@ -25,6 +27,7 @@ teacher_candidates:
     backend_embedding_dim: 12
     layout_embedding_dim: 8
     rank_embedding_dim: 8
+    adapter_rank: 32
   T1:
     purpose: recommended larger v3 teacher
     hidden: 1280
@@ -40,6 +43,7 @@ teacher_candidates:
     backend_embedding_dim: 16
     layout_embedding_dim: 12
     rank_embedding_dim: 12
+    adapter_rank: 32
   T2:
     purpose: high-capacity ceiling, gated on T1 underfitting
     hidden: 1536
@@ -55,6 +59,7 @@ teacher_candidates:
     backend_embedding_dim: 24
     layout_embedding_dim: 16
     rank_embedding_dim: 16
+    adapter_rank: 32
 student_candidates:
   S0:
     purpose: v2-capacity control with the v3 encoder
@@ -71,6 +76,7 @@ student_candidates:
     backend_embedding_dim: 6
     layout_embedding_dim: 4
     rank_embedding_dim: 4
+    adapter_rank: 16
   S1:
     purpose: recommended modest student increase
     hidden: 224
@@ -86,6 +92,7 @@ student_candidates:
     backend_embedding_dim: 8
     layout_embedding_dim: 6
     rank_embedding_dim: 6
+    adapter_rank: 16
   S2:
     purpose: accuracy-oriented student ceiling
     hidden: 256
@@ -101,6 +108,7 @@ student_candidates:
     backend_embedding_dim: 8
     layout_embedding_dim: 6
     rank_embedding_dim: 6
+    adapter_rank: 16
   S3:
     purpose: optional third-block student gated on S2 underfitting and deployment budgets
     hidden: 256
@@ -116,6 +124,7 @@ student_candidates:
     backend_embedding_dim: 8
     layout_embedding_dim: 6
     rank_embedding_dim: 6
+    adapter_rank: 16
 deployment_gates:
   maximum_cpu_p95_latency_ratio_vs_v2: 1.25
   maximum_artifact_size_ratio_vs_v2: 1.5

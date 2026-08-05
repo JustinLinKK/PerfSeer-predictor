@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import torch
@@ -22,6 +23,12 @@ from perfseer_v3.features import batch_graph_features, build_graph_features
 from perfseer_v3.model import SeerNetV3, SeerNetV3Config, graph_batch_tensors
 from perfseer_v3.op_registry import OperationRegistry
 from perfseer_v3.profiling import ProfileOptions, ProfileWorkload, profile_workload
+from perfseer_v3.hardware_transfer import (
+    configure_transfer_trainable_parameters,
+    parameter_checksum,
+)
+from perfseer_v3.training import PairedTransferSampleV3, target_teacher_adapter_step
+from perfseer_v3.version import OUTPUT_CONTRACT_VERSION
 
 
 class CudaVerifierModel(nn.Module):
@@ -89,6 +96,8 @@ def main(argv: list[str] | None = None) -> int:
         + output.peak_live_bytes_log1p.square().mean()
         + output.graph_embedding.square().mean()
         + output.phase_embedding.square().mean()
+        + output.base_prediction.square().mean()
+        + output.paired_residual.square().mean()
     )
     objective.backward()
     if not all(
@@ -96,6 +105,50 @@ def main(argv: list[str] | None = None) -> int:
         for parameter in predictor.parameters()
     ):
         raise RuntimeError("v3 predictor produced a nonfinite CUDA gradient")
+    if not torch.equal(output.prediction, output.base_prediction):
+        raise RuntimeError("base adapter did not preserve exact base predictions")
+    if torch.count_nonzero(output.paired_residual).item() != 0:
+        raise RuntimeError("base adapter emitted a nonzero paired residual")
+
+    transfer_config = replace(model_config, adapter_policy="film_low_rank")
+    transfer_predictor = SeerNetV3(transfer_config)
+    transfer_predictor.load_state_dict(predictor.state_dict(), strict=True)
+    transfer_predictor = transfer_predictor.to(device)
+    transfer_audit = configure_transfer_trainable_parameters(
+        transfer_predictor, "film_low_rank"
+    )
+    frozen_before = parameter_checksum(
+        transfer_predictor, transfer_audit["frozen_names"]
+    )
+    trainable_before = parameter_checksum(
+        transfer_predictor, transfer_audit["trainable_names"]
+    )
+    transfer_optimizer = torch.optim.AdamW(
+        [parameter for parameter in transfer_predictor.parameters() if parameter.requires_grad],
+        lr=1e-3,
+    )
+    transfer_loss = target_teacher_adapter_step(
+        transfer_predictor,
+        [
+            PairedTransferSampleV3(
+                features=features,
+                base_target=torch.tensor([10.0, 50.0, 60.0, 1024.0, 1200.0, 40.0]),
+                target=torch.tensor([8.0, 60.0, 70.0, 900.0, 1050.0, 50.0]),
+                peak_live_bytes=1024.0,
+            )
+        ],
+        transfer_optimizer,
+    )
+    frozen_after = parameter_checksum(
+        transfer_predictor, transfer_audit["frozen_names"]
+    )
+    trainable_after = parameter_checksum(
+        transfer_predictor, transfer_audit["trainable_names"]
+    )
+    if frozen_after != frozen_before:
+        raise RuntimeError("CUDA transfer step changed frozen workload parameters")
+    if trainable_after == trainable_before:
+        raise RuntimeError("CUDA transfer step changed no adapter parameters")
     scripted = torch.jit.script(predictor.eval())
     with torch.inference_mode():
         scripted_output = scripted(*cuda_tensors)
@@ -140,7 +193,13 @@ def main(argv: list[str] | None = None) -> int:
         "scripted_prediction_shape": list(scripted_output.prediction.shape),
         "oom_stage_shape": list(output.oom_stage_logits.shape),
         "phase_embedding_shape": list(output.phase_embedding.shape),
-        "output_contract_version": "perfseer_v3_outputs_v2",
+        "output_contract_version": OUTPUT_CONTRACT_VERSION,
+        "transfer_adapter_policy": transfer_config.adapter_policy,
+        "transfer_adapter_rank": transfer_config.adapter_rank,
+        "transfer_trainable_parameter_count": transfer_audit["trainable_parameter_count"],
+        "transfer_frozen_parameter_count": transfer_audit["frozen_parameter_count"],
+        "transfer_frozen_checksum_preserved": frozen_before == frozen_after,
+        "transfer_loss": transfer_loss,
         "profile_step_ms": list(profile.measured_step_ms),
         "peak_cuda_allocated_bytes": torch.cuda.max_memory_allocated(),
     }

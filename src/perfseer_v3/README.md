@@ -5,12 +5,11 @@ the v2 graph schema, encoder, checkpoints, or scheduler path.
 
 ## Corrected v3 contract
 
-- Each concrete target GPU type has its own teacher/student pair. Every dataset
-  label must be measured on that target GPU; manifests cannot mix label GPUs,
-  and a teacher cannot distill a student that predicts a different target.
-  Predictor training, distillation, and deployed predictor inference may run
-  on another GPU or CPU. Runtime only fails closed when the requested workload
-  target differs from the artifact's `target_hardware_id`.
+- The measured A10G corpus trains one reusable base teacher/student pair. A
+  concrete target GPU reuses their hardware-independent workload backbones and
+  learns GPU-specific rank-32/rank-16 adapters from a frozen, paired small-label
+  subset. Every final artifact still targets exactly one GPU and fails closed
+  when the requested workload or hardware-profile hash differs.
 - Optimizers and LR schedulers use exact, semantic-family, and stable-hash
   identities. This covers the standard PyTorch optimizer set, Muon (including
   Muon + AdamW parameter groups), LAMB/LARS/Lion, common schedulers, and
@@ -22,11 +21,12 @@ the v2 graph schema, encoder, checkpoints, or scheduler path.
   are represented as `mixed` with an explicit conversion rather than reduced
   to one graph-wide precision label.
 
-The production manifest contract is `perfseer_v3_training_manifest_v2`; see
-`training_manifest.example.json`. Artifacts and artifact registries use their
-v2 formats because GPU identity and scheduler policy are mandatory integrity
-fields. See `../../docs/perfseer_v3_dataset_design_report.md` for the proposed
-production label protocol and coverage plan.
+The base manifest contract is `perfseer_v3_training_manifest_v2`; target
+adaptation uses `perfseer_v3_target_training_manifest_v1`. Feature, hardware
+profile, transfer-subset, target-manifest, and artifact-metadata schemas live
+under `schemas/`. See
+`../../docs/perfseer_v3_transfer_learning_runbook.md` for the complete paired
+labeling, training, evidence, and rollback workflow.
 
 ## Capture contract
 
@@ -86,6 +86,7 @@ or an authenticated Nautilus target-hardware run.
 
 ```bash
 python scripts/build_v3_schema.py
+python scripts/build_perfseer_v3_transfer_schemas.py
 python scripts/audit_operation_coverage.py --corpus supported
 python scripts/build_perfseer_v3_workload_manifest.py
 python -m unittest discover -s tests -p 'test_perfseer_v3_*.py' -v

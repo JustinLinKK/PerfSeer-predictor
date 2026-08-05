@@ -257,6 +257,12 @@ class FeatureCoarsenTests(unittest.TestCase):
             "node_continuous_fields": list(sample.layout.node_continuous_fields),
             "edge_continuous_fields": list(sample.layout.edge_continuous_fields),
             "global_continuous_fields": list(sample.layout.global_continuous_fields),
+            "hardware_continuous_fields": list(
+                sample.layout.hardware_continuous_fields
+            ),
+            "hardware_missing_mask_fields": list(
+                sample.layout.hardware_missing_mask_fields
+            ),
             "node_flag_fields": list(sample.layout.node_flag_fields),
             "edge_flag_fields": list(sample.layout.edge_flag_fields),
             "quality_fields": list(sample.layout.quality_fields),

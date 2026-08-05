@@ -136,6 +136,14 @@ def main(argv: list[str] | None = None) -> int:
     for candidate in study.candidates:
         config = candidate.model_config(registry, layout)
         parameter_count = exact_parameter_count(config)
+        with torch.device("meta"):
+            audit_model = SeerNetV3(config)
+        adapter_names = set(audit_model.named_parameter_groups()["adapter_only"])
+        adapter_parameter_count = sum(
+            parameter.numel()
+            for name, parameter in audit_model.named_parameters()
+            if name in adapter_names
+        )
         row: dict[str, Any] = {
             "candidate_id": candidate.candidate_id,
             "role": candidate.role,
@@ -146,6 +154,10 @@ def main(argv: list[str] | None = None) -> int:
             "node_identity_fusion": config.node_identity_fusion,
             "trainable_parameter_count": parameter_count,
             "fp32_parameter_payload_bytes": parameter_count * 4,
+            "adapter_rank": config.adapter_rank,
+            "adapter_parameter_count": adapter_parameter_count,
+            "adapter_trainable_fraction": adapter_parameter_count / parameter_count,
+            "adapter_fp32_payload_bytes": adapter_parameter_count * 4,
             "validation_metrics": None,
             "calibration_metrics": None,
             "peak_predictor_training_memory_bytes": None,
@@ -170,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
     if t2["trainable_parameter_count"] > 3 * t0["trainable_parameter_count"]:
         raise RuntimeError("T2 exceeds the three-times-T0 parameter guardrail")
     payload: dict[str, Any] = {
-        "report_version": "perfseer_v3_capacity_report_v1",
+        "report_version": "perfseer_v3_capacity_report_v2",
         "capacity_study_sha256": study.sha256,
         "feature_schema_sha256": layout.feature_schema_sha256,
         "operator_registry_sha256": registry.sha256,

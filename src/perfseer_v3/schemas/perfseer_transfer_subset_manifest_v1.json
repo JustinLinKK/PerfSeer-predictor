@@ -1,0 +1,209 @@
+{
+  "$id": "perfseer_v3_transfer_manifest_v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "base_hardware_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "base_lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "base_dataset_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_lineage_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_split_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_student_artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_teacher_artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_teacher_embeddings_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_training_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "workload_normalization_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_training_manifest_sha256",
+        "base_dataset_fingerprint",
+        "base_split_fingerprint",
+        "base_teacher_artifact_sha256",
+        "base_student_artifact_sha256",
+        "base_teacher_embeddings_sha256",
+        "workload_normalization_sha256",
+        "base_lineage_sha256"
+      ],
+      "type": "object"
+    },
+    "embedding_dimension": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "label_budget": {
+      "enum": [
+        128,
+        256,
+        512,
+        1024
+      ]
+    },
+    "manifest_version": {
+      "const": "perfseer_v3_transfer_manifest_v1"
+    },
+    "memory_boundary_probes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "batch_ladder": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "configuration_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "grouped_split": {
+            "enum": [
+              "train",
+              "validation",
+              "test"
+            ]
+          },
+          "paired_batch_first": {
+            "const": true
+          },
+          "retain_oom_and_repair": {
+            "const": true
+          }
+        },
+        "required": [
+          "configuration_id",
+          "grouped_split",
+          "paired_batch_first",
+          "batch_ladder",
+          "retain_oom_and_repair"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "selection": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "graph_path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "graph_signature": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "selection_reason": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_group": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "split": {
+            "enum": [
+              "train",
+              "validation",
+              "test"
+            ]
+          }
+        },
+        "required": [
+          "configuration_id",
+          "split",
+          "source_group",
+          "graph_signature",
+          "selection_reason",
+          "graph_path"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1024,
+      "minItems": 128,
+      "type": "array"
+    },
+    "selection_method": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "split_counts": {
+      "additionalProperties": false,
+      "properties": {
+        "test": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "train": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "validation": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "train",
+        "validation",
+        "test"
+      ],
+      "type": "object"
+    },
+    "subset_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "target_hardware_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "test_selection_uses_model_errors": {
+      "const": false
+    }
+  },
+  "required": [
+    "manifest_version",
+    "base_lineage",
+    "base_hardware_id",
+    "target_hardware_id",
+    "label_budget",
+    "split_counts",
+    "selection_method",
+    "test_selection_uses_model_errors",
+    "selection",
+    "memory_boundary_probes",
+    "subset_sha256"
+  ],
+  "type": "object"
+}

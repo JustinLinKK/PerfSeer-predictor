@@ -1,0 +1,20 @@
+extends: ../train_deploy_model/v3_student.yaml
+run:
+  run_id: perfseer_v3_target_student_rank16
+model:
+  capacity_candidate: S1_target_rank16
+  adapter_rank: 16
+  adapter_policy: film_low_rank
+training:
+  stage: target_student_adapter
+  initialization: a10_base_student_artifact
+  epochs: 240
+  batch_size: 64
+  learning_rate: 0.001
+  adapter_regularization_weight: 0.0001
+  l2_sp_weight: 0.0001
+  validation_interval_epochs: 1
+  early_stopping_patience_checks: 30
+  early_stopping_min_delta: 0.0001
+  residual_epsilon: 0.000001
+  utilization_clip: 0.005

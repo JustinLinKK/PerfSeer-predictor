@@ -16,7 +16,7 @@ from .features import (
     graph_precision_category,
 )
 from .graph_ir_v3 import GraphIRV3
-from .hardware import graph_hardware_id
+from .hardware import graph_hardware_id, hardware_profile_from_metadata
 from .model import OOM_FAILURE_STAGES, graph_batch_tensors
 from .op_registry import OperationRegistry
 from .training_semantics import (
@@ -24,6 +24,7 @@ from .training_semantics import (
     canonical_scheduler_name,
     scheduler_config,
 )
+from .version import OUTPUT_CONTRACT_VERSION
 
 
 RESULT_STATUSES = (
@@ -61,6 +62,7 @@ class SchedulerPredictionV3:
     output_contract_version: str
     recommended_fallback: str | None
     message: str = ""
+    adapter_policy: str = "base"
 
     def __post_init__(self) -> None:
         if self.status not in RESULT_STATUSES:
@@ -92,7 +94,7 @@ def _failure(
         feature_schema_sha256=graph.feature_schema_sha256,
         operator_registry_version=graph.operator_registry_version,
         operator_registry_sha256=graph.operator_registry_sha256,
-        output_contract_version="perfseer_v3_outputs_v2",
+        output_contract_version=OUTPUT_CONTRACT_VERSION,
         recommended_fallback="branch_profile",
         message=message,
     )
@@ -164,6 +166,23 @@ class PerfSeerV3Runtime:
                 f"graph targets GPU {captured_hardware_id!r}, but this model pair targets "
                 f"{metadata.target_hardware_id!r}",
             )
+        if metadata.hardware_profile_sha256 is not None:
+            try:
+                observed_profile_sha256 = hardware_profile_from_metadata(
+                    graph.metadata
+                ).sha256
+            except Exception as exc:
+                return _failure(
+                    graph,
+                    "hardware_mismatch",
+                    f"invalid target hardware profile: {type(exc).__name__}: {exc}",
+                )
+            if observed_profile_sha256 != metadata.hardware_profile_sha256:
+                return _failure(
+                    graph,
+                    "hardware_mismatch",
+                    "graph hardware profile hash does not match the selected adapter",
+                )
         precision = graph_precision_category(graph)
         allowed_precisions = {
             str(value).removeprefix("torch.").lower()
@@ -263,6 +282,7 @@ class PerfSeerV3Runtime:
             operator_registry_sha256=graph.operator_registry_sha256,
             output_contract_version=metadata.output_contract_version,
             recommended_fallback=fallback,
+            adapter_policy=metadata.adapter_policy,
         )
 
 

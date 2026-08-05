@@ -15,6 +15,7 @@ if str(SRC) not in sys.path:
 
 from perfseer_v3.capture_export import capture_export
 from perfseer_v3.features import batch_graph_features, build_graph_features
+from perfseer_v3.hardware import HARDWARE_MEMORY_BYTES_UPPER_BOUND
 from perfseer_v3.model import SeerNetV3, SeerNetV3Config, graph_batch_tensors
 from perfseer_v3.op_registry import OperationRegistry
 
@@ -70,6 +71,45 @@ class ModelTests(unittest.TestCase):
         self.assertTrue(torch.isfinite(output.log_variance).all())
         self.assertEqual(output.confidence.item(), 0.0)
 
+    def test_oom_head_receives_decoded_predicted_vram_capacity_ratio(self) -> None:
+        sample = _features(_UnknownOnly(), (torch.randn(2, 4),))
+        batch = batch_graph_features([sample])
+        model = self.make_model(batch)
+        tensors = list(graph_batch_tensors(batch))
+        memory_bytes = float(24 * 1024**3)
+        normalized_memory = torch.log1p(torch.tensor(memory_bytes)) / torch.log1p(
+            torch.tensor(HARDWARE_MEMORY_BYTES_UPPER_BOUND)
+        )
+        tensors[27] = tensors[27].clone()
+        tensors[27][:, 0] = normalized_memory
+        tensors[28] = tensors[28].clone()
+        tensors[28][:, 0] = 0.0
+        captured: list[torch.Tensor] = []
+
+        def capture_oom_input(_module, arguments):
+            captured.append(arguments[0].detach().clone())
+
+        handle = model.oom_head.register_forward_pre_hook(capture_oom_input)
+        try:
+            with torch.no_grad():
+                output = model(*tensors)
+        finally:
+            handle.remove()
+        expected = output.prediction[:, 3:4].clamp_min(0.0) / (24 * 1024.0)
+        torch.testing.assert_close(captured[0][:, -1:], expected, rtol=1e-5, atol=1e-7)
+
+        tensors[28][:, 0] = 1.0
+        captured.clear()
+        handle = model.oom_head.register_forward_pre_hook(capture_oom_input)
+        try:
+            with torch.no_grad():
+                model(*tensors)
+        finally:
+            handle.remove()
+        torch.testing.assert_close(
+            captured[0][:, -1:], torch.zeros_like(expected), rtol=0.0, atol=0.0
+        )
+
     def test_empty_and_isolated_graphs_batch(self) -> None:
         empty = _features(_Identity(), (torch.randn(2, 4),))
         isolated = _features(_Isolated(), (torch.randn(2, 4), torch.randn(2, 4)))
@@ -118,7 +158,7 @@ class ModelTests(unittest.TestCase):
             altered = model(*changed).prediction
         self.assertFalse(torch.equal(baseline, altered))
 
-    def test_overload_edge_slot_hardware_optimizer_scheduler_embeddings_affect_identity(self) -> None:
+    def test_workload_identity_uses_no_categorical_hardware_embedding(self) -> None:
         sample = _features(_Isolated(), (torch.randn(2, 4), torch.randn(2, 4)))
         batch = batch_graph_features([sample])
         model = self.make_model(batch)
@@ -126,12 +166,11 @@ class ModelTests(unittest.TestCase):
         changes = {
             4: model.config.num_hash_buckets,
             17: model.config.num_slot_buckets,
-            27: model.config.num_hardware_buckets,
-            30: model.config.num_optimizer_families,
-            31: model.config.num_optimizer_hash_buckets,
-            32: model.config.num_schedulers,
-            33: model.config.num_scheduler_families,
-            34: model.config.num_scheduler_hash_buckets,
+            31: model.config.num_optimizer_families,
+            32: model.config.num_optimizer_hash_buckets,
+            33: model.config.num_schedulers,
+            34: model.config.num_scheduler_families,
+            35: model.config.num_scheduler_hash_buckets,
         }
         with torch.no_grad():
             baseline = model(*tensors).prediction
@@ -140,6 +179,47 @@ class ModelTests(unittest.TestCase):
                 changed[index] = (changed[index] + 1) % cardinality
                 altered = model(*changed).prediction
                 self.assertFalse(torch.equal(baseline, altered), index)
+            changed_hardware = list(tensors)
+            changed_hardware[27] = torch.ones_like(changed_hardware[27])
+            changed_hardware[28] = torch.zeros_like(changed_hardware[28])
+            hardware_altered = model(*changed_hardware).prediction
+            torch.testing.assert_close(hardware_altered, baseline, rtol=0.0, atol=0.0)
+
+    def test_adapter_identity_and_trainable_parameter_groups(self) -> None:
+        sample = _features(_Isolated(), (torch.randn(2, 4), torch.randn(2, 4)))
+        batch = batch_graph_features([sample])
+        registry = OperationRegistry.load()
+        base_config = SeerNetV3Config.from_registry(
+            registry, batch.layout, hidden=32, num_blocks=2, dropout=0.0
+        )
+        target_config = SeerNetV3Config.from_registry(
+            registry,
+            batch.layout,
+            hidden=32,
+            num_blocks=2,
+            dropout=0.0,
+            adapter_policy="film_low_rank",
+        )
+        torch.manual_seed(17)
+        base = SeerNetV3(base_config).eval()
+        torch.manual_seed(17)
+        target = SeerNetV3(target_config).eval()
+        target.load_state_dict(base.state_dict(), strict=True)
+        with torch.no_grad():
+            base_output = base(*graph_batch_tensors(batch)).prediction
+            target_output = target(*graph_batch_tensors(batch)).prediction
+        torch.testing.assert_close(target_output, base_output, rtol=0.0, atol=0.0)
+        audit = target.configure_trainable_parameters("film_low_rank")
+        self.assertLess(audit["trainable_fraction"], 0.5)
+        self.assertTrue(audit["trainable_names"])
+        self.assertTrue(
+            all(
+                name.startswith(
+                    ("hardware_profile_encoder.", "hardware_adapter.", "target_residual_head.")
+                )
+                for name in audit["trainable_names"]
+            )
+        )
 
     def test_accumulation_dtype_embedding_affects_identity(self) -> None:
         sample = _features(_UnknownOnly(), (torch.randn(2, 4),))

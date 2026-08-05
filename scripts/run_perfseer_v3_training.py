@@ -24,7 +24,12 @@ def build_parser() -> argparse.ArgumentParser:
     smoke.add_argument("--output", type=Path, required=True)
     smoke.add_argument("--seed", type=int, default=42)
 
-    for stage in ("teacher", "student"):
+    for stage in (
+        "base_teacher",
+        "base_student",
+        "target_teacher_adapter",
+        "target_student_adapter",
+    ):
         command = subparsers.add_parser(stage)
         command.add_argument("--config", type=Path, required=True)
         command.add_argument("--manifest", type=Path, required=True)
@@ -34,9 +39,16 @@ def build_parser() -> argparse.ArgumentParser:
             "--amp", choices=("none", "float16", "bfloat16"), default="bfloat16"
         )
         command.add_argument("--epochs", type=int)
-        command.add_argument("--pretrain-epochs", type=int, default=0)
-        if stage == "student":
+        command.add_argument(
+            "--pretrain-epochs",
+            type=int,
+            help="override the base-teacher Stage A epoch count from the config",
+        )
+        if stage in {"base_student", "target_student_adapter"}:
             command.add_argument("--teacher-artifact", type=Path, required=True)
+        if stage in {"target_teacher_adapter", "target_student_adapter"}:
+            command.add_argument("--base-artifact", type=Path, required=True)
+            command.add_argument("--resume-artifact", type=Path)
     return parser
 
 
@@ -55,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
             epochs=args.epochs,
             pretrain_epochs=args.pretrain_epochs,
             teacher_artifact=getattr(args, "teacher_artifact", None),
+            base_artifact=getattr(args, "base_artifact", None),
+            resume_artifact=getattr(args, "resume_artifact", None),
         )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 0

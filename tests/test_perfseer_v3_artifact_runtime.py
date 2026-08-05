@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import sys
 import tempfile
@@ -21,6 +22,7 @@ from perfseer_v3.artifact import (
     ArtifactMetadataV3,
     ArtifactRegistryV3,
     TargetTransformV3,
+    artifact_metadata_json_schema,
     load_checkpoint_artifact,
     save_checkpoint_artifact,
     sha256_file,
@@ -28,7 +30,10 @@ from perfseer_v3.artifact import (
 from perfseer_v3.capture_export import CaptureOptions, capture_export
 from perfseer_v3.coarsen_v3 import COARSENING_POLICY_SHA256
 from perfseer_v3.deployment_export import export_torchscript_student
-from perfseer_v3.features import build_graph_features
+from perfseer_v3.features import build_graph_features, fit_normalization
+from perfseer_v3.hardware import HardwareNormalizationPolicyV3
+from perfseer_v3.hardware_transfer import PairedResidualTransformV3, TransferLineageV3
+from perfseer_v3.baseline import canonical_json
 from perfseer_v3.migration import CanaryPolicy, canary_decision, compare_shadow
 from perfseer_v3.model import SeerNetV3, SeerNetV3Config
 from perfseer_v3.op_registry import OperationRegistry
@@ -56,6 +61,30 @@ class _MixedPrecision(nn.Module):
 
 
 class ArtifactRuntimeTests(unittest.TestCase):
+    def test_transfer_artifact_schema_accepts_every_supported_adapter_policy(self) -> None:
+        expected = {
+            "base",
+            "linear_only",
+            "film_only",
+            "low_rank_only",
+            "film_low_rank",
+            "film_low_rank_heads",
+            "film_low_rank_last_block",
+        }
+        generated = artifact_metadata_json_schema()
+        self.assertEqual(
+            set(generated["properties"]["adapter_policy"]["enum"]), expected
+        )
+        checked_in = json.loads(
+            (
+                ROOT
+                / "src/perfseer_v3/schemas/perfseer_transfer_artifact_metadata_v1.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            set(checked_in["properties"]["adapter_policy"]["enum"]), expected
+        )
+
     def make_graph(self, model: nn.Module):
         result = capture_export(
             model,
@@ -86,7 +115,7 @@ class ArtifactRuntimeTests(unittest.TestCase):
         metadata = ArtifactMetadataV3(
             model_release="perfseer_v3_student",
             graph_ir_version="perfseer_ir_v3",
-            feature_schema_version="perfseer_graph_v3",
+            feature_schema_version="perfseer_graph_v3_transfer_v1",
             feature_schema_sha256=sample.layout.feature_schema_sha256,
             operator_registry_version="perfseer_aten_ops_v3",
             operator_registry_sha256=registry.sha256,
@@ -154,6 +183,107 @@ class ArtifactRuntimeTests(unittest.TestCase):
         self.assertEqual(len(result.prediction), 6)
         self.assertTrue(all(torch.isfinite(torch.tensor(result.prediction))))
 
+    def test_adapted_artifact_lineage_and_profile_tampering_fail_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            registry = OperationRegistry.load()
+            graph = self.make_graph(_Known())
+            sample = build_graph_features(graph, registry=registry)
+            normalization = fit_normalization(
+                [sample], split_name="train", split_fingerprint="a" * 64
+            )
+            config = SeerNetV3Config.from_registry(
+                registry,
+                sample.layout,
+                hidden=16,
+                num_blocks=1,
+                adapter_rank=8,
+                adapter_policy="film_low_rank",
+                dropout=0.0,
+            )
+            model = SeerNetV3(config).eval()
+            calibration: dict[str, object] = {}
+            calibration_sha256 = hashlib.sha256(
+                canonical_json(calibration).encode("utf-8")
+            ).hexdigest()
+            transform_sha256 = PairedResidualTransformV3().policy_sha256
+            profile_sha256 = str(sample.metadata["hardware_profile_sha256"])
+            lineage = TransferLineageV3(
+                base_artifact_sha256="1" * 64,
+                base_hardware_id="nvidia_a10g_24gb_aws_g5",
+                target_hardware_id="test_gpu",
+                target_subset_sha256="2" * 64,
+                hardware_profile_sha256=profile_sha256,
+                workload_normalization_sha256=normalization.sha256,
+                hardware_normalization_sha256=HardwareNormalizationPolicyV3().sha256,
+                calibration_sha256=calibration_sha256,
+                paired_residual_policy_sha256=transform_sha256,
+                adapter_policy="film_low_rank",
+                adapter_rank=8,
+                trainable_parameter_count=10,
+            )
+            metadata = ArtifactMetadataV3(
+                model_release="perfseer_v3_student",
+                graph_ir_version="perfseer_ir_v3",
+                feature_schema_version="perfseer_graph_v3_transfer_v1",
+                feature_schema_sha256=sample.layout.feature_schema_sha256,
+                operator_registry_version="perfseer_aten_ops_v3",
+                operator_registry_sha256=registry.sha256,
+                ordered_feature_layout=asdict(sample.layout),
+                normalization_sha256=normalization.sha256,
+                coarsening_policy_sha256=COARSENING_POLICY_SHA256,
+                target_names=TARGET_NAMES,
+                target_transform=TargetTransformV3(),
+                label_schema_version="scheduler_resource_label_v3",
+                target_hardware_id="test_gpu",
+                hardware_allowlist=("test_gpu",),
+                precision_allowlist=("float32",),
+                capture_quality_allowlist=("strict",),
+                optimizer_allowlist=("adamw",),
+                scheduler_allowlist=("none",),
+                training_mode_allowlist=("inference",),
+                dataset_fingerprint="dataset",
+                split_fingerprint="split",
+                pytorch_version=torch.__version__,
+                cuda_build_version=torch.version.cuda,
+                model_config=config.to_dict(),
+                minimum_confidence=0.0,
+                adapter_policy="film_low_rank",
+                adapter_rank=8,
+                trainable_parameter_count=10,
+                base_artifact_sha256=lineage.base_artifact_sha256,
+                base_hardware_id=lineage.base_hardware_id,
+                target_subset_sha256=lineage.target_subset_sha256,
+                hardware_profile_sha256=lineage.hardware_profile_sha256,
+                workload_normalization_sha256=lineage.workload_normalization_sha256,
+                hardware_normalization_sha256=lineage.hardware_normalization_sha256,
+                calibration_sha256=lineage.calibration_sha256,
+                paired_residual_policy_sha256=lineage.paired_residual_policy_sha256,
+                transfer_lineage_sha256=lineage.sha256,
+            )
+            artifact_path = save_checkpoint_artifact(
+                directory / "adapted.pt",
+                model=model,
+                metadata=metadata,
+                normalization=normalization,
+                calibration=calibration,
+            )
+            runtime = PerfSeerV3Runtime(artifact_path)
+            self.assertIn(runtime.predict_graph(graph).status, {"ok", "ok_with_unknowns"})
+            tampered_graph = replace(
+                graph,
+                metadata={
+                    **graph.metadata,
+                    "hardware_features": {"memory_bytes": 80 * 1024**3},
+                },
+            )
+            result = runtime.predict_graph(tampered_graph)
+            self.assertEqual(result.status, "hardware_mismatch")
+            with self.assertRaisesRegex(ArtifactIntegrityError, "lineage"):
+                replace(metadata, target_subset_sha256="3" * 64).validate(
+                    registry=registry, layout=sample.layout
+                )
+
     def test_runtime_applies_validation_calibration(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             graph, artifact_path, _ = self.make_artifact(Path(temporary))
@@ -205,6 +335,17 @@ class ArtifactRuntimeTests(unittest.TestCase):
             self.assertTrue(
                 all(row["allclose"] for row in report["comparisons"].values())
             )
+            wrong_graph = replace(
+                graph,
+                metadata={**graph.metadata, "target_hardware_id": "other_gpu"},
+            )
+            wrong_graph_path = wrong_graph.save(root / "wrong-graph.json")
+            with self.assertRaisesRegex(ValueError, "another GPU"):
+                export_torchscript_student(
+                    artifact_path=artifact_path,
+                    graph_path=wrong_graph_path,
+                    output_path=root / "wrong-student.ts",
+                )
 
     def test_artifact_corruption_and_schema_mismatch_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

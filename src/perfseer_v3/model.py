@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass
 from typing import Any, NamedTuple
 
@@ -11,6 +12,7 @@ import torch.nn.functional as F
 
 from .features import FeatureLayoutV3, GraphBatchV3
 from .graph_ir_v3 import PHASES, TENSOR_ROLES
+from .hardware import HARDWARE_MEMORY_BYTES_UPPER_BOUND
 from .op_registry import OperationRegistry
 from .schema import (
     CAPTURE_BACKENDS,
@@ -54,6 +56,8 @@ class SeerOutputV3(NamedTuple):
     peak_live_bytes_log1p: torch.Tensor
     graph_embedding: torch.Tensor
     phase_embedding: torch.Tensor
+    base_prediction: torch.Tensor
+    paired_residual: torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -61,6 +65,8 @@ class SeerNetV3Config:
     node_continuous_dim: int
     edge_continuous_dim: int
     global_continuous_dim: int
+    hardware_continuous_dim: int
+    hardware_missing_mask_dim: int
     node_flag_dim: int
     edge_flag_dim: int
     quality_dim: int
@@ -112,6 +118,7 @@ class SeerNetV3Config:
     edge_dynamic_quality_embedding_dim: int = 4
     phase_transition_embedding_dim: int = 4
     hardware_embedding_dim: int = 8
+    hardware_profile_embedding_dim: int = 64
     global_precision_embedding_dim: int = 4
     optimizer_embedding_dim: int = 4
     optimizer_family_embedding_dim: int = 4
@@ -131,6 +138,8 @@ class SeerNetV3Config:
     predict_oom_stage: bool = True
     predict_peak_live_bytes: bool = True
     num_oom_stages: int = len(OOM_FAILURE_STAGES)
+    adapter_rank: int = 16
+    adapter_policy: str = "base"
 
     def __post_init__(self) -> None:
         if self.hidden <= 0 or self.num_blocks <= 0:
@@ -143,6 +152,22 @@ class SeerNetV3Config:
             raise ValueError("pooling_mode must be existing or phase_aware")
         if self.num_oom_stages < 2:
             raise ValueError("num_oom_stages must include no-OOM and at least one failure stage")
+        if self.hardware_continuous_dim <= 0:
+            raise ValueError("hardware profile features must be nonempty")
+        if self.hardware_missing_mask_dim != self.hardware_continuous_dim:
+            raise ValueError("hardware values and missing masks must have the same width")
+        if self.adapter_rank <= 0 or self.adapter_rank > self.hidden:
+            raise ValueError("adapter_rank must be in [1, hidden]")
+        if self.adapter_policy not in {
+            "base",
+            "linear_only",
+            "film_only",
+            "low_rank_only",
+            "film_low_rank",
+            "film_low_rank_heads",
+            "film_low_rank_last_block",
+        }:
+            raise ValueError(f"unsupported hardware adapter policy {self.adapter_policy!r}")
 
     @classmethod
     def from_registry(
@@ -156,6 +181,8 @@ class SeerNetV3Config:
             "node_continuous_dim": len(layout.node_continuous_fields),
             "edge_continuous_dim": len(layout.edge_continuous_fields),
             "global_continuous_dim": len(layout.global_continuous_fields),
+            "hardware_continuous_dim": len(layout.hardware_continuous_fields),
+            "hardware_missing_mask_dim": len(layout.hardware_missing_mask_fields),
             "node_flag_dim": len(layout.node_flag_fields),
             "edge_flag_dim": len(layout.edge_flag_fields),
             "quality_dim": len(layout.quality_fields),
@@ -197,6 +224,29 @@ def _scatter_sum(source: torch.Tensor, index: torch.Tensor, size: int) -> torch.
         return result
     expanded = index.view(-1, 1).expand(-1, source.size(-1))
     return result.scatter_add(0, expanded, source)
+
+
+def _decode_paired_residual(
+    base: torch.Tensor,
+    residual: torch.Tensor,
+    epsilon: float = 1e-6,
+    utilization_clip: float = 0.005,
+) -> torch.Tensor:
+    decoded: list[torch.Tensor] = []
+    for index in range(6):
+        if index == 0 or index == 3 or index == 4:
+            safe_scale = base[:, index].clamp_min(0) + epsilon
+            value = (safe_scale * torch.exp(residual[:, index]) - epsilon).clamp_min(0)
+        else:
+            probability = (base[:, index] / 100.0).clamp(
+                utilization_clip,
+                1.0 - utilization_clip,
+            )
+            value = 100.0 * torch.sigmoid(
+                torch.logit(probability) + residual[:, index]
+            )
+        decoded.append(torch.where(residual[:, index] == 0, base[:, index], value))
+    return torch.stack(decoded, dim=-1)
 
 
 def _scatter_mean(source: torch.Tensor, index: torch.Tensor, size: int) -> torch.Tensor:
@@ -423,13 +473,11 @@ class HierarchicalEdgeEncoder(nn.Module):
         )
 
 
-class HierarchicalGlobalEncoder(nn.Module):
+class WorkloadGlobalEncoderV3(nn.Module):
+    """Encode only workload/training semantics for message passing."""
+
     def __init__(self, config: SeerNetV3Config) -> None:
         super().__init__()
-        self.hardware = nn.Embedding(
-            config.num_hardware_buckets,
-            config.hardware_embedding_dim,
-        )
         self.precision = nn.Embedding(
             config.num_dtypes,
             config.global_precision_embedding_dim,
@@ -471,7 +519,6 @@ class HierarchicalGlobalEncoder(nn.Module):
         input_dim = (
             config.global_continuous_dim
             + config.quality_dim
-            + config.hardware_embedding_dim
             + config.global_precision_embedding_dim
             + config.optimizer_embedding_dim
             + config.optimizer_family_embedding_dim
@@ -490,7 +537,6 @@ class HierarchicalGlobalEncoder(nn.Module):
         self,
         u_cont: torch.Tensor,
         quality: torch.Tensor,
-        hardware_id: torch.Tensor,
         precision_id: torch.Tensor,
         optimizer_id: torch.Tensor,
         optimizer_family_id: torch.Tensor,
@@ -508,7 +554,6 @@ class HierarchicalGlobalEncoder(nn.Module):
                 [
                     u_cont,
                     quality,
-                    self.hardware(hardware_id),
                     self.precision(precision_id),
                     self.optimizer(optimizer_id),
                     self.optimizer_family(optimizer_family_id),
@@ -524,6 +569,64 @@ class HierarchicalGlobalEncoder(nn.Module):
                 dim=-1,
             )
         )
+
+
+# Compatibility name for importers; the implementation is now explicitly
+# hardware-independent and has no categorical GPU embedding.
+HierarchicalGlobalEncoder = WorkloadGlobalEncoderV3
+
+
+class HardwareProfileEncoderV3(nn.Module):
+    """Encode fixed-normalized specifications, signatures, and missing masks."""
+
+    def __init__(self, config: SeerNetV3Config) -> None:
+        super().__init__()
+        input_dim = config.hardware_continuous_dim + config.hardware_missing_mask_dim
+        hidden = max(64, config.hardware_profile_embedding_dim)
+        self.output = _mlp(
+            input_dim,
+            config.hardware_profile_embedding_dim,
+            hidden,
+            config.dropout,
+        )
+
+    def forward(
+        self,
+        hardware_cont: torch.Tensor,
+        hardware_missing_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.output(torch.cat([hardware_cont, hardware_missing_mask], dim=-1))
+
+
+class HardwareAdapterV3(nn.Module):
+    """Identity-initialized FiLM plus a low-rank residual adapter."""
+
+    def __init__(self, config: SeerNetV3Config) -> None:
+        super().__init__()
+        self.use_film = config.adapter_policy != "low_rank_only"
+        self.use_low_rank = config.adapter_policy != "film_only"
+        self.normalization = nn.LayerNorm(config.hidden)
+        self.film = nn.Linear(config.hardware_profile_embedding_dim, 2 * config.hidden)
+        self.down = nn.Linear(config.hidden, config.adapter_rank)
+        self.up = nn.Linear(config.adapter_rank, config.hidden)
+        self.scale = nn.Parameter(torch.ones(()))
+        nn.init.zeros_(self.film.weight)
+        nn.init.zeros_(self.film.bias)
+        nn.init.zeros_(self.up.weight)
+        nn.init.zeros_(self.up.bias)
+
+    def forward(self, workload: torch.Tensor, hardware: torch.Tensor) -> torch.Tensor:
+        conditioned = workload
+        if self.use_film:
+            gamma_delta, beta = self.film(hardware).chunk(2, dim=-1)
+            normalized = self.normalization(workload)
+            # Effective gamma starts at one. Expressing FiLM as a residual keeps an
+            # identity adapter byte/numerically exact for the frozen base artifact.
+            conditioned = workload + gamma_delta * normalized + beta
+        if self.use_low_rank:
+            residual = self.up(F.silu(self.down(conditioned))) * self.scale
+            conditioned = conditioned + residual
+        return conditioned
 
 
 class SeerBlockV3(nn.Module):
@@ -589,9 +692,21 @@ class SeerNetV3(nn.Module):
         self.num_phases = config.num_phases
         self.hidden = config.hidden
         self.num_oom_stages = config.num_oom_stages
+        self.hardware_memory_log_upper = math.log1p(
+            HARDWARE_MEMORY_BYTES_UPPER_BOUND
+        )
+        self.adapter_policy = config.adapter_policy
+        self.use_hardware_adapter = config.adapter_policy in {
+            "film_only",
+            "low_rank_only",
+            "film_low_rank",
+            "film_low_rank_heads",
+            "film_low_rank_last_block",
+        }
+        self.use_target_residual = config.adapter_policy != "base"
         self.node_encoder = HierarchicalNodeEncoder(config)
         self.edge_encoder = HierarchicalEdgeEncoder(config)
-        self.global_encoder = HierarchicalGlobalEncoder(config)
+        self.global_encoder = WorkloadGlobalEncoderV3(config)
         self.blocks = nn.ModuleList(SeerBlockV3(config) for _ in range(config.num_blocks))
         self.phase_encoder = _mlp(
             2 * config.hidden,
@@ -606,14 +721,19 @@ class SeerNetV3(nn.Module):
             config.dropout,
         )
         self.phase_fusion_norm = nn.LayerNorm(config.hidden)
+        self.hardware_profile_encoder = HardwareProfileEncoderV3(config)
+        self.hardware_adapter = HardwareAdapterV3(config)
         self.prediction_head = _mlp(config.hidden, config.num_outputs, config.hidden, config.dropout)
+        self.target_residual_head = nn.Linear(config.hidden, config.num_outputs)
+        nn.init.zeros_(self.target_residual_head.weight)
+        nn.init.zeros_(self.target_residual_head.bias)
         self.uncertainty_head = (
             _mlp(config.hidden, config.num_outputs, config.hidden, config.dropout)
             if config.predict_uncertainty
             else None
         )
         self.oom_head = (
-            _mlp(config.hidden, 1, config.hidden, config.dropout)
+            _mlp(config.hidden + 2, 1, config.hidden, config.dropout)
             if config.predict_oom
             else None
         )
@@ -658,7 +778,8 @@ class SeerNetV3(nn.Module):
         edge_phase_transition_id: torch.Tensor,
         edge_flags: torch.Tensor,
         u_cont: torch.Tensor,
-        hardware_id: torch.Tensor,
+        hardware_cont: torch.Tensor,
+        hardware_missing_mask: torch.Tensor,
         precision_id: torch.Tensor,
         optimizer_id: torch.Tensor,
         optimizer_family_id: torch.Tensor,
@@ -705,7 +826,6 @@ class SeerNetV3(nn.Module):
         globals_ = self.global_encoder(
             u_cont,
             quality,
-            hardware_id,
             precision_id,
             optimizer_id,
             optimizer_family_id,
@@ -744,25 +864,61 @@ class SeerNetV3(nn.Module):
             )
             globals_ = self.phase_fusion_norm(globals_ + fused)
 
-        prediction = self.prediction_head(globals_)
+        workload_embedding = globals_
+        hardware_embedding = self.hardware_profile_encoder(
+            hardware_cont,
+            hardware_missing_mask,
+        )
+        if self.use_hardware_adapter:
+            globals_ = self.hardware_adapter(globals_, hardware_embedding)
+
+        base_prediction = self.prediction_head(workload_embedding)
+        paired_residual = torch.zeros_like(base_prediction)
+        if self.use_target_residual:
+            paired_residual = self.target_residual_head(globals_)
+            prediction = _decode_paired_residual(base_prediction, paired_residual)
+        else:
+            prediction = base_prediction
         if self.uncertainty_head is None:
             log_variance = torch.zeros_like(prediction)
         else:
             log_variance = self.uncertainty_head(globals_).clamp(-10.0, 10.0)
+        if self.peak_live_head is None:
+            peak_live_bytes_log1p = globals_.new_zeros((globals_.size(0), 1))
+        else:
+            peak_live_bytes_log1p = F.softplus(self.peak_live_head(globals_))
+        # The first hardware field is fixed log-normalized VRAM bytes. Invert
+        # that reference transform and provide the decoded predicted-VRAM /
+        # physical-capacity ratio directly to the OOM classifier. A missing
+        # capacity contributes a neutral zero ratio and remains represented in
+        # the hardware profile mask/embedding.
+        memory_capacity_mib = torch.expm1(
+            hardware_cont[:, 0:1].clamp(0.0, 1.0)
+            * self.hardware_memory_log_upper
+        ) / float(1024**2)
+        predicted_vram_capacity_ratio = (
+            prediction[:, 3:4].clamp_min(0.0)
+            / memory_capacity_mib.clamp_min(1e-6)
+        ) * (1.0 - hardware_missing_mask[:, 0:1].clamp(0.0, 1.0))
         if self.oom_head is None:
             oom_logit = globals_.new_zeros((globals_.size(0), 1))
         else:
-            oom_logit = self.oom_head(globals_)
+            oom_logit = self.oom_head(
+                torch.cat(
+                    [
+                        globals_,
+                        peak_live_bytes_log1p,
+                        predicted_vram_capacity_ratio,
+                    ],
+                    dim=-1,
+                )
+            )
         if self.oom_stage_head is None:
             oom_stage_logits = globals_.new_zeros(
                 (globals_.size(0), self.num_oom_stages)
             )
         else:
             oom_stage_logits = self.oom_stage_head(globals_)
-        if self.peak_live_head is None:
-            peak_live_bytes_log1p = globals_.new_zeros((globals_.size(0), 1))
-        else:
-            peak_live_bytes_log1p = F.softplus(self.peak_live_head(globals_))
         learned_confidence = torch.sigmoid(self.confidence_head(globals_))
         unknown_fraction = quality[:, 0:1].clamp(0.0, 1.0)
         custom_fraction = quality[:, 3:4].clamp(0.0, 1.0)
@@ -782,7 +938,114 @@ class SeerNetV3(nn.Module):
             peak_live_bytes_log1p,
             globals_,
             phase_hidden,
+            base_prediction,
+            paired_residual,
         )
+
+    @torch.jit.ignore
+    def named_parameter_groups(self) -> dict[str, tuple[str, ...]]:
+        names = tuple(name for name, _ in self.named_parameters())
+        adapter = tuple(
+            name
+            for name in names
+            if name.startswith(
+                ("hardware_profile_encoder.", "hardware_adapter.", "target_residual_head.")
+            )
+        )
+        linear_only = tuple(
+            name for name in names if name.startswith("target_residual_head.")
+        )
+        hardware_common = tuple(
+            name
+            for name in names
+            if name.startswith(("hardware_profile_encoder.", "target_residual_head."))
+        )
+        film_only = tuple(
+            name
+            for name in names
+            if name.startswith(
+                (
+                    "hardware_adapter.normalization.",
+                    "hardware_adapter.film.",
+                )
+            )
+        )
+        low_rank_only = tuple(
+            name
+            for name in names
+            if name.startswith(
+                (
+                    "hardware_adapter.down.",
+                    "hardware_adapter.up.",
+                    "hardware_adapter.scale",
+                )
+            )
+        )
+        heads = tuple(
+            name
+            for name in names
+            if name.startswith(
+                (
+                    "prediction_head.",
+                    "uncertainty_head.",
+                    "oom_head.",
+                    "oom_stage_head.",
+                    "peak_live_head.",
+                    "confidence_head.",
+                )
+            )
+        )
+        last_block_prefix = f"blocks.{len(self.blocks) - 1}."
+        last_block = tuple(name for name in names if name.startswith(last_block_prefix))
+        base = tuple(name for name in names if name not in set(adapter))
+        return {
+            "base": base,
+            "linear_only": linear_only,
+            "film_only": tuple(dict.fromkeys((*hardware_common, *film_only))),
+            "low_rank_only": tuple(
+                dict.fromkeys((*hardware_common, *low_rank_only))
+            ),
+            "adapter_only": adapter,
+            "adapter_heads": tuple(dict.fromkeys((*adapter, *heads))),
+            "adapter_last_block": tuple(
+                dict.fromkeys((*adapter, *last_block))
+            ),
+        }
+
+    @torch.jit.ignore
+    def configure_trainable_parameters(self, policy: str) -> dict[str, Any]:
+        policy_to_group = {
+            "base": "base",
+            "linear_only": "linear_only",
+            "film_only": "film_only",
+            "low_rank_only": "low_rank_only",
+            "film_low_rank": "adapter_only",
+            "film_low_rank_heads": "adapter_heads",
+            "film_low_rank_last_block": "adapter_last_block",
+        }
+        if policy not in policy_to_group:
+            raise ValueError(f"unsupported trainable-parameter policy {policy!r}")
+        allowed = set(self.named_parameter_groups()[policy_to_group[policy]])
+        trainable_names: list[str] = []
+        frozen_names: list[str] = []
+        trainable_count = 0
+        total_count = 0
+        for name, parameter in self.named_parameters():
+            parameter.requires_grad_(name in allowed)
+            total_count += parameter.numel()
+            if parameter.requires_grad:
+                trainable_names.append(name)
+                trainable_count += parameter.numel()
+            else:
+                frozen_names.append(name)
+        return {
+            "policy": policy,
+            "trainable_names": tuple(trainable_names),
+            "frozen_names": tuple(frozen_names),
+            "trainable_parameter_count": trainable_count,
+            "total_parameter_count": total_count,
+            "trainable_fraction": trainable_count / max(1, total_count),
+        }
 
     @torch.jit.ignore
     def forward_batch(self, batch: GraphBatchV3) -> SeerOutputV3:
@@ -818,7 +1081,8 @@ def graph_batch_tensors(batch: GraphBatchV3) -> tuple[torch.Tensor, ...]:
         batch.edge_phase_transition_id,
         batch.edge_flags,
         batch.u_cont,
-        batch.hardware_id,
+        batch.hardware_cont,
+        batch.hardware_missing_mask,
         batch.precision_id,
         batch.optimizer_id,
         batch.optimizer_family_id,
@@ -838,11 +1102,14 @@ def graph_batch_tensors(batch: GraphBatchV3) -> tuple[torch.Tensor, ...]:
 __all__ = [
     "HierarchicalEdgeEncoder",
     "HierarchicalGlobalEncoder",
+    "HardwareAdapterV3",
+    "HardwareProfileEncoderV3",
     "HierarchicalNodeEncoder",
     "OOM_FAILURE_STAGES",
     "SeerBlockV3",
     "SeerNetV3",
     "SeerNetV3Config",
     "SeerOutputV3",
+    "WorkloadGlobalEncoderV3",
     "graph_batch_tensors",
 ]

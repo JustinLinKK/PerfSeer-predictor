@@ -12,7 +12,13 @@ import torch
 
 from .baseline import canonical_json
 from .graph_ir_v3 import GraphIRV3, PHASES, TENSOR_ROLES
-from .hardware import graph_hardware_id
+from .hardware import (
+    HARDWARE_CONTINUOUS_FIELDS,
+    HARDWARE_MISSING_MASK_FIELDS,
+    HardwareNormalizationPolicyV3,
+    graph_hardware_id,
+    hardware_profile_from_metadata,
+)
 from .op_registry import OperationRegistry
 from .schema import (
     CAPTURE_BACKENDS,
@@ -48,6 +54,7 @@ from .training_semantics import (
     stable_category_bucket,
     training_hyperparameter_values,
 )
+from .version import WORKLOAD_NORMALIZATION_VERSION
 
 
 @dataclass(frozen=True)
@@ -58,6 +65,8 @@ class FeatureLayoutV3:
     node_continuous_fields: tuple[str, ...]
     edge_continuous_fields: tuple[str, ...]
     global_continuous_fields: tuple[str, ...]
+    hardware_continuous_fields: tuple[str, ...]
+    hardware_missing_mask_fields: tuple[str, ...]
     node_flag_fields: tuple[str, ...]
     edge_flag_fields: tuple[str, ...]
     quality_fields: tuple[str, ...]
@@ -96,6 +105,8 @@ class GraphFeaturesV3:
     edge_phase_transition_id: torch.Tensor
     edge_flags: torch.Tensor
     u_cont: torch.Tensor
+    hardware_cont: torch.Tensor
+    hardware_missing_mask: torch.Tensor
     hardware_id: torch.Tensor
     precision_id: torch.Tensor
     optimizer_id: torch.Tensor
@@ -157,6 +168,16 @@ class GraphFeaturesV3:
             raise ValueError("edge_flags does not match the named flag layout")
         if self.u_cont.shape != (1, len(self.layout.global_continuous_fields)):
             raise ValueError("u_cont does not match the named global feature layout")
+        if self.hardware_cont.shape != (
+            1,
+            len(self.layout.hardware_continuous_fields),
+        ):
+            raise ValueError("hardware_cont does not match the fixed hardware layout")
+        if self.hardware_missing_mask.shape != (
+            1,
+            len(self.layout.hardware_missing_mask_fields),
+        ):
+            raise ValueError("hardware_missing_mask does not match the hardware layout")
         for tensor in (
             self.hardware_id,
             self.precision_id,
@@ -181,6 +202,8 @@ class GraphFeaturesV3:
             self.edge_cont,
             self.edge_flags,
             self.u_cont,
+            self.hardware_cont,
+            self.hardware_missing_mask,
             self.quality,
         ):
             if not torch.isfinite(tensor).all():
@@ -208,6 +231,7 @@ class NormalizationStatsV3:
     node: NormalizationBlock
     edge: NormalizationBlock
     global_features: NormalizationBlock
+    normalization_version: str = WORKLOAD_NORMALIZATION_VERSION
 
     @property
     def sha256(self) -> str:
@@ -223,6 +247,8 @@ def feature_layout(registry: OperationRegistry) -> FeatureLayoutV3:
         node_continuous_fields=NODE_CONTINUOUS_FIELDS,
         edge_continuous_fields=EDGE_CONTINUOUS_FIELDS,
         global_continuous_fields=GLOBAL_CONTINUOUS_FIELDS,
+        hardware_continuous_fields=HARDWARE_CONTINUOUS_FIELDS,
+        hardware_missing_mask_fields=HARDWARE_MISSING_MASK_FIELDS,
         node_flag_fields=NODE_FLAG_FIELDS,
         edge_flag_fields=EDGE_FLAG_FIELDS,
         quality_fields=QUALITY_FIELDS,
@@ -476,9 +502,6 @@ def _global_continuous(graph: GraphIRV3) -> list[float]:
     globals_dict = asdict(graph.global_features)
     phase_nodes = {phase: [node for node in graph.nodes if node.phase == phase] for phase in PHASES}
     model_inputs = [edge for edge in graph.tensor_edges if edge.tensor_role == "model_input"]
-    hardware = graph.metadata.get("hardware_features", {})
-    if not isinstance(hardware, Mapping):
-        hardware = {}
     optimizer = graph.optimizer_config
     floating_edges = [
         edge for edge in graph.tensor_edges if edge.dtype in _FLOATING_DTYPES
@@ -514,14 +537,6 @@ def _global_continuous(graph: GraphIRV3) -> list[float]:
         ),
         "custom_operation_fraction": graph.coverage.custom_operations / max(1, len(graph.nodes)),
         "capture_replay_samples": graph.coverage.replay_samples,
-        "hardware_memory_bytes": hardware.get("memory_bytes", 0),
-        "hardware_sm_count": hardware.get("sm_count", 0),
-        "hardware_compute_capability": hardware.get("compute_capability", 0),
-        "hardware_memory_bandwidth_bytes_per_second": hardware.get(
-            "memory_bandwidth_bytes_per_second",
-            0,
-        ),
-        "hardware_peak_flops": hardware.get("peak_flops", 0),
         "distinct_floating_dtype_count": len(
             {edge.dtype for edge in floating_edges}
         ),
@@ -791,6 +806,16 @@ def build_graph_features(
         [_global_continuous(graph)],
         dtype=torch.float32,
     )
+    hardware_profile = hardware_profile_from_metadata(graph.metadata)
+    hardware_normalization = HardwareNormalizationPolicyV3().normalize(hardware_profile)
+    hardware_cont = torch.tensor(
+        [hardware_normalization.values],
+        dtype=torch.float32,
+    )
+    hardware_missing_mask = torch.tensor(
+        [hardware_normalization.missing_mask],
+        dtype=torch.float32,
+    )
     custom_fraction = graph.coverage.custom_operations / max(1, len(graph.nodes))
     dynamic_edges = sum(
         any(not isinstance(dimension, int) for dimension in edge.shape)
@@ -857,6 +882,8 @@ def build_graph_features(
         edge_phase_transition_id=edge_phase_transition_ids,
         edge_flags=edge_flags,
         u_cont=u_cont,
+        hardware_cont=hardware_cont,
+        hardware_missing_mask=hardware_missing_mask,
         hardware_id=torch.tensor(
             [_stable_bucket(hardware_name, HARDWARE_HASH_BUCKETS)],
             dtype=torch.long,
@@ -906,6 +933,11 @@ def build_graph_features(
                 for edge in graph.tensor_edges
             ),
             "hardware_id": hardware_name,
+            "hardware_profile_sha256": hardware_profile.sha256,
+            "hardware_profile_version": hardware_profile.profile_version,
+            "hardware_normalization_sha256": hardware_normalization.policy_sha256,
+            "hardware_normalization_version": hardware_normalization.policy_version,
+            "hardware_clip_frequency": hardware_normalization.clip_frequency,
             "precision": precision_name,
             "declared_precision": str(graph.precision),
             "optimizer": optimizer_name,
@@ -1044,6 +1076,13 @@ def apply_normalization(
         metadata={
             **sample.metadata,
             "normalization_sha256": stats.sha256,
+            "workload_clip_frequency": (
+                (x_clipped + edge_clipped + u_clipped)
+                / max(1, x_total + edge_total + u_total)
+            ),
+            "hardware_clip_frequency": sample.metadata.get(
+                "hardware_clip_frequency", 0.0
+            ),
             "clip_frequency": (
                 (x_clipped + edge_clipped + u_clipped)
                 / max(1, x_total + edge_total + u_total)
@@ -1065,6 +1104,10 @@ def validate_checkpoint_layout(
         "node_continuous_fields": list(sample.layout.node_continuous_fields),
         "edge_continuous_fields": list(sample.layout.edge_continuous_fields),
         "global_continuous_fields": list(sample.layout.global_continuous_fields),
+        "hardware_continuous_fields": list(sample.layout.hardware_continuous_fields),
+        "hardware_missing_mask_fields": list(
+            sample.layout.hardware_missing_mask_fields
+        ),
         "node_flag_fields": list(sample.layout.node_flag_fields),
         "edge_flag_fields": list(sample.layout.edge_flag_fields),
         "quality_fields": list(sample.layout.quality_fields),
@@ -1126,6 +1169,8 @@ class GraphBatchV3:
     edge_phase_transition_id: torch.Tensor
     edge_flags: torch.Tensor
     u_cont: torch.Tensor
+    hardware_cont: torch.Tensor
+    hardware_missing_mask: torch.Tensor
     hardware_id: torch.Tensor
     precision_id: torch.Tensor
     optimizer_id: torch.Tensor
@@ -1186,6 +1231,8 @@ def batch_graph_features(samples: Sequence[GraphFeaturesV3]) -> GraphBatchV3:
         edge_phase_transition_id=concatenate("edge_phase_transition_id"),
         edge_flags=concatenate("edge_flags"),
         u_cont=concatenate("u_cont"),
+        hardware_cont=concatenate("hardware_cont"),
+        hardware_missing_mask=concatenate("hardware_missing_mask"),
         hardware_id=concatenate("hardware_id"),
         precision_id=concatenate("precision_id"),
         optimizer_id=concatenate("optimizer_id"),

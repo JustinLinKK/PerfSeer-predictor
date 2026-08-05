@@ -41,6 +41,8 @@ class TargetMetrics:
     p90_absolute_percentage_error: float
     p95_absolute_percentage_error: float
     interval_coverage: float | None = None
+    interval_coverage_80: float | None = None
+    interval_coverage_95: float | None = None
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,8 @@ class PredictionRecord:
     batch_size_bucket: str = "unknown"
     precision: str = "unknown"
     optimizer: str = "unknown"
+    scheduler: str = "unknown"
+    execution_mode: str = "unknown"
     capture_quality: str = "unknown"
     graph_size_bucket: str = "unknown"
     resource_regime: str = "unknown"
@@ -93,10 +97,16 @@ def _target_metrics(
     ss_total = ((target - target_mean) ** 2).sum()
     ss_residual = (error**2).sum()
     r2 = 1.0 - ss_residual / ss_total if ss_total > 1e-12 else (1.0 if ss_residual <= 1e-12 else 0.0)
-    interval_coverage = None
+    interval_coverage_80 = None
+    interval_coverage_95 = None
     if log_variance is not None:
         standard_deviation = np.exp(0.5 * np.clip(log_variance, -20.0, 20.0))
-        interval_coverage = float(np.mean(absolute <= 1.96 * standard_deviation))
+        interval_coverage_80 = float(
+            np.mean(absolute <= 1.2815515655446004 * standard_deviation)
+        )
+        interval_coverage_95 = float(
+            np.mean(absolute <= 1.959963984540054 * standard_deviation)
+        )
     if percentages.size:
         p50, p90, p95 = np.percentile(percentages, (50, 90, 95))
         mape = float(percentages.mean())
@@ -123,7 +133,9 @@ def _target_metrics(
         p50_absolute_percentage_error=float(p50),
         p90_absolute_percentage_error=float(p90),
         p95_absolute_percentage_error=float(p95),
-        interval_coverage=interval_coverage,
+        interval_coverage=interval_coverage_95,
+        interval_coverage_80=interval_coverage_80,
+        interval_coverage_95=interval_coverage_95,
     )
 
 
@@ -161,6 +173,8 @@ _SLICE_FIELDS = (
     "batch_size_bucket",
     "precision",
     "optimizer",
+    "scheduler",
+    "execution_mode",
     "capture_quality",
     "graph_size_bucket",
     "resource_regime",

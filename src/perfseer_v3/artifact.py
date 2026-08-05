@@ -10,13 +10,19 @@ from typing import Any, Mapping
 
 import torch
 
+from .baseline import canonical_json
 from .coarsen_v3 import COARSENING_POLICY_SHA256
 from .features import (
     FeatureLayoutV3,
     NormalizationBlock,
     NormalizationStatsV3,
 )
-from .hardware import canonical_hardware_id, require_specific_hardware_id
+from .hardware import (
+    HardwareNormalizationPolicyV3,
+    canonical_hardware_id,
+    require_specific_hardware_id,
+)
+from .hardware_transfer import TransferLineageV3
 from .model import SeerNetV3, SeerNetV3Config
 from .op_registry import OperationRegistry
 from .schema import build_feature_schema
@@ -27,6 +33,7 @@ from .version import (
     GRAPH_IR_VERSION,
     LABEL_SCHEMA_VERSION,
     OP_REGISTRY_VERSION,
+    OUTPUT_CONTRACT_VERSION,
     STUDENT_MODEL_RELEASE,
     TEACHER_MODEL_RELEASE,
 )
@@ -87,14 +94,28 @@ class ArtifactMetadataV3:
     model_config: dict[str, Any]
     minimum_confidence: float = 0.2
     allow_ok_with_unknowns: bool = False
-    output_contract_version: str = "perfseer_v3_outputs_v2"
+    output_contract_version: str = OUTPUT_CONTRACT_VERSION
     optional_output_names: tuple[str, ...] = (
         "log_variance",
         "oom_probability",
         "oom_failure_stage",
         "confidence",
         "peak_live_bytes_log1p",
+        "base_prediction",
+        "paired_residual",
     )
+    adapter_policy: str = "base"
+    adapter_rank: int = 0
+    trainable_parameter_count: int = 0
+    base_artifact_sha256: str | None = None
+    base_hardware_id: str | None = None
+    target_subset_sha256: str | None = None
+    hardware_profile_sha256: str | None = None
+    workload_normalization_sha256: str | None = None
+    hardware_normalization_sha256: str | None = None
+    calibration_sha256: str | None = None
+    paired_residual_policy_sha256: str | None = None
+    transfer_lineage_sha256: str | None = None
 
     def validate(
         self,
@@ -162,7 +183,7 @@ class ArtifactMetadataV3:
             raise ArtifactIntegrityError("artifact scheduler allowlist must be canonical")
         if not 0.0 <= self.minimum_confidence <= 1.0:
             raise ArtifactIntegrityError("minimum confidence must be in [0, 1]")
-        if self.output_contract_version != "perfseer_v3_outputs_v2":
+        if self.output_contract_version != OUTPUT_CONTRACT_VERSION:
             raise ArtifactIntegrityError("unsupported v3 output contract")
         required_optional = {
             "log_variance",
@@ -170,10 +191,48 @@ class ArtifactMetadataV3:
             "oom_failure_stage",
             "confidence",
             "peak_live_bytes_log1p",
+            "base_prediction",
+            "paired_residual",
         }
         if set(self.optional_output_names) != required_optional:
             raise ArtifactIntegrityError("artifact optional output contract mismatch")
         self.target_transform.validate()
+        if self.model_config.get("adapter_policy", "base") != self.adapter_policy:
+            raise ArtifactIntegrityError("artifact/model adapter policies differ")
+        if self.adapter_policy == "base":
+            if self.transfer_lineage_sha256 is not None:
+                raise ArtifactIntegrityError("base artifact cannot declare target transfer lineage")
+        else:
+            try:
+                lineage = TransferLineageV3(
+                    base_artifact_sha256=str(self.base_artifact_sha256 or ""),
+                    base_hardware_id=str(self.base_hardware_id or ""),
+                    target_hardware_id=self.target_hardware_id,
+                    target_subset_sha256=str(self.target_subset_sha256 or ""),
+                    hardware_profile_sha256=str(self.hardware_profile_sha256 or ""),
+                    workload_normalization_sha256=str(
+                        self.workload_normalization_sha256 or ""
+                    ),
+                    hardware_normalization_sha256=str(
+                        self.hardware_normalization_sha256 or ""
+                    ),
+                    calibration_sha256=str(self.calibration_sha256 or ""),
+                    paired_residual_policy_sha256=str(
+                        self.paired_residual_policy_sha256 or ""
+                    ),
+                    adapter_policy=self.adapter_policy,
+                    adapter_rank=self.adapter_rank,
+                    trainable_parameter_count=self.trainable_parameter_count,
+                )
+                lineage.validate()
+            except ValueError as exc:
+                raise ArtifactIntegrityError(str(exc)) from exc
+            if self.transfer_lineage_sha256 != lineage.sha256:
+                raise ArtifactIntegrityError("artifact transfer lineage hash mismatch")
+            if self.hardware_normalization_sha256 != HardwareNormalizationPolicyV3().sha256:
+                raise ArtifactIntegrityError("artifact hardware normalization policy mismatch")
+            if self.model_config.get("adapter_rank") != self.adapter_rank:
+                raise ArtifactIntegrityError("artifact/model adapter ranks differ")
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -292,13 +351,25 @@ def save_checkpoint_artifact(
 ) -> Path:
     output = Path(path)
     output.parent.mkdir(parents=True, exist_ok=True)
+    calibration_payload = dict(calibration or {})
+    calibration_sha256 = hashlib.sha256(
+        canonical_json(calibration_payload).encode("utf-8")
+    ).hexdigest()
+    if metadata.calibration_sha256 is not None and metadata.calibration_sha256 != calibration_sha256:
+        raise ArtifactIntegrityError("artifact calibration hash does not match calibration payload")
+    if (
+        metadata.workload_normalization_sha256 is not None
+        and normalization is not None
+        and metadata.workload_normalization_sha256 != normalization.sha256
+    ):
+        raise ArtifactIntegrityError("artifact workload normalization hash mismatch")
     payload = {
-        "format": "perfseer_v3_state_dict_v2",
+        "format": "perfseer_v3_transfer_state_dict_v1",
         "model_config": model.config.to_dict(),
         "model_state": model.state_dict(),
         "metadata": metadata.to_dict(),
         "normalization": asdict(normalization) if normalization is not None else None,
-        "calibration": dict(calibration or {}),
+        "calibration": calibration_payload,
     }
     torch.save(payload, output)
     return output
@@ -334,7 +405,7 @@ def load_checkpoint_artifact(
         payload = torch.load(artifact_path, map_location="cpu", weights_only=False)
     except TypeError:
         payload = torch.load(artifact_path, map_location="cpu")
-    if payload.get("format") != "perfseer_v3_state_dict_v2":
+    if payload.get("format") != "perfseer_v3_transfer_state_dict_v1":
         raise ArtifactIntegrityError("unsupported PerfSeer artifact format")
     registry = registry or OperationRegistry.load()
     schema = build_feature_schema(registry)
@@ -346,6 +417,8 @@ def load_checkpoint_artifact(
         node_continuous_fields=tuple(layout_data["node_continuous_fields"]),
         edge_continuous_fields=tuple(layout_data["edge_continuous_fields"]),
         global_continuous_fields=tuple(layout_data["global_continuous_fields"]),
+        hardware_continuous_fields=tuple(layout_data["hardware_continuous_fields"]),
+        hardware_missing_mask_fields=tuple(layout_data["hardware_missing_mask_fields"]),
         node_flag_fields=tuple(layout_data["node_flag_fields"]),
         edge_flag_fields=tuple(layout_data["edge_flag_fields"]),
         quality_fields=tuple(layout_data["quality_fields"]),
@@ -366,14 +439,120 @@ def load_checkpoint_artifact(
             raise ArtifactIntegrityError("artifact normalization hash mismatch")
     elif metadata.normalization_sha256 is not None:
         raise ArtifactIntegrityError("artifact declares normalization but embeds none")
+    if (
+        metadata.workload_normalization_sha256 is not None
+        and (
+            normalization is None
+            or metadata.workload_normalization_sha256 != normalization.sha256
+        )
+    ):
+        raise ArtifactIntegrityError("artifact workload normalization lineage mismatch")
+    calibration = dict(payload.get("calibration") or {})
+    calibration_sha256 = hashlib.sha256(
+        canonical_json(calibration).encode("utf-8")
+    ).hexdigest()
+    if metadata.calibration_sha256 is not None and metadata.calibration_sha256 != calibration_sha256:
+        raise ArtifactIntegrityError("artifact calibration lineage hash mismatch")
     return LoadedArtifactV3(
         model=model,
         metadata=metadata,
         normalization=normalization,
-        calibration=dict(payload.get("calibration") or {}),
+        calibration=calibration,
         path=artifact_path,
         sha256=sha256_file(artifact_path),
     )
+
+
+def artifact_metadata_json_schema() -> dict[str, Any]:
+    digest = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "perfseer_v3_transfer_artifact_metadata_v1",
+        "type": "object",
+        "required": [
+            "model_release",
+            "graph_ir_version",
+            "feature_schema_version",
+            "feature_schema_sha256",
+            "operator_registry_sha256",
+            "target_hardware_id",
+            "adapter_policy",
+            "output_contract_version",
+            "optional_output_names",
+            "model_config",
+        ],
+        "properties": {
+            "model_release": {
+                "enum": [TEACHER_MODEL_RELEASE, STUDENT_MODEL_RELEASE]
+            },
+            "graph_ir_version": {"const": GRAPH_IR_VERSION},
+            "feature_schema_version": {"const": FEATURE_SCHEMA_VERSION},
+            "feature_schema_sha256": digest,
+            "operator_registry_sha256": digest,
+            "target_hardware_id": {"type": "string", "minLength": 1},
+            "output_contract_version": {"const": OUTPUT_CONTRACT_VERSION},
+            "optional_output_names": {
+                "type": "array",
+                "uniqueItems": True,
+                "contains": {"const": "paired_residual"},
+            },
+            "adapter_policy": {
+                "enum": [
+                    "base",
+                    "linear_only",
+                    "film_only",
+                    "low_rank_only",
+                    "film_low_rank",
+                    "film_low_rank_heads",
+                    "film_low_rank_last_block",
+                ]
+            },
+            "adapter_rank": {"type": "integer", "minimum": 0},
+            "trainable_parameter_count": {"type": "integer", "minimum": 0},
+            "base_artifact_sha256": {"anyOf": [digest, {"type": "null"}]},
+            "base_hardware_id": {
+                "anyOf": [
+                    {"type": "string", "minLength": 1},
+                    {"type": "null"},
+                ]
+            },
+            "target_subset_sha256": {"anyOf": [digest, {"type": "null"}]},
+            "hardware_profile_sha256": {"anyOf": [digest, {"type": "null"}]},
+            "workload_normalization_sha256": {
+                "anyOf": [digest, {"type": "null"}]
+            },
+            "hardware_normalization_sha256": {
+                "anyOf": [digest, {"type": "null"}]
+            },
+            "calibration_sha256": {"anyOf": [digest, {"type": "null"}]},
+            "paired_residual_policy_sha256": {
+                "anyOf": [digest, {"type": "null"}]
+            },
+            "transfer_lineage_sha256": {"anyOf": [digest, {"type": "null"}]},
+            "model_config": {"type": "object"},
+        },
+        "allOf": [
+            {
+                "if": {
+                    "properties": {"adapter_policy": {"not": {"const": "base"}}}
+                },
+                "then": {
+                    "required": [
+                        "base_artifact_sha256",
+                        "base_hardware_id",
+                        "target_subset_sha256",
+                        "hardware_profile_sha256",
+                        "workload_normalization_sha256",
+                        "hardware_normalization_sha256",
+                        "calibration_sha256",
+                        "paired_residual_policy_sha256",
+                        "transfer_lineage_sha256",
+                    ]
+                },
+            }
+        ],
+        "additionalProperties": True,
+    }
 
 
 __all__ = [
@@ -383,6 +562,7 @@ __all__ = [
     "ArtifactRegistryV3",
     "LoadedArtifactV3",
     "TargetTransformV3",
+    "artifact_metadata_json_schema",
     "load_checkpoint_artifact",
     "save_checkpoint_artifact",
     "sha256_file",

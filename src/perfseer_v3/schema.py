@@ -7,6 +7,11 @@ from typing import Any, Mapping, Sequence
 
 from .baseline import canonical_json
 from .graph_ir_v3 import PHASES, TENSOR_ROLES, graph_ir_json_schema
+from .hardware import (
+    HARDWARE_CONTINUOUS_FIELDS,
+    HARDWARE_MISSING_MASK_FIELDS,
+    HardwareNormalizationPolicyV3,
+)
 from .op_registry import OperationRegistry
 from .training_semantics import (
     OPTIMIZERS,
@@ -129,11 +134,6 @@ GLOBAL_CONTINUOUS_FIELDS: tuple[str, ...] = (
     "loss_bytes_written",
     "backward_bytes_written",
     "optimizer_bytes_written",
-    "hardware_memory_bytes",
-    "hardware_sm_count",
-    "hardware_compute_capability",
-    "hardware_memory_bandwidth_bytes_per_second",
-    "hardware_peak_flops",
     "total_epochs",
     "current_epoch",
     "steps_per_epoch",
@@ -368,7 +368,10 @@ def build_feature_schema(
     node_continuous_fields: Sequence[str] = NODE_CONTINUOUS_FIELDS,
     edge_continuous_fields: Sequence[str] = EDGE_CONTINUOUS_FIELDS,
     global_continuous_fields: Sequence[str] = GLOBAL_CONTINUOUS_FIELDS,
+    hardware_continuous_fields: Sequence[str] = HARDWARE_CONTINUOUS_FIELDS,
+    hardware_missing_mask_fields: Sequence[str] = HARDWARE_MISSING_MASK_FIELDS,
 ) -> dict[str, Any]:
+    hardware_policy = HardwareNormalizationPolicyV3()
     payload: dict[str, Any] = {
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
         "graph_ir_version": GRAPH_IR_VERSION,
@@ -378,6 +381,8 @@ def build_feature_schema(
             "node_continuous": list(node_continuous_fields),
             "edge_continuous": list(edge_continuous_fields),
             "global_continuous": list(global_continuous_fields),
+            "hardware_continuous": list(hardware_continuous_fields),
+            "hardware_missing_mask": list(hardware_missing_mask_fields),
             "node_flags": list(NODE_FLAG_FIELDS),
             "edge_flags": list(EDGE_FLAG_FIELDS),
             "quality": list(QUALITY_FIELDS),
@@ -409,9 +414,20 @@ def build_feature_schema(
             "tensor_slot_buckets": SLOT_BUCKETS,
         },
         "normalization": {
-            "fit_split": "train_only",
-            "transforms": {name: TRANSFORMS.get(name, "identity") for name in TRANSFORMS},
-            "clipping": "training_quantiles",
+            "workload": {
+                "fit_split": "train_only",
+                "transforms": {
+                    name: TRANSFORMS.get(name, "identity") for name in TRANSFORMS
+                },
+                "clipping": "training_quantiles",
+            },
+            "hardware": {
+                "policy_version": hardware_policy.policy_version,
+                "policy_sha256": hardware_policy.sha256,
+                "transforms": "fixed_physical_reference_bounds",
+                "missing_value_mask": True,
+                "fit_from_training_data": False,
+            },
         },
         "graph_ir_json_schema": graph_ir_json_schema(),
     }
@@ -439,6 +455,8 @@ def validate_feature_schema(payload: Mapping[str, Any], registry: OperationRegis
         "node_continuous",
         "edge_continuous",
         "global_continuous",
+        "hardware_continuous",
+        "hardware_missing_mask",
         "node_flags",
         "edge_flags",
         "quality",
@@ -459,7 +477,9 @@ __all__ = [
     "EDGE_FLAG_FIELDS",
     "FEATURE_QUALITIES",
     "GLOBAL_CONTINUOUS_FIELDS",
+    "HARDWARE_CONTINUOUS_FIELDS",
     "HARDWARE_HASH_BUCKETS",
+    "HARDWARE_MISSING_MASK_FIELDS",
     "LAYOUTS",
     "NODE_CONTINUOUS_FIELDS",
     "NODE_FLAG_FIELDS",

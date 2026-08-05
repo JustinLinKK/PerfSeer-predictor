@@ -14,6 +14,7 @@ import torch
 from .adapters import adapter_for_task
 from .contracts import EPOCH_MEASUREMENT_VERSION, EpochMeasurement, TelemetrySample
 from .fingerprints import canonical_sha256
+from ..hardware import HardwareProfileV3, assert_physical_hardware_identity
 from .local_runtime import (
     _all_finite,
     _build_model,
@@ -61,7 +62,12 @@ class TelemetryBackend(Protocol):
 class NvmlTelemetryBackend:
     """NVML adapter bound to the one physical GPU exposed to the child."""
 
-    def __init__(self, physical_gpu_index: int) -> None:
+    def __init__(
+        self,
+        physical_gpu_index: int,
+        *,
+        expected_hardware_profile: HardwareProfileV3 | None = None,
+    ) -> None:
         try:
             import pynvml
 
@@ -75,20 +81,47 @@ class NvmlTelemetryBackend:
             self._uuid = pynvml.nvmlDeviceGetUUID(self._handle)
             if isinstance(self._uuid, bytes):
                 self._uuid = self._uuid.decode("utf-8")
-            if "A10G" not in str(name).upper() or not 22 * 1024**3 <= memory.total <= 26 * 1024**3:
-                raise A10GRunError("label worker is not bound to a 24 GiB NVIDIA A10G")
             properties = torch.cuda.get_device_properties(0)
-            if (properties.major, properties.minor) != (8, 6):
-                raise A10GRunError("visible CUDA device does not have A10G compute capability 8.6")
-            self._hardware_fingerprint = canonical_sha256(
-                {
+            if expected_hardware_profile is None:
+                if "A10G" not in str(name).upper() or not 22 * 1024**3 <= memory.total <= 26 * 1024**3:
+                    raise A10GRunError("label worker is not bound to a 24 GiB NVIDIA A10G")
+                if (properties.major, properties.minor) != (8, 6):
+                    raise A10GRunError("visible CUDA device does not have A10G compute capability 8.6")
+                provenance = {
                     "target_hardware_id": "nvidia_a10g_24gb_aws_g5",
                     "name": str(name),
                     "uuid": self._uuid,
                     "total_memory_bytes": int(memory.total),
                     "compute_capability": [properties.major, properties.minor],
                 }
-            )
+                self._hardware_profile_sha256 = None
+            else:
+                expected_hardware_profile.validate(require_complete_signature=True)
+                try:
+                    assert_physical_hardware_identity(
+                        expected_hardware_profile.hardware_id,
+                        name,
+                    )
+                except ValueError as error:
+                    raise A10GRunError(str(error)) from error
+                expected = expected_hardware_profile.canonical_payload
+                expected_memory = expected["static"].get("memory_bytes")
+                expected_capability = expected["static"].get("compute_capability")
+                observed_capability = properties.major + properties.minor / 10.0
+                if expected_memory is not None and abs(memory.total - expected_memory) / expected_memory > 0.02:
+                    raise A10GRunError("visible GPU memory differs from the frozen target profile")
+                if expected_capability is not None and abs(observed_capability - expected_capability) > 1e-6:
+                    raise A10GRunError("visible GPU compute capability differs from the frozen target profile")
+                self._hardware_profile_sha256 = expected_hardware_profile.sha256
+                provenance = {
+                    "target_hardware_id": expected_hardware_profile.hardware_id,
+                    "hardware_profile_sha256": expected_hardware_profile.sha256,
+                    "name": str(name),
+                    "uuid": self._uuid,
+                    "total_memory_bytes": int(memory.total),
+                    "compute_capability": [properties.major, properties.minor],
+                }
+            self._hardware_fingerprint = canonical_sha256(provenance)
         except A10GRunError:
             raise
         except Exception as error:
@@ -101,6 +134,10 @@ class NvmlTelemetryBackend:
     @property
     def hardware_fingerprint(self) -> str:
         return self._hardware_fingerprint
+
+    @property
+    def hardware_profile_sha256(self) -> str | None:
+        return self._hardware_profile_sha256
 
     def read(self) -> TelemetryReading:
         try:

@@ -1,5 +1,5 @@
 {
-  "contract_sha256": "48b721aa4ddab7791a2d2cdf69b2b5c1ea430dbb40c8174761d1a442132a23ac",
+  "contract_sha256": "13fb04c344ca5b1a67c82767072f6b172e810ce09ffb6dd5c3984c49493e51e9",
   "contract_status": "planning",
   "coverage_config_sha256": "bdab2606bd2a89c7252576f121d1ce3544edd194c7bb4626aed66f91db6f1b7b",
   "families": [
@@ -218,8 +218,8 @@
       "support_state": "required_measured"
     }
   ],
-  "feature_schema_sha256": "7d7966b124db6d473db2391bffa692cad2c74858985ef2cd2f478b8fbe210e78",
-  "feature_schema_version": "perfseer_graph_v3",
+  "feature_schema_sha256": "eb2c59805c04deeb32785699be387144b419a03764369454a9ac0b4259fe2e8a",
+  "feature_schema_version": "perfseer_graph_v3_transfer_v1",
   "generator_mapping_status": "declared_pending_phase2_implementation",
   "generator_registry_sha256": null,
   "operations": [
