@@ -36,6 +36,12 @@ MIB = 1024**2
 A10G_RUN_RESULT_VERSION = "perfseer_v3_a10g_five_epoch_result_v1"
 
 
+def _allows_a10_family() -> bool:
+    """Opt in to physical A10 while preserving frozen logical row identities."""
+
+    return os.environ.get("PERFSEER_ALLOW_A10_FAMILY") == "1"
+
+
 class A10GRunError(RuntimeError):
     """Raised when a single configuration cannot produce an accepted run payload."""
 
@@ -83,10 +89,14 @@ class NvmlTelemetryBackend:
                 self._uuid = self._uuid.decode("utf-8")
             properties = torch.cuda.get_device_properties(0)
             if expected_hardware_profile is None:
-                if "A10G" not in str(name).upper() or not 22 * 1024**3 <= memory.total <= 26 * 1024**3:
-                    raise A10GRunError("label worker is not bound to a 24 GiB NVIDIA A10G")
+                normalized_name = str(name).upper().replace(" ", "")
+                expected_token = "A10" if _allows_a10_family() else "A10G"
+                if expected_token not in normalized_name or not 22 * 1024**3 <= memory.total <= 26 * 1024**3:
+                    raise A10GRunError(
+                        "label worker is not bound to the requested 24 GiB NVIDIA A10 family"
+                    )
                 if (properties.major, properties.minor) != (8, 6):
-                    raise A10GRunError("visible CUDA device does not have A10G compute capability 8.6")
+                    raise A10GRunError("visible CUDA device does not have A10-family compute capability 8.6")
                 provenance = {
                     "target_hardware_id": "nvidia_a10g_24gb_aws_g5",
                     "name": str(name),

@@ -122,3 +122,37 @@ distributed AWS service, storage ledger, or AWS API integration is in scope.
      tamper rejection, interrupted-merge resume, atomic publication, exact
      18,000/54,000 finalization, and verify-only replay. The independent
      verifier issued PASS after reproducing focused checks.
+
+## Single-family Nautilus labeling: PANNs CNN14
+
+1. Inspect the repository instructions, the PANNs CNN14 entry in the A10G 18K
+   dataset pack, and the existing Nautilus labeling tools.
+   - Status: complete.
+2. Check the current Nautilus user documentation for namespace, GPU, storage,
+   image, and Job requirements relevant to this workload.
+   - Status: complete.
+3. Prepare a single-model PyTorch CUDA Job manifest plus submit, monitor, and
+   verify scripts. The submit path must collect immediate Kubernetes feedback
+   and start the required persistent monitor.
+   - Status: complete.
+4. Verify that the selected family contains exactly 550 configurations,
+   validate the rendered manifest, exercise submission with a fake `kubectl`
+   where possible, and run focused tests.
+   - Status: complete. The 116-test staged snapshot passes, followed by the
+     seven-test PANNs suite with two exact-completion cases.
+5. Give the user exact prerequisites, commands, expected files, and
+   troubleshooting steps. Do not contact the cluster until the prepared
+   artifacts have passed their local checks.
+   - Status: complete. The operator runbook contains the pilot, production,
+     monitoring, completion, resume, and cleanup procedure.
+
+## Commit the PANNs Nautilus workflow
+
+1. Trace the exact runtime and test dependency closure from the PANNs wrapper.
+2. Exclude transfer-learning documentation, reports, and unrelated encoder
+   wording from the commit.
+3. Stage only an explicit reviewed allowlist; do not use broad Git add rules.
+4. Verify the staged source, manifests, shell syntax, tests, secrets scan, and
+   staged diff before committing.
+5. Create one local commit without pushing, then verify its tree and report all
+   remaining worktree changes.

@@ -96,10 +96,14 @@ class ParentNvmlProbe:
                 uuid = uuid.decode()
             memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
             capability = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
-            if "A10G" not in str(name).upper() or tuple(capability) != (8, 6):
-                raise SupervisorError("discovered GPU is not an NVIDIA A10G")
+            normalized_name = str(name).upper().replace(" ", "")
+            expected_token = (
+                "A10" if os.environ.get("PERFSEER_ALLOW_A10_FAMILY") == "1" else "A10G"
+            )
+            if expected_token not in normalized_name or tuple(capability) != (8, 6):
+                raise SupervisorError("discovered GPU is not in the requested NVIDIA A10 family")
             if not 22 * 1024**3 <= memory.total <= 26 * 1024**3:
-                raise SupervisorError("discovered A10G does not expose approximately 24 GiB")
+                raise SupervisorError("discovered A10-family GPU does not expose approximately 24 GiB")
             self._pynvml = pynvml
             self._handle = handle
             self.physical_index = physical_index
