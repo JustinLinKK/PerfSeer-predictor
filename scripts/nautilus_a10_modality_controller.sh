@@ -26,7 +26,7 @@ Required options for every action except analyze:
   --pvc NAME
   --repository-url URL
   --revision 40_HEX_COMMIT
-  --kaggle-secret NAME
+  --kaggle-secret NAME      Secret containing the exact key kaggle.json.
   --image NAME@sha256:64_HEX
   --run-id DNS_LABEL
 

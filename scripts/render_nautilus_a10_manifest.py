@@ -17,6 +17,7 @@ MODALITIES = ("audio", "tabular", "graph", "generated")
 MODES = ("pod", "pilot-job", "production-job")
 FAMILY_MODALITIES = {"panns_cnn14": "audio"}
 MLEBENCH_REVISION = "507f92e1138bb6e40dac5c6ee7a6758e6424bf97"
+KAGGLE_CONFIG_MOUNT = "/var/run/secrets/perfseer-kaggle"
 DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
 SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
 REVISION = re.compile(r"^[0-9a-f]{40}$")
@@ -99,6 +100,7 @@ def _environment(arguments: argparse.Namespace, image_digest: str) -> list[Mappi
         {"name": "PERFSEER_REPOSITORY_REVISION", "value": arguments.revision},
         {"name": "PERFSEER_CONTAINER_DIGEST", "value": image_digest},
         {"name": "PERFSEER_ALLOW_A10_FAMILY", "value": "1"},
+        {"name": "KAGGLE_CONFIG_DIR", "value": KAGGLE_CONFIG_MOUNT},
         {"name": "PIP_CACHE_DIR", "value": "/tmp/pip-cache"},
         {"name": "TMPDIR", "value": "/tmp"},
     ]
@@ -198,12 +200,18 @@ def render(arguments: argparse.Namespace) -> Mapping[str, Any]:
         "command": ["/bin/bash", "-lc"],
         "args": ["exec sleep infinity" if arguments.mode == "pod" else _job_script(arguments, image_digest)],
         "env": _environment(arguments, image_digest),
-        "envFrom": [{"secretRef": {"name": arguments.kaggle_secret}}],
         "resources": {
             "requests": {"cpu": arguments.cpu, "memory": arguments.memory, "nvidia.com/gpu": 1},
             "limits": {"cpu": arguments.cpu, "memory": arguments.memory, "nvidia.com/gpu": 1},
         },
-        "volumeMounts": [{"name": "workspace", "mountPath": "/pvc"}],
+        "volumeMounts": [
+            {"name": "workspace", "mountPath": "/pvc"},
+            {
+                "name": "kaggle-credentials",
+                "mountPath": KAGGLE_CONFIG_MOUNT,
+                "readOnly": True,
+            },
+        ],
     }
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
@@ -226,7 +234,17 @@ def render(arguments: argparse.Namespace) -> Mapping[str, Any]:
         },
         "containers": [container],
         "volumes": [
-            {"name": "workspace", "persistentVolumeClaim": {"claimName": arguments.pvc}}
+            {"name": "workspace", "persistentVolumeClaim": {"claimName": arguments.pvc}},
+            {
+                "name": "kaggle-credentials",
+                "secret": {
+                    "secretName": arguments.kaggle_secret,
+                    "defaultMode": 0o400,
+                    "items": [
+                        {"key": "kaggle.json", "path": "kaggle.json", "mode": 0o400}
+                    ],
+                },
+            },
         ],
     }
     if arguments.mode == "pod":

@@ -156,3 +156,18 @@ distributed AWS service, storage ledger, or AWS API integration is in scope.
    staged diff before committing.
 5. Create one local commit without pushing, then verify its tree and report all
    remaining worktree changes.
+
+## Mount Kaggle credentials securely on Nautilus
+
+1. Replace Secret-to-environment injection with a read-only Secret volume that
+   exposes only the `kaggle.json` key.
+   - Status: complete.
+2. Set `KAGGLE_CONFIG_DIR` to the mounted Secret directory and enforce a
+   group/other-inaccessible file mode compatible with the fail-closed runner.
+   - Status: complete.
+3. Update both Nautilus runbooks with the secret creation command and the exact
+   two Kaggle competition agreement links.
+   - Status: complete.
+4. Verify rendered Pod/Job manifests contain only the Secret name, never the
+   credential payload, and rerun the focused Nautilus suites.
+   - Status: complete. All 19 focused Nautilus tests pass.

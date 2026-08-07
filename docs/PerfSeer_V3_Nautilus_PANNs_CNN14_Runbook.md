@@ -54,26 +54,46 @@ before submission. Never embed a Git credential in `REPOSITORY_URL`.
 
 The Kaggle account must have accepted the rules for both competitions:
 
-- `mlsp-2013-birds`
-- `the-icml-2013-whale-challenge-right-whale-redux`
+- [MLSP 2013 Bird Classification Challenge — rules and agreement](https://www.kaggle.com/c/mlsp-2013-birds/rules)
+- [The ICML 2013 Whale Challenge — rules and agreement](https://www.kaggle.com/c/the-icml-2013-whale-challenge-right-whale-redux/rules)
 
-Create a mode-`0600` env file outside this repository containing either
-`KAGGLE_API_TOKEN`, or both `KAGGLE_USERNAME` and `KAGGLE_KEY`. Then create the
-namespace Secret without printing its value:
+Sign in to the same Kaggle account represented by `kaggle.json`, open each
+link, and accept/join where Kaggle prompts. Download a legacy `kaggle.json`
+from [Kaggle API settings](https://www.kaggle.com/settings/api), keep it outside
+this repository with mode `0600`, then create a Secret whose key is exactly
+`kaggle.json`:
 
 ```bash
 export NAMESPACE='replace-with-your-namespace'
 export KAGGLE_SECRET_NAME='perfseer-kaggle'
-export KAGGLE_ENV_FILE='/absolute/path/outside/repo/kaggle.env'
+export KAGGLE_JSON='/absolute/path/outside/repo/kaggle.json'
 
+test -f "$KAGGLE_JSON"
+chmod 600 "$KAGGLE_JSON"
 kubectl create secret generic "$KAGGLE_SECRET_NAME" \
   --namespace "$NAMESPACE" \
-  --from-env-file="$KAGGLE_ENV_FILE" \
+  --from-file=kaggle.json="$KAGGLE_JSON" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl get secret "$KAGGLE_SECRET_NAME" --namespace "$NAMESPACE"
+kubectl describe secret "$KAGGLE_SECRET_NAME" --namespace "$NAMESPACE"
 ```
 
-Do not inspect the Secret with `-o yaml` and do not commit the env file.
+Do not inspect the Secret with `-o yaml` and do not commit `kaggle.json`.
+The Job YAML contains only the Secret name. Kubernetes mounts only its
+`kaggle.json` key at `/var/run/secrets/perfseer-kaggle/kaggle.json`, read-only
+with mode `0400`; the Job sets `KAGGLE_CONFIG_DIR` to that directory.
+
+You do not need to download the archives manually: after the agreements are
+accepted, the pilot/production Job inventories and downloads both competitions
+into its isolated PVC workspace. To confirm access locally without downloading
+the data, run:
+
+```bash
+export KAGGLE_CONFIG_DIR="$(dirname "$KAGGLE_JSON")"
+kaggle competitions files -c mlsp-2013-birds
+kaggle competitions files \
+  -c the-icml-2013-whale-challenge-right-whale-redux
+```
 
 ## Step 3: prepare persistent storage
 

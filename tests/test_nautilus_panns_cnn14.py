@@ -140,6 +140,26 @@ class PannsManifestTests(unittest.TestCase):
             environment["PERFSEER_RUN_ROOT"],
             "/pvc/perfseer-v3/families/panns_cnn14/panns001",
         )
+        self.assertEqual(
+            environment["KAGGLE_CONFIG_DIR"],
+            "/var/run/secrets/perfseer-kaggle",
+        )
+        self.assertNotIn("envFrom", container)
+        self.assertEqual(
+            container["volumeMounts"][1],
+            {
+                "name": "kaggle-credentials",
+                "mountPath": "/var/run/secrets/perfseer-kaggle",
+                "readOnly": True,
+            },
+        )
+        secret = pod["volumes"][1]["secret"]
+        self.assertEqual(secret["secretName"], "kaggle-api")
+        self.assertEqual(secret["defaultMode"], 0o400)
+        self.assertEqual(
+            secret["items"],
+            [{"key": "kaggle.json", "path": "kaggle.json", "mode": 0o400}],
+        )
         self.assertIn("--family-id panns_cnn14", container["args"][0])
         self.assertNotIn("--max-new-accepted", container["args"][0])
         self.assertEqual(container["image"], IMAGE)

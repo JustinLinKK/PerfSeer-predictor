@@ -128,7 +128,36 @@ class ManifestTests(unittest.TestCase):
                     job_spec["volumes"][0]["persistentVolumeClaim"]["claimName"],
                     "perfseer-rwx",
                 )
-                self.assertEqual(job_container["envFrom"], [{"secretRef": {"name": "kaggle-api"}}])
+                self.assertNotIn("envFrom", job_container)
+                self.assertEqual(
+                    job_env["KAGGLE_CONFIG_DIR"],
+                    "/var/run/secrets/perfseer-kaggle",
+                )
+                self.assertEqual(
+                    job_container["volumeMounts"][1],
+                    {
+                        "name": "kaggle-credentials",
+                        "mountPath": "/var/run/secrets/perfseer-kaggle",
+                        "readOnly": True,
+                    },
+                )
+                self.assertEqual(
+                    job_spec["volumes"][1],
+                    {
+                        "name": "kaggle-credentials",
+                        "secret": {
+                            "secretName": "kaggle-api",
+                            "defaultMode": 0o400,
+                            "items": [
+                                {
+                                    "key": "kaggle.json",
+                                    "path": "kaggle.json",
+                                    "mode": 0o400,
+                                }
+                            ],
+                        },
+                    },
+                )
                 self.assertNotIn("TOP_SECRET_FIXTURE", pod_text + job_text)
 
     def test_pilot_is_bounded_and_production_is_not(self) -> None:

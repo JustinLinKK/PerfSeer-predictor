@@ -141,28 +141,34 @@ The operator's Kaggle account must manually accept the rules for all six
 competitions before the pilot. The label runner inventories every required
 competition before downloading data and fails closed if access is missing.
 
-Create a local, permission-`0600` environment file outside the repository. It
-must contain either `KAGGLE_API_TOKEN`, or both `KAGGLE_USERNAME` and
-`KAGGLE_KEY`. Never commit it, print it, or place it on the PVC.
+Download the legacy `kaggle.json` credential from the Kaggle account's
+[API settings](https://www.kaggle.com/settings/api), keep it outside the
+repository with mode `0600`, and never print it or place it on the PVC.
 
 **Operator-only/Nautilus — run later:** create or update the Secret from that
-external file. This command sends values to Kubernetes but does not place them
-in shell arguments or rendered YAML.
+external file. The Secret must contain an exact key named `kaggle.json`.
+The rendered workload contains only the Secret name; Kubernetes mounts the key
+read-only with mode `0400` and sets `KAGGLE_CONFIG_DIR` to its directory.
 
 ```bash
 export NAMESPACE='replace-with-your-namespace'
 export KAGGLE_SECRET_NAME='perfseer-kaggle'
-export KAGGLE_ENV_FILE='/absolute/path/outside/repo/kaggle.env'
+export KAGGLE_JSON='/absolute/path/outside/repo/kaggle.json'
 
+test -f "$KAGGLE_JSON"
+chmod 600 "$KAGGLE_JSON"
 kubectl create secret generic "$KAGGLE_SECRET_NAME" \
   --namespace "$NAMESPACE" \
-  --from-env-file="$KAGGLE_ENV_FILE" \
+  --from-file=kaggle.json="$KAGGLE_JSON" \
   --dry-run=client -o yaml | kubectl apply -f -
+kubectl get secret "$KAGGLE_SECRET_NAME" --namespace "$NAMESPACE"
+kubectl describe secret "$KAGGLE_SECRET_NAME" --namespace "$NAMESPACE"
 ```
 
 The command above is operator-only. The development process did not run it or
 any other dry-run. Do not use `kubectl get secret ... -o yaml`; the workflows
-only need the Secret's name.
+only need the Secret's name. Do not use `envFrom` for a `kaggle.json` Secret;
+the filename is not an environment-variable interface.
 
 ### 5.3 A 700 GiB RWX PVC
 
