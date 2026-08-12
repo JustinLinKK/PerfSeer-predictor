@@ -164,7 +164,7 @@ order:
 5. `train_peak_torch_reserved_mib`
 6. `train_peak_memory_controller_util_percent`
 
-The versioned `perfseer_v3_outputs_v2` wrapper adds log variance, OOM
+The versioned `perfseer_v3_outputs_v3_transfer` wrapper adds log variance, OOM
 probability, OOM failure stage, confidence, and peak-live-byte prediction.
 Graph and phase embeddings are exposed for representation distillation but
 are not scheduler metrics. Existing callers continue to receive the six
