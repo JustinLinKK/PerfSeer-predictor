@@ -24,6 +24,7 @@ from .storage import atomic_write_json
 from .supervisor import (
     AttemptSupervisor,
     GpuProbe,
+    await_worker_futures,
     discover_v100_probes,
     lock_campaign_environment,
 )
@@ -340,8 +341,7 @@ def run_pilot(
                     attempt_index=len(failures.get(current.candidate_id, ())),
                 )
             )
-        for future in futures:
-            future.result()
+        await_worker_futures(futures)
     resolutions = []
     for root_candidate in candidates:
         modality_root = modality_roots[root_candidate.quota_modality]

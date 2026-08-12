@@ -64,6 +64,21 @@ class SupervisorError(RuntimeError):
     pass
 
 
+def await_worker_futures(futures: Sequence[Any]) -> tuple[Any, ...]:
+    """Observe every worker result before propagating the first batch failure."""
+
+    results: list[Any] = []
+    failures: list[Exception] = []
+    for future in futures:
+        try:
+            results.append(future.result())
+        except Exception as error:
+            failures.append(error)
+    if failures:
+        raise failures[0]
+    return tuple(results)
+
+
 def validate_v100_gpu_identity(
     name: str,
     compute_capability: Sequence[int],
@@ -685,6 +700,7 @@ __all__ = [
     "PhysicalGpuSlot",
     "SUPERVISOR_VERSION",
     "SupervisorError",
+    "await_worker_futures",
     "build_accepted_label_record",
     "build_failed_label_record",
     "discover_v100_probes",

@@ -31,7 +31,13 @@ from .modality_sharding import (
     verify_modality_workspace,
 )
 from .storage import atomic_write_json
-from .supervisor import AttemptSupervisor, GpuProbe, discover_v100_probes, lock_campaign_environment
+from .supervisor import (
+    AttemptSupervisor,
+    GpuProbe,
+    await_worker_futures,
+    discover_v100_probes,
+    lock_campaign_environment,
+)
 from .task_registry import load_task_registry
 from .workflow import (
     WorkflowError,
@@ -401,8 +407,7 @@ def _run_contract_workflow(
                             ),
                         )
                     )
-                for future in futures:
-                    future.result()
+                await_worker_futures(futures)
         receipt = _build_task_receipt(
             workspace=root,
             contract=contract,

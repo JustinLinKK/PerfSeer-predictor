@@ -23,6 +23,7 @@ from perfseer_v3.dataset_pack.sampler import build_target_manifest
 from perfseer_v3.dataset_pack.storage import atomic_write_json
 from perfseer_v3.dataset_pack.supervisor import (
     SupervisorError,
+    await_worker_futures,
     discover_v100_probes,
     validate_v100_gpu_identity,
 )
@@ -142,3 +143,24 @@ def test_full_registry_digest_is_valid_but_mutable_tag_is_not() -> None:
     _image_digest("registry.example/perfseer@sha256:" + "1" * 64)
     with pytest.raises(ModalityShardError):
         _image_digest("registry.example/perfseer:latest@sha256:" + "1" * 64)
+
+
+def test_worker_batch_observes_siblings_before_propagating_failure() -> None:
+    observed: list[str] = []
+
+    class Future:
+        def __init__(self, name: str, failure: bool = False) -> None:
+            self.name = name
+            self.failure = failure
+
+        def result(self):
+            observed.append(self.name)
+            if self.failure:
+                raise RuntimeError(self.name)
+            return self.name
+
+    with pytest.raises(RuntimeError, match="worker-1"):
+        await_worker_futures(
+            (Future("worker-1", True), Future("worker-2"), Future("worker-3"))
+        )
+    assert observed == ["worker-1", "worker-2", "worker-3"]
