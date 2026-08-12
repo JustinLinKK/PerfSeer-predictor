@@ -1,4 +1,4 @@
-"""Frozen, fail-closed quota and observation protocol for the A10G 18K pack."""
+"""Frozen, fail-closed quota and observation protocol for the V100 18K pack."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .fingerprints import canonical_sha256
 
 
 DEFAULT_QUOTA_CONFIG_PATH = (
-    Path(__file__).resolve().parents[1] / "configs" / "a10g_18k_dataset_pack.yaml"
+    Path(__file__).resolve().parents[1] / "configs" / "v100_18k_dataset_pack.yaml"
 )
 
 FROZEN_QUOTA_CELLS = (
@@ -235,10 +235,10 @@ class QuotaPlan:
         return canonical_sha256(self)
 
     def validate(self) -> None:
-        if self.version != "perfseer_v3_a10g_18k_quota_v2":
+        if self.version != "perfseer_v3_v100_18k_quota_v2":
             raise QuotaConfigError(f"unsupported quota plan version {self.version!r}")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise QuotaConfigError("quota plan must target the frozen AWS A10G hardware ID")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise QuotaConfigError("quota plan must target the frozen NRP V100 hardware ID")
         if self.maximum_cloud_working_set_gib != 600:
             raise QuotaConfigError("maximum cloud working set must be exactly 600 GiB")
         if self.cloud_free_space_safety_margin_gib != 40:

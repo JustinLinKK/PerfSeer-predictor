@@ -1,4 +1,4 @@
-"""Measured A10G operation coverage, vocabulary, and runtime-allowlist gates."""
+"""Measured V100 operation coverage, vocabulary, and runtime-allowlist gates."""
 
 from __future__ import annotations
 
@@ -19,17 +19,17 @@ from .operation_sampler import OperationGeneratorRegistry, build_operation_gener
 from .operation_support import OperationSupportContract, build_operation_support_contract
 
 
-COVERAGE_OBSERVATION_VERSION = "perfseer_v3_a10g_operation_coverage_observation_v1"
-COVERAGE_REPORT_VERSION = "perfseer_v3_a10g_operation_coverage_report_v1"
-STRUCTURAL_EVIDENCE_VERSION = "perfseer_v3_a10g_structural_coverage_evidence_v1"
-MEASUREMENT_EVIDENCE_VERSION = "perfseer_v3_a10g_coverage_measurement_evidence_v1"
+COVERAGE_OBSERVATION_VERSION = "perfseer_v3_v100_operation_coverage_observation_v1"
+COVERAGE_REPORT_VERSION = "perfseer_v3_v100_operation_coverage_report_v1"
+STRUCTURAL_EVIDENCE_VERSION = "perfseer_v3_v100_structural_coverage_evidence_v1"
+MEASUREMENT_EVIDENCE_VERSION = "perfseer_v3_v100_coverage_measurement_evidence_v1"
 STRUCTURAL_GENERATOR_ID = "structural:family_hash_custom"
-RUNTIME_ALLOWLIST_VERSION = "perfseer_v3_a10g_runtime_allowlist_v1"
-TARGET_HARDWARE_ID = "nvidia_a10g_24gb_aws_g5"
+RUNTIME_ALLOWLIST_VERSION = "perfseer_v3_v100_runtime_allowlist_v1"
+TARGET_HARDWARE_ID = "nvidia_tesla_v100_sxm2_32gb_nrp"
 
 
 class OperationCoverageError(ValueError):
-    """Raised when coverage or allowlist evidence is incomplete or non-A10G."""
+    """Raised when coverage or allowlist evidence is incomplete or non-V100."""
 
 
 def _text(value: object, *, context: str) -> str:
@@ -73,7 +73,7 @@ class StructuralCoverageEvidence:
         if self.capture_workload_sha256 != self.profile_workload_sha256:
             raise OperationCoverageError("structural capture/profile fingerprints do not match")
         if self.target_hardware_id != TARGET_HARDWARE_ID:
-            raise OperationCoverageError("structural timing evidence must come from AWS A10G")
+            raise OperationCoverageError("structural timing evidence must come from NRP V100")
         if type(self.accepted_measurement) is not bool or not self.accepted_measurement:
             raise OperationCoverageError("structural evidence must be an accepted measurement")
         if self.observed_backend_id != "cuda_eager":
@@ -394,7 +394,7 @@ class CoverageObservation:
 
         if self.accepted:
             if self.target_hardware_id != TARGET_HARDWARE_ID:
-                raise OperationCoverageError("accepted coverage must be measured on AWS A10G")
+                raise OperationCoverageError("accepted coverage must be measured on NRP V100")
             if not self.capture_profile_fingerprint_match:
                 raise OperationCoverageError("accepted capture/profile fingerprints must match")
             if not self.complete_capture or self.gpu_time_us <= 0:
@@ -749,19 +749,19 @@ def build_operation_coverage_report(
         ):
             raise OperationCoverageError("coverage observation generator identity mismatch")
 
-    a10g_rows = tuple(row for row in rows if row.target_hardware_id == TARGET_HARDWARE_ID)
-    accepted = tuple(row for row in a10g_rows if row.accepted)
-    tensor_nodes = sum(row.tensor_producing_nodes for row in a10g_rows)
-    encoded_nodes = sum(row.structurally_encoded_nodes for row in a10g_rows)
-    dropped_nodes = sum(row.silently_dropped_tensor_nodes for row in a10g_rows)
+    v100_rows = tuple(row for row in rows if row.target_hardware_id == TARGET_HARDWARE_ID)
+    accepted = tuple(row for row in v100_rows if row.accepted)
+    tensor_nodes = sum(row.tensor_producing_nodes for row in v100_rows)
+    encoded_nodes = sum(row.structurally_encoded_nodes for row in v100_rows)
+    dropped_nodes = sum(row.silently_dropped_tensor_nodes for row in v100_rows)
     strict_rate = (
-        sum(row.strict_capture and row.complete_capture for row in a10g_rows) / len(a10g_rows)
-        if a10g_rows
+        sum(row.strict_capture and row.complete_capture for row in v100_rows) / len(v100_rows)
+        if v100_rows
         else 0.0
     )
     encoding_rate = encoded_nodes / tensor_nodes if tensor_nodes else 0.0
     fingerprint_mismatches = sum(
-        not row.capture_profile_fingerprint_match for row in a10g_rows
+        not row.capture_profile_fingerprint_match for row in v100_rows
     )
     time_by_operation: Counter[str] = Counter()
     time_by_family: Counter[str] = Counter()
@@ -841,7 +841,7 @@ def build_operation_coverage_report(
         "strict_complete_capture_rate": strict_rate,
         "complete_tensor_node_encoding_rate": encoding_rate,
         "measured_unknown_or_custom_gpu_time_fraction": unknown_fraction,
-        "exact_vocabulary_cumulative_a10g_gpu_time_coverage": vocabulary_fraction,
+        "exact_vocabulary_cumulative_v100_gpu_time_coverage": vocabulary_fraction,
         "capture_profile_workload_fingerprint_mismatches": fingerprint_mismatches,
         "required_operation_gap_count": len(gaps),
     }
@@ -858,7 +858,7 @@ def build_operation_coverage_report(
     payload: dict[str, object] = {
         "version": COVERAGE_REPORT_VERSION,
         "target_hardware_id": TARGET_HARDWARE_ID,
-        "measurement_source": "accepted_a10g" if accepted else "no_accepted_measurements",
+        "measurement_source": "accepted_v100" if accepted else "no_accepted_measurements",
         "training_approved": gates_passed,
         "support_contract_sha256": support.sha256,
         "generator_registry_sha256": generators.sha256,
@@ -991,12 +991,12 @@ def freeze_runtime_allowlist(
     if canonical_value(dict(report)) != rebuilt:
         raise OperationCoverageError("coverage report does not reproduce from current evidence")
     if (
-        rebuilt["measurement_source"] != "accepted_a10g"
+        rebuilt["measurement_source"] != "accepted_v100"
         or rebuilt["training_approved"] is not True
         or rebuilt["gates_passed"] is not True
     ):
         raise OperationCoverageError(
-            "runtime allowlist requires passing accepted AWS A10G coverage evidence"
+            "runtime allowlist requires passing accepted NRP V100 coverage evidence"
         )
     vocabulary = rebuilt["provisional_exact_vocabulary"]
     required_ids = {

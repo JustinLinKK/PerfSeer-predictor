@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -18,6 +19,7 @@ import tempfile
 from typing import Sequence
 
 from .task_registry import MLEBENCH_METADATA_REVISION, TaskRegistryEntry
+from .fingerprints import canonical_sha256, file_sha256
 
 
 class MleBenchPreparationError(RuntimeError):
@@ -38,14 +40,47 @@ def _git(checkout: Path, arguments: Sequence[str]) -> str:
     return result.stdout.strip()
 
 
+EMBEDDED_REVISION_MANIFEST = ".perfseer-revision.json"
+
+
+def checkout_tree_sha256(checkout: str | Path) -> str:
+    root = Path(checkout).resolve()
+    files = tuple(
+        path
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+        and EMBEDDED_REVISION_MANIFEST not in path.parts
+        and ".git" not in path.parts
+    )
+    if not files:
+        raise MleBenchPreparationError("MLE-bench source tree is empty")
+    return canonical_sha256(
+        {path.relative_to(root).as_posix(): file_sha256(path) for path in files}
+    )
+
+
 def validate_mlebench_checkout(checkout: str | Path) -> Path:
     root = Path(checkout).resolve()
     if not root.is_dir():
         raise MleBenchPreparationError("pinned MLE-bench checkout is missing")
-    if _git(root, ["rev-parse", "HEAD"]) != MLEBENCH_METADATA_REVISION:
-        raise MleBenchPreparationError("MLE-bench checkout is not at the frozen revision")
-    if _git(root, ["status", "--porcelain", "--untracked-files=all"]):
-        raise MleBenchPreparationError("MLE-bench checkout contains modified or untracked files")
+    embedded = root / EMBEDDED_REVISION_MANIFEST
+    if embedded.is_file():
+        try:
+            identity = json.loads(embedded.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise MleBenchPreparationError("embedded MLE-bench manifest is unreadable") from error
+        if set(identity) != {"revision", "tree_sha256"}:
+            raise MleBenchPreparationError("embedded MLE-bench manifest schema differs")
+        if (
+            identity["revision"] != MLEBENCH_METADATA_REVISION
+            or identity["tree_sha256"] != checkout_tree_sha256(root)
+        ):
+            raise MleBenchPreparationError("embedded MLE-bench source identity differs")
+    else:
+        if _git(root, ["rev-parse", "HEAD"]) != MLEBENCH_METADATA_REVISION:
+            raise MleBenchPreparationError("MLE-bench checkout is not at the frozen revision")
+        if _git(root, ["status", "--porcelain", "--untracked-files=all"]):
+            raise MleBenchPreparationError("MLE-bench checkout contains modified or untracked files")
     if not (root / "mlebench" / "registry.py").is_file():
         raise MleBenchPreparationError("MLE-bench checkout has no registry implementation")
     return root
@@ -265,6 +300,8 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "EMBEDDED_REVISION_MANIFEST",
+    "checkout_tree_sha256",
     "MleBenchPreparationError",
     "PinnedMleBenchPreparer",
     "validate_mlebench_checkout",

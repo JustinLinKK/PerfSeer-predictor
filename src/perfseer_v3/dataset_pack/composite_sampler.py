@@ -16,7 +16,7 @@ from .operation_support import (
 )
 
 
-COMPOSITE_REGISTRY_VERSION = "perfseer_v3_a10g_composite_block_registry_v1"
+COMPOSITE_REGISTRY_VERSION = "perfseer_v3_v100_composite_block_registry_v1"
 COMPOSITE_PLAN_VERSION = "perfseer_v3_local_qa_composite_plan_v2"
 LOCAL_QA_COMPOSITE_POLICY = ("local_qa_fixed", (2_000, 2_000), 1)
 LOCAL_QA_COMPOSITE_POLICY_SHA256 = canonical_sha256(LOCAL_QA_COMPOSITE_POLICY)
@@ -88,8 +88,8 @@ class CompositeBlockRegistry:
         support = support or build_operation_support_contract()
         if self.version != COMPOSITE_REGISTRY_VERSION:
             raise CompositePlanningError("composite registry version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise CompositePlanningError("composite registry must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise CompositePlanningError("composite registry must target NRP V100")
         if self.support_contract_sha256 != support.sha256:
             raise CompositePlanningError("composite registry targets a different support contract")
         if type(self.blocks) is not tuple:
@@ -140,7 +140,7 @@ class CompositeCandidate:
             raise CompositePlanningError("composite candidate block identity mismatch")
         if self.shape_regime not in {"tiny", "small", "medium", "large", "boundary"}:
             raise CompositePlanningError("invalid composite shape regime")
-        if self.dtype not in {"float32", "float16", "bfloat16"}:
+        if self.dtype not in {"float32", "float16"}:
             raise CompositePlanningError("invalid composite dtype")
         if self.accumulation_dtype not in {self.dtype, "float32"}:
             raise CompositePlanningError("invalid composite accumulation dtype")
@@ -211,8 +211,8 @@ class CompositeCorpusPlan:
         config.validate()
         if self.version != COMPOSITE_PLAN_VERSION:
             raise CompositePlanningError("composite plan version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise CompositePlanningError("composite plan must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise CompositePlanningError("composite plan must target NRP V100")
         if self.composite_registry_sha256 != registry.sha256:
             raise CompositePlanningError("composite plan registry mismatch")
         if self.support_contract_sha256 != registry.support_contract_sha256:
@@ -291,7 +291,7 @@ def _block_specs(support: OperationSupportContract) -> tuple[CompositeBlockSpec,
                     required_phases=phases_by_family[family],
                     required_backends=backends_by_family[family],
                     interaction_requirements=_CONTEXT_INTERACTIONS[context],
-                    golden_test_id=block_id.replace("a10g_composite:", "a10g_composite_golden:"),
+                    golden_test_id=block_id.replace("v100_composite:", "v100_composite_golden:"),
                     factory_id=f"perfseer_v3.dataset_pack.composite_blocks.{context}",
                 )
             )
@@ -314,7 +314,7 @@ def build_composite_block_registry(
 
 def _candidate(block: CompositeBlockSpec, block_index: int, ordinal: int) -> CompositeCandidate:
     shapes = ("tiny", "small", "medium", "large", "boundary")
-    dtypes = ("float32", "float16", "bfloat16")
+    dtypes = ("float32", "float16")
     layouts = ("contiguous", "non_contiguous")
     shape = shapes[ordinal % len(shapes)]
     dtype = dtypes[(block_index + ordinal * 2) % len(dtypes)]

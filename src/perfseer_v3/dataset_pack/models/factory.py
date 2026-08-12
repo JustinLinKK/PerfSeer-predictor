@@ -135,7 +135,7 @@ def _attention(
         # Inductor can otherwise assign a non-unit last-dimension stride to a
         # fused window/restoration tensor before dispatching a CUDA kernel.
         # The math SDPA backend keeps the operation compiled and portable to
-        # A10G while honoring the explicit contiguous layout above.
+        # V100 while honoring the explicit contiguous layout above.
         with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
             attended = torch.ops.aten.scaled_dot_product_attention.default(
                 shaped, shaped, shaped

@@ -1,5 +1,5 @@
-version: perfseer_v3_a10g_model_registry_v1
-target_hardware_id: nvidia_a10g_24gb_aws_g5
+version: perfseer_v3_v100_model_registry_v1
+target_hardware_id: nvidia_tesla_v100_sxm2_32gb_nrp
 training_approved: false
 factory_status: implemented_phase3_factories_v1
 entries:

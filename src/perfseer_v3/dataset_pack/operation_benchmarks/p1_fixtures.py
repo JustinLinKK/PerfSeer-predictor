@@ -1,4 +1,4 @@
-"""Explicit P1 structural/measurement fixtures required by the A10G plan."""
+"""Explicit P1 structural/measurement fixtures required by the V100 plan."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 
 
-@torch.library.custom_op("perfseer_a10g::scale", mutates_args=())
+@torch.library.custom_op("perfseer_v100::scale", mutates_args=())
 def custom_scale(value: torch.Tensor, factor: float) -> torch.Tensor:
     """Small custom training op used to verify schema/fake/autograd registration."""
 
@@ -50,7 +50,7 @@ def _run_custom() -> P1FixtureResult:
         "p1:custom_torch_library_scale",
         "custom_fused",
         "local_structural_verified",
-        ("perfseer_a10g::scale",),
+        ("perfseer_v100::scale",),
         None,
     )
 
@@ -128,7 +128,7 @@ def _run_specialized_vision() -> P1FixtureResult:
 
 
 def run_p1_fixture_suite() -> tuple[P1FixtureResult, ...]:
-    """Run redistributable CPU structural checks and retain A10G-only blockers."""
+    """Run redistributable CPU structural checks and retain V100-only blockers."""
 
     results = [
         _run_custom(),
@@ -141,9 +141,9 @@ def run_p1_fixture_suite() -> tuple[P1FixtureResult, ...]:
         P1FixtureResult(
             "p1:triton_cuda_fused_training",
             "custom_fused",
-            "a10g_environment_qualification_required",
+            "v100_environment_qualification_required",
             (),
-            "Triton/CUDA forward-backward identity and timing require the pinned AWS A10G stack",
+            "Triton/CUDA forward-backward identity and timing require the pinned NRP V100 stack",
         )
     )
     return tuple(results)

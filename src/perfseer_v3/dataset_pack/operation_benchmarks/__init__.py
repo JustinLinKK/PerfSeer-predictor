@@ -1,4 +1,4 @@
-"""Executable exact-operation benchmark factories for the A10G dataset pack."""
+"""Executable exact-operation benchmark factories for the V100 dataset pack."""
 
 from .base import (
     BenchmarkRecipe,

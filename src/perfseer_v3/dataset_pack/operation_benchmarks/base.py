@@ -209,8 +209,8 @@ def verify_operation_benchmark(
         measurement_scope="local_smoke",
         requested_backend_id=backend_id,
         identity_source=recipe.identity_source,
-        environment_gated=generator.execution_route == "a10g_environment_gated_dispatcher",
-        specialized_backend=generator.execution_route == "a10g_environment_gated_dispatcher",
+        environment_gated=generator.execution_route == "v100_environment_gated_dispatcher",
+        specialized_backend=generator.execution_route == "v100_environment_gated_dispatcher",
     )
     workload_sha256 = canonical_sha256(
         {

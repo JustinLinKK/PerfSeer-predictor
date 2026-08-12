@@ -20,7 +20,7 @@ from .storage import atomic_write_json, atomic_write_jsonl
 from .task_registry import MLEBENCH_METADATA_REVISION, TaskRegistryEntry
 
 
-PREPARED_VIEW_VERSION = "perfseer_v3_a10g_prepared_view_v2"
+PREPARED_VIEW_VERSION = "perfseer_v3_v100_prepared_view_v2"
 PREPARED_EXAMPLE_COUNT = 4_096
 
 

@@ -25,7 +25,7 @@ from ..hardware_transfer import (
     base_transfer_lineage_json_schema,
 )
 from ..version import TRANSFER_MANIFEST_VERSION
-from .a10g_runner import FiveEpochRunResult, TelemetryBackend, run_five_epoch_training
+from .v100_runner import FiveEpochRunResult, TelemetryBackend, run_five_epoch_training
 from .sampler import TargetCandidate
 from .task_registry import TaskRegistryEntry
 
@@ -185,12 +185,12 @@ def materialize_target_conditioned_graph(
     *,
     target_profile: HardwareProfileV3,
     paired_graph_signature: str,
-    base_hardware_id: str = "nvidia_a10g_24gb_aws_g5",
+    base_hardware_id: str = "nvidia_tesla_v100_sxm2_32gb_nrp",
     measured_configuration_id: str | None = None,
 ) -> Path:
     """Reuse workload IR while replacing only the explicit hardware profile.
 
-    The paired A10 graph signature is retained separately for grouped leakage
+    The paired V100 graph signature is retained separately for grouped leakage
     checks. The target graph obtains its own content hash because hardware
     metadata is part of GraphIR integrity.
     """
@@ -303,7 +303,7 @@ class TransferLabelAttemptV3:
             self.hardware_profile_sha256,
             context="target attempt hardware profile hash",
         )
-        _validate_targets(self.base_targets, context="paired A10 targets")
+        _validate_targets(self.base_targets, context="paired V100 targets")
         if self.status not in {"accepted", "oom", "quarantined"}:
             raise ValueError("target attempt status is invalid")
         if self.status == "accepted":
@@ -350,7 +350,7 @@ class TransferLabelAttemptV3:
                     "changed-batch target attempts require a distinct measured configuration"
                 )
         if self.split != "memory_probe" and measured_id != self.base_configuration_id:
-            raise ValueError("selected paired labels must measure the exact A10 configuration")
+            raise ValueError("selected paired labels must measure the exact V100 configuration")
         if (
             self.split != "memory_probe"
             and self.measured_microbatch_size != self.original_microbatch_size
@@ -382,11 +382,11 @@ def run_target_paired_attempt(
 
     candidate.validate()
     target_profile.validate(require_complete_signature=True)
-    if candidate.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-        raise ValueError("transfer labeling must preserve the frozen A10 configuration identity")
+    if candidate.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+        raise ValueError("transfer labeling must preserve the frozen V100 configuration identity")
     if getattr(telemetry_backend, "hardware_profile_sha256", None) != target_profile.sha256:
         raise ValueError("telemetry backend does not match the frozen target profile")
-    base_values = _validate_targets(base_targets, context="paired A10 targets")
+    base_values = _validate_targets(base_targets, context="paired V100 targets")
     original_id = original_configuration_id or candidate.candidate_id
     original_batch = original_microbatch_size or candidate.microbatch_size
     repaired_from = None if candidate.candidate_id == original_id else original_id
@@ -412,7 +412,7 @@ def run_target_paired_attempt(
             base_configuration_id=original_id,
             paired_configuration_id=paired_id,
             split=split,
-            base_hardware_id="nvidia_a10g_24gb_aws_g5",
+            base_hardware_id="nvidia_tesla_v100_sxm2_32gb_nrp",
             target_hardware_id=target_profile.hardware_id,
             hardware_profile_sha256=target_profile.sha256,
             base_targets=base_values,
@@ -432,7 +432,7 @@ def run_target_paired_attempt(
             base_configuration_id=original_id,
             paired_configuration_id=paired_id,
             split=split,
-            base_hardware_id="nvidia_a10g_24gb_aws_g5",
+            base_hardware_id="nvidia_tesla_v100_sxm2_32gb_nrp",
             target_hardware_id=target_profile.hardware_id,
             hardware_profile_sha256=target_profile.sha256,
             base_targets=base_values,
@@ -475,8 +475,8 @@ def build_target_training_manifest(
         subset_manifest.get("base_hardware_id"),
         context="target training manifest base hardware ID",
     )
-    if base_hardware_id != "nvidia_a10g_24gb_aws_g5":
-        raise ValueError("target training manifest must derive from the frozen A10G corpus")
+    if base_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+        raise ValueError("target training manifest must derive from the frozen V100 corpus")
     selected = {
         str(row["configuration_id"]): str(row["split"])
         for row in subset_manifest.get("selection", ())
@@ -596,7 +596,7 @@ def build_target_training_manifest(
         "deployment": {
             "target_hardware_id": target_hardware_id,
             "hardware_allowlist": [target_hardware_id],
-            "precision_allowlist": ["float32", "float16", "bfloat16", "mixed"],
+            "precision_allowlist": ["float32", "float16", "mixed"],
             "capture_quality_allowlist": ["strict"],
             "optimizer_allowlist": ["adamw", "sgd"],
             "scheduler_allowlist": ["none", "cosine", "linear"],

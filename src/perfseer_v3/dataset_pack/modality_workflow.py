@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 import json
 import os
@@ -16,7 +17,11 @@ from .family_sharding import (
     verify_family_workspace,
 )
 from .kaggle import KaggleCliClient
-from .materialization import TaskMaterializer, freeze_initial_target_manifest
+from .materialization import (
+    TaskMaterializer,
+    freeze_initial_target_manifest,
+    seal_worker_inputs,
+)
 from .mlebench_bridge import PinnedMleBenchPreparer
 from .modality_sharding import (
     ModalityContract,
@@ -26,7 +31,7 @@ from .modality_sharding import (
     verify_modality_workspace,
 )
 from .storage import atomic_write_json
-from .supervisor import AttemptSupervisor, GpuProbe, discover_a10g_probes, lock_campaign_environment
+from .supervisor import AttemptSupervisor, GpuProbe, discover_v100_probes, lock_campaign_environment
 from .task_registry import load_task_registry
 from .workflow import (
     WorkflowError,
@@ -40,8 +45,8 @@ from .workflow import (
 )
 
 
-MODALITY_TASK_LOOP_VERSION = "perfseer_v3_nautilus_a10_modality_task_loop_v1"
-MODALITY_TASK_RECEIPT_VERSION = "perfseer_v3_nautilus_a10_modality_task_receipt_v1"
+MODALITY_TASK_LOOP_VERSION = "perfseer_v3_nautilus_v100_modality_task_loop_v1"
+MODALITY_TASK_RECEIPT_VERSION = "perfseer_v3_nautilus_v100_modality_task_receipt_v1"
 
 
 def _load_json(path: Path) -> Mapping[str, Any]:
@@ -278,8 +283,8 @@ def _run_contract_workflow(
         type(max_new_accepted) is not int or max_new_accepted < 1
     ):
         raise WorkflowError("maximum new accepted count must be a positive integer")
-    if os.environ.get("PERFSEER_ALLOW_A10_FAMILY") != "1":
-        raise WorkflowError("Nautilus modality workflow requires explicit A10-family opt-in")
+    if os.environ.get("PERFSEER_V100_LABELING") != "1":
+        raise WorkflowError("V100 labeling requires PERFSEER_V100_LABELING=1")
     root = Path(workspace).resolve()
     freeze_run_identity(
         root,
@@ -299,9 +304,11 @@ def _run_contract_workflow(
         kaggle=KaggleCliClient(executable=kaggle_executable),
         preparer=PinnedMleBenchPreparer(Path(mlebench_checkout)),
     )
-    workers = tuple(probes or discover_a10g_probes())
-    if len(workers) != 1:
-        raise WorkflowError("selection workflow requires exactly one visible A10-family GPU")
+    workers = tuple(probes or discover_v100_probes())
+    if len(workers) != 4:
+        raise WorkflowError("production selection workflow requires exactly four V100 GPUs")
+    if len({worker.gpu_uuid for worker in workers}) != 4:
+        raise WorkflowError("production selection workflow requires four unique GPU UUIDs")
     lock_campaign_environment(root)
     accepted_at_start = len(_record_indexes(root)[0])
     while len(loop["completed_task_ids"]) < len(contract.task_ids):
@@ -326,6 +333,7 @@ def _run_contract_workflow(
                 active=task_id,
             )
         materialized = materializer.materialize(entries[task_id])
+        seal_worker_inputs(materialized)
         roots = tuple(
             row
             for row in manifest.candidates
@@ -363,22 +371,38 @@ def _run_contract_workflow(
                 unresolved.append(root_candidate.candidate_id)
             if not unresolved:
                 break
-            root_id = unresolved[0]
-            slot = slots[root_id]
-            supervisor.run(
-                slot.current_candidate,
-                entries[task_id],
-                materialized.view_manifest,
-                public_directory=materialized.public,
-                prepared_directory=materialized.prepared_view,
-                archive_sha256=materialized.inventory.archive_sha256,
-                probe=workers[0],
-                attempt_index=len(failures.get(slot.current_candidate.candidate_id, ())),
-            )
+            remaining = len(workers)
             if max_new_accepted is not None:
-                accepted_now = len(_record_indexes(root)[0])
-                if accepted_now - accepted_at_start >= max_new_accepted:
+                accepted_now = len(accepted)
+                remaining = max_new_accepted - (accepted_now - accepted_at_start)
+                if remaining <= 0:
                     return
+            batch_roots = unresolved[: min(len(workers), remaining)]
+            if not batch_roots:
+                raise WorkflowError("selection workflow has no runnable quota roots")
+            with ThreadPoolExecutor(max_workers=len(batch_roots)) as executor:
+                futures = []
+                for probe, root_id in zip(
+                    workers[: len(batch_roots)], batch_roots, strict=True
+                ):
+                    slot = slots[root_id]
+                    futures.append(
+                        executor.submit(
+                            supervisor.run,
+                            slot.current_candidate,
+                            entries[task_id],
+                            materialized.view_manifest,
+                            public_directory=materialized.public,
+                            prepared_directory=materialized.prepared_view,
+                            archive_sha256=materialized.inventory.archive_sha256,
+                            probe=probe,
+                            attempt_index=len(
+                                failures.get(slot.current_candidate.candidate_id, ())
+                            ),
+                        )
+                    )
+                for future in futures:
+                    future.result()
         receipt = _build_task_receipt(
             workspace=root,
             contract=contract,

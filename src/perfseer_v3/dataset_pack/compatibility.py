@@ -1,4 +1,4 @@
-"""Declarative fail-closed compatibility checks for A10G target candidates."""
+"""Declarative fail-closed compatibility checks for V100 target candidates."""
 
 from __future__ import annotations
 
@@ -15,10 +15,9 @@ from .models.architecture import (
 from .quota import FROZEN_QUOTA_CELLS
 
 
-COMPATIBILITY_VERSION = "perfseer_v3_a10g_compatibility_v3"
+COMPATIBILITY_VERSION = "perfseer_v3_v100_compatibility_v3"
 SUPPORTED_PRECISIONS = (
-    "fp32_tf32",
-    "bf16",
+    "fp32_ieee",
     "fp16_grad_scaler",
     "mixed_structured",
 )
@@ -36,7 +35,7 @@ FAMILY_MODALITIES = {
 REASON_CODES = (
     "family_not_registered",
     "family_modality_mismatch",
-    "precision_not_supported_on_a10g",
+    "precision_not_supported_on_v100",
     "fp16_moe_routing_unstable",
     "head_hidden_not_divisible",
     "optimizer_not_pinned",
@@ -122,7 +121,7 @@ def evaluate_compatibility(request: CompatibilityRequest) -> CompatibilityDecisi
             if set(parameters) != declared_fields:
                 reasons.add("architecture_field_contract_invalid")
     if request.precision_id not in SUPPORTED_PRECISIONS:
-        reasons.add("precision_not_supported_on_a10g")
+        reasons.add("precision_not_supported_on_v100")
     if request.family_id == "switch_moe" and request.precision_id == "fp16_grad_scaler":
         reasons.add("fp16_moe_routing_unstable")
     if request.optimizer_id not in DEPLOYMENT_OPTIMIZERS:
@@ -265,7 +264,7 @@ def evaluate_compatibility(request: CompatibilityRequest) -> CompatibilityDecisi
         reasons.add("optimizer_parameter_contract_invalid")
     if sparse_capable and request.optimizer_id != "sparse_adam":
         reasons.add("optimizer_parameter_contract_invalid")
-    if request.optimizer_id == "lbfgs" and request.precision_id != "fp32_tf32":
+    if request.optimizer_id == "lbfgs" and request.precision_id != "fp32_ieee":
         reasons.add("optimizer_parameter_contract_invalid")
     if (
         request.optimizer_id == "muon"

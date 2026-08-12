@@ -14,7 +14,7 @@ from .operation_support import OperationSupportContract, build_operation_support
 
 
 OPERATION_PLAN_VERSION = "perfseer_v3_local_qa_operation_plan_v2"
-GENERATOR_REGISTRY_VERSION = "perfseer_v3_a10g_operation_generator_registry_v1"
+GENERATOR_REGISTRY_VERSION = "perfseer_v3_v100_operation_generator_registry_v1"
 DEFAULT_BATCH_SIZES = (1, 2, 8)
 DEFAULT_OPTIMIZER_CONTEXTS = ("sgd", "adamw", "none")
 DEFAULT_ARCHITECTURE_CONTEXTS = (
@@ -106,8 +106,8 @@ class OperationGeneratorRegistry:
         support = support or build_operation_support_contract(registry=registry)
         if self.version != GENERATOR_REGISTRY_VERSION:
             raise OperationPlanningError("operation generator registry version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise OperationPlanningError("operation generators must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise OperationPlanningError("operation generators must target NRP V100")
         if self.operation_registry_sha256 != registry.sha256:
             raise OperationPlanningError("operation generator registry is stale")
         if self.support_contract_sha256 != support.sha256:
@@ -232,8 +232,8 @@ class OperationCorpusPlan:
         config.validate()
         if self.version != OPERATION_PLAN_VERSION:
             raise OperationPlanningError("operation plan version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise OperationPlanningError("operation plan must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise OperationPlanningError("operation plan must target NRP V100")
         if self.generator_registry_sha256 != generator_registry.sha256:
             raise OperationPlanningError("operation plan generator registry mismatch")
         if self.support_contract_sha256 != generator_registry.support_contract_sha256:
@@ -298,7 +298,7 @@ def _execution_route(family: str, raw_target: str) -> str:
         "aten::_scaled_dot_product_efficient_attention",
         "aten::_cudnn_rnn",
     }:
-        return "a10g_environment_gated_dispatcher"
+        return "v100_environment_gated_dispatcher"
     return "direct_or_higher_level_dispatcher"
 
 
@@ -361,7 +361,7 @@ def _candidate(
     layout = _select(spec.required_layouts, operation_index, ordinal, 1)
     optimizer = DEFAULT_OPTIMIZER_CONTEXTS[(operation_index + ordinal) % 3]
     architecture_context = DEFAULT_ARCHITECTURE_CONTEXTS[(operation_index + ordinal * 2) % 3]
-    accumulation_dtype = "float32" if dtype in {"float16", "bfloat16"} else dtype
+    accumulation_dtype = "float32" if dtype == "float16" else dtype
     batch_size = DEFAULT_BATCH_SIZES[(operation_index * 2 + ordinal) % 3]
     variant_seed = operation_index * 1_000_003 + ordinal
     coverage_cell_id = canonical_sha256(

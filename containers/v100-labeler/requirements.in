@@ -1,0 +1,21 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+
+# The base already provides torch; retaining it here makes the lock prove the ABI.
+torch==2.10.0+cu128
+torchaudio==2.10.0+cu128
+torchvision==0.25.0+cu128
+torch-geometric==2.7.0
+ogb==1.3.6
+numpy==2.4.1
+pandas==2.3.3
+scipy==1.17.0
+scikit-learn==1.8.0
+networkx==3.6.1
+soundfile==0.13.1
+pillow==12.1.0
+nvidia-ml-py==13.590.48
+kaggle==2.2.2
+appdirs==1.4.4
+py7zr==1.0.0
+pyyaml==6.0.3
+tqdm==4.67.1

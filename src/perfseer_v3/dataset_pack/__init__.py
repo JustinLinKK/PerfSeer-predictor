@@ -1,4 +1,4 @@
-"""Source-only AWS A10G dataset collection pack for PerfSeer V3.
+"""Source-only NRP V100 dataset collection pack for PerfSeer V3.
 
 Public objects are resolved lazily so the production entrypoint can verify its
 locked environment before importing CUDA-heavy training modules.
@@ -10,8 +10,8 @@ from importlib import import_module
 from typing import Any
 
 
-DATASET_PACK_VERSION = "perfseer_v3_a10g_dataset_pack_v2"
-TARGET_HARDWARE_ID = "nvidia_a10g_24gb_aws_g5"
+DATASET_PACK_VERSION = "perfseer_v3_v100_dataset_pack_v2"
+TARGET_HARDWARE_ID = "nvidia_tesla_v100_sxm2_32gb_nrp"
 
 _LAZY_EXPORTS = {
     "canonical_sha256": (".fingerprints", "canonical_sha256"),
@@ -47,6 +47,8 @@ _LAZY_EXPORTS = {
     "ShardError": (".sharding", "ShardError"),
     "build_shard_contract": (".sharding", "build_shard_contract"),
     "merge_shard_workspaces": (".sharding", "merge_shard_workspaces"),
+    "CampaignContract": (".campaign", "CampaignContract"),
+    "build_campaign_contract": (".campaign", "build_campaign_contract"),
 }
 
 
@@ -69,6 +71,7 @@ __all__ = [
     "DEFAULT_QUOTA_CONFIG_PATH",
     "CorpusLayer",
     "CampaignFinalization",
+    "CampaignContract",
     "ModelRegistry",
     "ModelFactoryAudit",
     "QuotaPlan",
@@ -85,6 +88,7 @@ __all__ = [
     "canonical_sha256",
     "build_operation_support_contract",
     "build_campaign_finalization",
+    "build_campaign_contract",
     "build_shard_contract",
     "file_sha256",
     "finalize_workspace",

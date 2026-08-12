@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, replace
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -27,13 +28,13 @@ from .storage import atomic_write_bytes, atomic_write_json
 from .task_registry import TaskRegistry, load_task_registry
 
 
-SHARD_CONTRACT_VERSION = "perfseer_v3_a10g_task_shard_contract_v1"
+SHARD_CONTRACT_VERSION = "perfseer_v3_v100_task_shard_contract_v1"
 SHARD_GROUPING_RULE_VERSION = "perfseer_v3_source_task_modality_partition_v1"
-SHARD_TASK_LOOP_VERSION = "perfseer_v3_a10g_shard_task_loop_v1"
-SHARD_COMPLETION_VERSION = "perfseer_v3_a10g_shard_completion_v1"
-PRODUCTION_SOURCE_LOCK_VERSION = "perfseer_v3_a10g_production_source_lock_v1"
-MERGE_JOURNAL_VERSION = "perfseer_v3_a10g_shard_merge_journal_v1"
-MERGE_RECEIPT_VERSION = "perfseer_v3_a10g_shard_merge_receipt_v1"
+SHARD_TASK_LOOP_VERSION = "perfseer_v3_v100_shard_task_loop_v1"
+SHARD_COMPLETION_VERSION = "perfseer_v3_v100_shard_completion_v1"
+PRODUCTION_SOURCE_LOCK_VERSION = "perfseer_v3_v100_production_source_lock_v1"
+MERGE_JOURNAL_VERSION = "perfseer_v3_v100_shard_merge_journal_v1"
+MERGE_RECEIPT_VERSION = "perfseer_v3_v100_shard_merge_receipt_v1"
 
 SHARD_IDS = ("nlp", "vision", "rest")
 EXPECTED_SHARD_TASK_COUNTS = {"nlp": 6, "vision": 10, "rest": 6}
@@ -46,9 +47,9 @@ _SHARD_MODALITIES = {
 _PRODUCTION_SOURCE_PATHS = (
     "pyproject.toml",
     "uv.lock",
-    "scripts/finalize_a10g_18k_pack.py",
-    "scripts/merge_a10g_18k_shards.py",
-    "scripts/run_a10g_18k_pack.py",
+    "scripts/finalize_v100_18k_pack.py",
+    "scripts/merge_v100_18k_shards.py",
+    "scripts/run_v100_18k_pack.py",
     "src/perfseer_v3",
 )
 
@@ -743,7 +744,7 @@ def _load_campaign_environment(workspace: Path) -> tuple[Mapping[str, Any], str]
         raise ShardError("campaign environment payload is not an object")
     digest = str(payload["environment_sha256"])
     if (
-        payload["version"] != "perfseer_v3_a10g_campaign_environment_v1"
+        payload["version"] != "perfseer_v3_v100_campaign_environment_v1"
         or digest != canonical_sha256(environment)
     ):
         raise ShardError("campaign environment lock hash/version differs")
@@ -771,14 +772,19 @@ def _verify_exact_provenance(
             if canonical_sha256(payload) != identity:
                 raise ShardError(f"{category} provenance sidecar hash differs")
             if category == "hardware" and (
-                payload.get("target_hardware_id") != "nvidia_a10g_24gb_aws_g5"
-                or "A10G" not in str(payload.get("name", "")).upper()
-                or payload.get("compute_capability") != [8, 6]
-                or not 22 * 1024**3
+                payload.get("target_hardware_id") != "nvidia_tesla_v100_sxm2_32gb_nrp"
+                or "TESLAV100SXM2" not in re.sub(
+                    r"[^A-Z0-9]", "", str(payload.get("name", "")).upper()
+                )
+                or payload.get("compute_capability") != [7, 0]
+                or not 30 * 1024**3
                 <= int(payload.get("total_memory_bytes", 0))
-                <= 26 * 1024**3
+                <= 34 * 1024**3
+                or not str(payload.get("uuid", ""))
             ):
-                raise ShardError("hardware provenance is not a qualified 24 GiB A10G")
+                raise ShardError(
+                    "hardware provenance is not a qualified Tesla V100 SXM2 32GB"
+                )
 
 
 def _assert_exact_semantic_paths(

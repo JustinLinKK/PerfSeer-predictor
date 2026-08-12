@@ -221,7 +221,7 @@ def _populate(task_id: str, public: Path) -> None:
 def build_local_real_format_batch(
     adapter: TaskAdapter,
 ) -> tuple[str, Mapping[str, Any]]:
-    """Build one decoded batch through the same byte-bound loader used on AWS."""
+    """Build one decoded batch through the same byte-bound loader used on NRP."""
 
     archive_sha256 = canonical_sha256(
         {

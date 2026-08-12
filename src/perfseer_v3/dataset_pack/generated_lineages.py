@@ -10,9 +10,9 @@ from perfseer_v3.op_registry import OperationRegistry
 from .fingerprints import canonical_sha256, canonical_value
 
 
-GENERATED_LINEAGE_VERSION = "perfseer_v3_a10g_generated_lineage_v2"
+GENERATED_LINEAGE_VERSION = "perfseer_v3_v100_generated_lineage_v2"
 GENERATED_LINEAGE_REGISTRY_VERSION = (
-    "perfseer_v3_a10g_generated_lineage_registry_v2"
+    "perfseer_v3_v100_generated_lineage_registry_v2"
 )
 GENERATED_LINEAGE_COUNT = 50
 GENERATED_HELD_OUT_COUNT = 10
@@ -141,8 +141,8 @@ class GeneratedLineageRegistry:
     def validate(self) -> None:
         if self.version != GENERATED_LINEAGE_REGISTRY_VERSION:
             raise GeneratedLineageError("generated lineage registry version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise GeneratedLineageError("generated lineages must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise GeneratedLineageError("generated lineages must target NRP V100")
         if self.generator_version != GENERATED_LINEAGE_VERSION:
             raise GeneratedLineageError("generated lineage generator version mismatch")
         if self.training_approved is not False:
@@ -218,7 +218,7 @@ def _lineage(index: int) -> GeneratedLineageSpec:
 def build_generated_lineage_registry() -> GeneratedLineageRegistry:
     result = GeneratedLineageRegistry(
         version=GENERATED_LINEAGE_REGISTRY_VERSION,
-        target_hardware_id="nvidia_a10g_24gb_aws_g5",
+        target_hardware_id="nvidia_tesla_v100_sxm2_32gb_nrp",
         generator_version=GENERATED_LINEAGE_VERSION,
         lineages=tuple(_lineage(index) for index in range(GENERATED_LINEAGE_COUNT)),
         training_approved=False,

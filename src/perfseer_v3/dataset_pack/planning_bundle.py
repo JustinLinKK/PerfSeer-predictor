@@ -10,7 +10,7 @@ from .quota import load_quota_plan
 from .sampler import TargetManifest, build_target_manifest
 
 
-PLANNING_BUNDLE_VERSION = "perfseer_v3_a10g_dataset_planning_bundle_v2"
+PLANNING_BUNDLE_VERSION = "perfseer_v3_v100_dataset_planning_bundle_v2"
 
 
 class PlanningBundleError(ValueError):

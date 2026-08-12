@@ -180,10 +180,10 @@ class ModelFactoryAudit:
             raise ModelGoldenAuditError("model factory audit version mismatch")
         if self.evidence_scope != "local_redistributable_fixture":
             raise ModelGoldenAuditError("model factory audit evidence scope mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
             raise ModelGoldenAuditError("model factory audit target hardware mismatch")
         if self.observed_hardware_id != "local_cpu_fixture" or self.requested_backend_id != "cpu_eager":
-            raise ModelGoldenAuditError("local audit cannot claim an A10G observed backend")
+            raise ModelGoldenAuditError("local audit cannot claim an V100 observed backend")
         if (
             self.model_registry_sha256 != models.sha256
             or self.task_registry_sha256 != tasks.sha256
@@ -240,7 +240,7 @@ class ModelFactoryAudit:
                             "phase": phase,
                             "backend_id": result.requested_backend_id,
                             "fixture_fingerprint": result.fixture_fingerprint,
-                            "accepted_a10g_measurement": False,
+                            "accepted_v100_measurement": False,
                         }
                     )
         expected_cells = tuple(
@@ -312,7 +312,7 @@ def run_model_factory_audit(*, optimization_steps: int = 3) -> ModelFactoryAudit
                         "phase": phase,
                         "backend_id": result.requested_backend_id,
                         "fixture_fingerprint": result.fixture_fingerprint,
-                        "accepted_a10g_measurement": False,
+                        "accepted_v100_measurement": False,
                     }
                 )
     audit = ModelFactoryAudit(

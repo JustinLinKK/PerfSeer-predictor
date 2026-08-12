@@ -1,4 +1,4 @@
-"""Fail-closed finalization for the exact 18K AWS A10G label campaign."""
+"""Fail-closed finalization for the exact 18K NRP V100 label campaign."""
 
 from __future__ import annotations
 
@@ -38,10 +38,10 @@ from .storage import atomic_write_bytes
 from .task_registry import TaskRegistryEntry, load_task_registry
 
 
-FINALIZATION_VERSION = "perfseer_v3_a10g_18k_finalization_v1"
-FINAL_LABEL_ROW_VERSION = "perfseer_v3_a10g_final_label_row_v1"
-TARGET_TRANSFORM_RECORD_VERSION = "perfseer_v3_a10g_target_transform_v1"
-FINAL_RECEIPT_VERSION = "perfseer_v3_a10g_final_receipt_v1"
+FINALIZATION_VERSION = "perfseer_v3_v100_18k_finalization_v1"
+FINAL_LABEL_ROW_VERSION = "perfseer_v3_v100_final_label_row_v1"
+TARGET_TRANSFORM_RECORD_VERSION = "perfseer_v3_v100_target_transform_v1"
+FINAL_RECEIPT_VERSION = "perfseer_v3_v100_final_receipt_v1"
 SPLIT_COUNTS = {"train": 14_400, "validation": 1_800, "test": 1_800}
 
 
@@ -864,8 +864,8 @@ def build_campaign_finalization(
     manifest_payload = canonical_value(
         {
             "version": FINALIZATION_VERSION,
-            "artifact_scope": "a10g_label_pack",
-            "accepted_a10g_measurement": True,
+            "artifact_scope": "v100_label_pack",
+            "accepted_v100_measurement": True,
             "target_hardware_id": quota.target_hardware_id,
             "target_manifest_sha256": manifest.sha256,
             "target_names": TARGET_NAMES,

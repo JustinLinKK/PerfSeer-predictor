@@ -17,7 +17,7 @@ from typing import Any, Mapping, Protocol, Sequence
 
 import torch
 
-from .a10g_runner import FiveEpochRunResult, TelemetryReading
+from .v100_runner import FiveEpochRunResult, TelemetryReading
 from .contracts import (
     AttemptStatus,
     FailureStage,
@@ -35,8 +35,8 @@ from .storage import atomic_write_json
 from .task_registry import TaskRegistryEntry
 
 
-SUPERVISOR_VERSION = "perfseer_v3_a10g_attempt_supervisor_v2"
-CAMPAIGN_ENVIRONMENT_VERSION = "perfseer_v3_a10g_campaign_environment_v1"
+SUPERVISOR_VERSION = "perfseer_v3_v100_attempt_supervisor_v2"
+CAMPAIGN_ENVIRONMENT_VERSION = "perfseer_v3_v100_campaign_environment_v1"
 _CAMPAIGN_PACKAGES = (
     "appdirs",
     "kaggle",
@@ -62,6 +62,25 @@ _CAMPAIGN_PACKAGES = (
 
 class SupervisorError(RuntimeError):
     pass
+
+
+def validate_v100_gpu_identity(
+    name: str,
+    compute_capability: Sequence[int],
+    total_memory_bytes: int,
+) -> None:
+    normalized_name = "".join(
+        character for character in str(name).upper() if character.isalnum()
+    )
+    if (
+        "TESLAV100SXM2" not in normalized_name
+        or tuple(compute_capability) != (7, 0)
+        or type(total_memory_bytes) is not int
+        or not 30 * 1024**3 <= total_memory_bytes <= 34 * 1024**3
+    ):
+        raise SupervisorError(
+            "GPU must be a Tesla V100 SXM2 32GB with compute capability 7.0"
+        )
 
 
 class GpuProbe(Protocol):
@@ -96,20 +115,13 @@ class ParentNvmlProbe:
                 uuid = uuid.decode()
             memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
             capability = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
-            normalized_name = str(name).upper().replace(" ", "")
-            expected_token = (
-                "A10" if os.environ.get("PERFSEER_ALLOW_A10_FAMILY") == "1" else "A10G"
-            )
-            if expected_token not in normalized_name or tuple(capability) != (8, 6):
-                raise SupervisorError("discovered GPU is not in the requested NVIDIA A10 family")
-            if not 22 * 1024**3 <= memory.total <= 26 * 1024**3:
-                raise SupervisorError("discovered A10-family GPU does not expose approximately 24 GiB")
+            validate_v100_gpu_identity(str(name), capability, int(memory.total))
             self._pynvml = pynvml
             self._handle = handle
             self.physical_index = physical_index
             self.gpu_uuid = str(uuid)
             self.hardware_provenance = {
-                "target_hardware_id": "nvidia_a10g_24gb_aws_g5",
+                "target_hardware_id": "nvidia_tesla_v100_sxm2_32gb_nrp",
                 "name": str(name),
                 "uuid": self.gpu_uuid,
                 "total_memory_bytes": int(memory.total),
@@ -134,17 +146,35 @@ class ParentNvmlProbe:
         )
 
 
-def discover_a10g_probes() -> tuple[ParentNvmlProbe, ...]:
+def discover_v100_probes() -> tuple[ParentNvmlProbe, ...]:
     try:
         import pynvml
 
         pynvml.nvmlInit()
         count = pynvml.nvmlDeviceGetCount()
     except Exception as error:
-        raise SupervisorError("NVML cannot enumerate A10G workers") from error
+        raise SupervisorError("NVML cannot enumerate V100 workers") from error
     probes = tuple(ParentNvmlProbe(index) for index in range(count))
-    if not probes or len({row.gpu_uuid for row in probes}) != len(probes):
-        raise SupervisorError("A10G worker discovery is empty or duplicated")
+    if len(probes) != 4:
+        raise SupervisorError(
+            f"production labeling requires exactly four V100 workers; discovered {len(probes)}"
+        )
+    if len({row.gpu_uuid for row in probes}) != 4:
+        raise SupervisorError("V100 worker UUIDs are duplicated")
+    hardware = {
+        (
+            "".join(
+                character
+                for character in str(row.hardware_provenance["name"]).upper()
+                if character.isalnum()
+            ),
+            tuple(row.hardware_provenance["compute_capability"]),
+            row.hardware_provenance["total_memory_bytes"],
+        )
+        for row in probes
+    }
+    if len(hardware) != 1:
+        raise SupervisorError("production labeling refuses mixed GPU hardware")
     return probes
 
 
@@ -171,6 +201,18 @@ def environment_provenance() -> Mapping[str, Any]:
         "cudnn": torch.backends.cudnn.version(),
         "driver": driver,
         "container_digest": os.environ.get("PERFSEER_CONTAINER_DIGEST", "not_supplied"),
+        "source_revision": os.environ.get(
+            "PERFSEER_BUILD_SOURCE_REVISION", "not_supplied"
+        ),
+        "source_tree_sha256": os.environ.get(
+            "PERFSEER_BUILD_SOURCE_TREE_SHA256", "not_supplied"
+        ),
+        "dependency_lock_sha256": os.environ.get(
+            "PERFSEER_BUILD_DEPENDENCY_LOCK_SHA256", "not_supplied"
+        ),
+        "image_identity": os.environ.get(
+            "PERFSEER_BUILD_IMAGE_IDENTITY", "not_supplied"
+        ),
         "packages": packages,
     }
 
@@ -425,7 +467,7 @@ class AttemptSupervisor:
     ) -> LabelRunRecord:
         baseline = probe.read()
         if baseline.compute_process_ids:
-            raise SupervisorError("assigned A10G is not idle before child launch")
+            raise SupervisorError("assigned V100 is not idle before child launch")
         dispatch = self.workspace / "state" / "dispatch" / f"{candidate.candidate_id}.json"
         output = self.workspace / "attempts" / "staging" / f"{candidate.candidate_id}.json"
         atomic_write_json(dispatch, candidate.to_dict())
@@ -577,7 +619,7 @@ class AttemptSupervisor:
             )
         run = FiveEpochRunResult.from_dict(envelope["payload"])
         if run.gpu_uuid != probe.gpu_uuid or run.hardware_sha256 != probe.hardware_fingerprint:
-            raise SupervisorError("child hardware differs from assigned physical A10G")
+            raise SupervisorError("child hardware differs from assigned physical V100")
         epoch_times = tuple(float(row.epoch_ms) for row in run.epoch_measurements)
         mean = sum(epoch_times) / len(epoch_times)
         if mean <= 0 or (max(epoch_times) - min(epoch_times)) / mean > 0.10:
@@ -645,7 +687,7 @@ __all__ = [
     "SupervisorError",
     "build_accepted_label_record",
     "build_failed_label_record",
-    "discover_a10g_probes",
+    "discover_v100_probes",
     "environment_provenance",
     "lock_campaign_environment",
     "wait_for_gpu_cleanup",

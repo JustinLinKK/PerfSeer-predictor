@@ -27,7 +27,7 @@ def _harness_paths() -> tuple[Path, ...]:
     # changes, and including this module binds the provenance algorithm itself.
     return (
         *tuple(sorted(package.rglob("*.py"))),
-        root / "scripts/validate_a10g_18k_local.py",
+        root / "scripts/validate_v100_18k_local.py",
     )
 
 

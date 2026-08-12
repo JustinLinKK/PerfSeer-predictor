@@ -1,4 +1,4 @@
-"""Deterministic constrained planner for the exact 18K A10G target manifest."""
+"""Deterministic constrained planner for the exact 18K V100 target manifest."""
 
 from __future__ import annotations
 
@@ -31,15 +31,14 @@ from .quota import QuotaPlan, load_quota_plan
 from .task_registry import TaskRegistry, load_task_registry
 
 
-TARGET_MANIFEST_VERSION = "perfseer_v3_a10g_18k_target_manifest_v8"
-CANDIDATE_VERSION = "perfseer_v3_a10g_candidate_v8"
-PLANNER_VERSION = "perfseer_v3_a10g_constrained_sampler_v8"
-BATCH_PLAN_VERSION = "perfseer_v3_a10g_batch_plan_v2"
+TARGET_MANIFEST_VERSION = "perfseer_v3_v100_18k_target_manifest_v8"
+CANDIDATE_VERSION = "perfseer_v3_v100_candidate_v8"
+PLANNER_VERSION = "perfseer_v3_v100_constrained_sampler_v8"
+BATCH_PLAN_VERSION = "perfseer_v3_v100_batch_plan_v2"
 REGIMES = ("task_realistic", "shape_extrapolation", "memory_frontier")
 PRECISION_PATTERN = (
-    *("fp32_tf32",) * 5,
-    *("bf16",) * 6,
-    *("fp16_grad_scaler",) * 5,
+    *("fp32_ieee",) * 5,
+    *("fp16_grad_scaler",) * 11,
     *("mixed_structured",) * 4,
 )
 GRADIENT_ACCUMULATION = (1, 2, 4, 8)
@@ -311,8 +310,8 @@ class TargetCandidate:
             raise CandidatePlanningError("candidate executable task schema is invalid")
         if self.configuration_binding_state != "task_materialization_required":
             raise CandidatePlanningError("local targets must await task materialization")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise CandidatePlanningError("candidate target hardware differs from AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise CandidatePlanningError("candidate target hardware differs from NRP V100")
         if self.training_approved is not False:
             raise CandidatePlanningError("unmeasured target candidates cannot approve training")
         self.batch_plan.validate()
@@ -384,7 +383,7 @@ class TargetCandidate:
         ):
             raise CandidatePlanningError("scheduler progress is invalid")
         policy_id = self.precision_policy.get("policy_id")
-        expected_autocast = policy_id != "fp32_tf32"
+        expected_autocast = policy_id != "fp32_ieee"
         expected_scaler = policy_id == "fp16_grad_scaler"
         if (
             set(self.precision_policy) != {"policy_id", "autocast", "gradient_scaler"}
@@ -441,14 +440,13 @@ class TargetCandidate:
         }
         registered_operations = _registered_operation_ids()
         dtype = {
-            "fp32_tf32": "float32",
-            "bf16": "bfloat16",
+            "fp32_ieee": "float32",
             "fp16_grad_scaler": "float16",
             "mixed_structured": "mixed_structured",
         }.get(policy_id)
         accumulation = (
             "float32"
-            if dtype in {"bfloat16", "float16", "mixed_structured"}
+            if dtype in {"float16", "mixed_structured"}
             else dtype
         )
         for specification in self.coverage_cell_specs:
@@ -509,7 +507,7 @@ class TargetCandidate:
 
 
 def target_candidate_from_dict(value: Mapping[str, Any]) -> TargetCandidate:
-    """Load one exact candidate for a fresh local/AWS worker process."""
+    """Load one exact candidate for a fresh local/NRP worker process."""
 
     if not isinstance(value, Mapping) or set(value) != set(TargetCandidate.__dataclass_fields__):
         raise CandidatePlanningError("serialized candidate schema differs")
@@ -978,7 +976,7 @@ def _batch_classification(
         reasons.append("top_quartile_quadratic_axis")
     if len(top_axes) >= 2:
         reasons.append("multiple_top_quartile_activation_axes")
-    if precision_id == "fp32_tf32" and top_shape_axis:
+    if precision_id == "fp32_ieee" and top_shape_axis:
         reasons.append("fp32_with_top_quartile_shape")
     if not checkpoint_enabled and len(top_axes) >= 2:
         reasons.append("checkpoint_disabled_with_multiple_top_axes")
@@ -1058,12 +1056,11 @@ def _coverage_specs(
     ordinal: int,
 ) -> tuple[Mapping[str, Any], ...]:
     dtype = {
-        "fp32_tf32": "float32",
-        "bf16": "bfloat16",
+        "fp32_ieee": "float32",
         "fp16_grad_scaler": "float16",
         "mixed_structured": "mixed_structured",
     }[precision]
-    accumulation = "float32" if dtype in {"float16", "bfloat16", "mixed_structured"} else dtype
+    accumulation = "float32" if dtype in {"float16", "mixed_structured"} else dtype
     shape_regime = {
         "task_realistic": ("small", "medium")[ordinal % 2],
         "shape_extrapolation": "large",
@@ -1170,9 +1167,9 @@ def build_target_manifest() -> TargetManifest:
                 architecture = dict(architecture)
                 architecture["sparse_gradients"] = optimizer == "sparse_adam"
             if optimizer == "lbfgs":
-                precision = "fp32_tf32"
+                precision = "fp32_ieee"
             if cell.family_id == "switch_moe" and precision == "fp16_grad_scaler":
-                precision = "bf16"
+                precision = "fp32_ieee"
             checkpoint_enabled = global_ordinal % 5 == 0
             scheduler = DEPLOYMENT_SCHEDULERS[
                 global_ordinal % len(DEPLOYMENT_SCHEDULERS)
@@ -1295,7 +1292,7 @@ def build_target_manifest() -> TargetManifest:
                 ],
                 "precision_policy": {
                     "policy_id": precision,
-                    "autocast": precision != "fp32_tf32",
+                    "autocast": precision != "fp32_ieee",
                     "gradient_scaler": precision == "fp16_grad_scaler",
                 },
                 "optimizer": {

@@ -1,6 +1,6 @@
 """Direct Kaggle CLI acquisition and fail-closed ZIP handling.
 
-This module has no EC2 identity check and no AWS API integration.  Credentials
+This module has no EC2 identity check and no NRP API integration.  Credentials
 remain owned by the operator outside the repository.  The runner downloads one
 competition archive, records its hash, validates every path, and extracts it
 into the external task workspace.
@@ -24,7 +24,7 @@ import zipfile
 from .fingerprints import canonical_sha256, canonical_value, file_sha256
 
 
-KAGGLE_MATERIALIZATION_VERSION = "perfseer_v3_a10g_kaggle_materialization_v2"
+KAGGLE_MATERIALIZATION_VERSION = "perfseer_v3_v100_kaggle_materialization_v2"
 KAGGLE_INVENTORY_PAGE_SIZE = 200
 _NEXT_PAGE_TOKEN_PREFIX = "Next Page Token = "
 
@@ -163,6 +163,26 @@ class KaggleCompetitionProbe:
         return canonical_sha256([asdict(row) for row in self.files])
 
 
+@dataclass(frozen=True)
+class KaggleDownloadProbe:
+    slug: str
+    remote_name: str
+    advertised_bytes: int
+    downloaded_bytes: int
+    downloaded_sha256: str
+
+    def validate(self) -> None:
+        KaggleRemoteFile(self.remote_name, self.advertised_bytes, "").validate()
+        if not self.slug or self.downloaded_bytes < 1:
+            raise KaggleMaterializationError("Kaggle download probe is empty")
+        if len(self.downloaded_sha256) != 64:
+            raise KaggleMaterializationError("Kaggle download probe hash is invalid")
+
+    def to_dict(self) -> dict[str, Any]:
+        self.validate()
+        return canonical_value(asdict(self))
+
+
 class KaggleCliClient:
     """Small secret-safe wrapper around the official `kaggle` executable."""
 
@@ -275,6 +295,50 @@ class KaggleCliClient:
         )
         probe.validate()
         return probe
+
+    def download_smallest_file(self, slug: str) -> KaggleDownloadProbe:
+        """Actually download and hash the smallest advertised competition file.
+
+        Listing files alone does not prove that the account accepted competition
+        rules.  The temporary payload is deleted before this method returns.
+        """
+
+        inventory = self.probe_competition(slug)
+        selected = min(inventory.files, key=lambda row: (row.size_bytes, row.name))
+        with tempfile.TemporaryDirectory(prefix="perfseer-kaggle-access-") as directory:
+            destination = Path(directory)
+            self._run(
+                [
+                    "competitions",
+                    "download",
+                    "--competition",
+                    slug,
+                    "--file",
+                    selected.name,
+                    "--path",
+                    str(destination),
+                    "--quiet",
+                ]
+            )
+            downloaded = tuple(
+                path
+                for path in destination.rglob("*")
+                if path.is_file() and not path.is_symlink()
+            )
+            if len(downloaded) != 1:
+                raise KaggleMaterializationError(
+                    "smallest-file access probe did not produce exactly one regular file"
+                )
+            payload = downloaded[0]
+            result = KaggleDownloadProbe(
+                slug=slug,
+                remote_name=selected.name,
+                advertised_bytes=selected.size_bytes,
+                downloaded_bytes=payload.stat().st_size,
+                downloaded_sha256=file_sha256(payload),
+            )
+            result.validate()
+            return result
 
     def download_competition(
         self,
@@ -550,6 +614,7 @@ __all__ = [
     "KaggleCliClient",
     "KaggleCompetitionProbe",
     "KaggleCredentialEvidence",
+    "KaggleDownloadProbe",
     "KaggleMaterializationError",
     "KaggleRemoteFile",
     "extract_zip_archive",

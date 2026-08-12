@@ -1,4 +1,4 @@
-"""Isolated five-epoch training engine for one A10G label attempt."""
+"""Isolated five-epoch training engine for one V100 label attempt."""
 
 from __future__ import annotations
 
@@ -33,16 +33,10 @@ from .task_registry import TaskRegistryEntry
 
 
 MIB = 1024**2
-A10G_RUN_RESULT_VERSION = "perfseer_v3_a10g_five_epoch_result_v1"
+V100_RUN_RESULT_VERSION = "perfseer_v3_v100_five_epoch_result_v1"
 
 
-def _allows_a10_family() -> bool:
-    """Opt in to physical A10 while preserving frozen logical row identities."""
-
-    return os.environ.get("PERFSEER_ALLOW_A10_FAMILY") == "1"
-
-
-class A10GRunError(RuntimeError):
+class V100RunError(RuntimeError):
     """Raised when a single configuration cannot produce an accepted run payload."""
 
 
@@ -89,16 +83,22 @@ class NvmlTelemetryBackend:
                 self._uuid = self._uuid.decode("utf-8")
             properties = torch.cuda.get_device_properties(0)
             if expected_hardware_profile is None:
-                normalized_name = str(name).upper().replace(" ", "")
-                expected_token = "A10" if _allows_a10_family() else "A10G"
-                if expected_token not in normalized_name or not 22 * 1024**3 <= memory.total <= 26 * 1024**3:
-                    raise A10GRunError(
-                        "label worker is not bound to the requested 24 GiB NVIDIA A10 family"
+                normalized_name = "".join(
+                    character for character in str(name).upper() if character.isalnum()
+                )
+                if (
+                    "TESLAV100SXM2" not in normalized_name
+                    or not 30 * 1024**3 <= memory.total <= 34 * 1024**3
+                ):
+                    raise V100RunError(
+                        "label worker is not bound to a 32 GiB Tesla V100 SXM2"
                     )
-                if (properties.major, properties.minor) != (8, 6):
-                    raise A10GRunError("visible CUDA device does not have A10-family compute capability 8.6")
+                if (properties.major, properties.minor) != (7, 0):
+                    raise V100RunError(
+                        "visible CUDA device does not have V100 compute capability 7.0"
+                    )
                 provenance = {
-                    "target_hardware_id": "nvidia_a10g_24gb_aws_g5",
+                    "target_hardware_id": "nvidia_tesla_v100_sxm2_32gb_nrp",
                     "name": str(name),
                     "uuid": self._uuid,
                     "total_memory_bytes": int(memory.total),
@@ -113,15 +113,15 @@ class NvmlTelemetryBackend:
                         name,
                     )
                 except ValueError as error:
-                    raise A10GRunError(str(error)) from error
+                    raise V100RunError(str(error)) from error
                 expected = expected_hardware_profile.canonical_payload
                 expected_memory = expected["static"].get("memory_bytes")
                 expected_capability = expected["static"].get("compute_capability")
                 observed_capability = properties.major + properties.minor / 10.0
                 if expected_memory is not None and abs(memory.total - expected_memory) / expected_memory > 0.02:
-                    raise A10GRunError("visible GPU memory differs from the frozen target profile")
+                    raise V100RunError("visible GPU memory differs from the frozen target profile")
                 if expected_capability is not None and abs(observed_capability - expected_capability) > 1e-6:
-                    raise A10GRunError("visible GPU compute capability differs from the frozen target profile")
+                    raise V100RunError("visible GPU compute capability differs from the frozen target profile")
                 self._hardware_profile_sha256 = expected_hardware_profile.sha256
                 provenance = {
                     "target_hardware_id": expected_hardware_profile.hardware_id,
@@ -132,10 +132,10 @@ class NvmlTelemetryBackend:
                     "compute_capability": [properties.major, properties.minor],
                 }
             self._hardware_fingerprint = canonical_sha256(provenance)
-        except A10GRunError:
+        except V100RunError:
             raise
         except Exception as error:
-            raise A10GRunError("NVML A10G qualification failed") from error
+            raise V100RunError("NVML V100 qualification failed") from error
 
     @property
     def gpu_uuid(self) -> str:
@@ -156,7 +156,7 @@ class NvmlTelemetryBackend:
             throttle = self._pynvml.nvmlDeviceGetCurrentClocksThrottleReasons(self._handle)
             processes = self._pynvml.nvmlDeviceGetComputeRunningProcesses(self._handle)
         except Exception as error:
-            raise A10GRunError("NVML telemetry read failed") from error
+            raise V100RunError("NVML telemetry read failed") from error
         harmful_throttle_mask = 0
         for name in (
             "nvmlClocksThrottleReasonSwPowerCap",
@@ -191,7 +191,7 @@ class AsyncTelemetryCollector:
         allowed_process_ids: Sequence[int] = (),
     ) -> None:
         if not 0.02 <= interval_seconds <= 1.0:
-            raise A10GRunError("telemetry interval must be between 20 ms and 1 s")
+            raise V100RunError("telemetry interval must be between 20 ms and 1 s")
         self.backend = backend
         self.interval_seconds = interval_seconds
         self.allowed = frozenset((*allowed_process_ids, os.getpid()))
@@ -205,9 +205,9 @@ class AsyncTelemetryCollector:
 
     def start(self) -> None:
         if self._thread is not None:
-            raise A10GRunError("telemetry collector already started")
+            raise V100RunError("telemetry collector already started")
         self._origin = time.monotonic()
-        self._thread = threading.Thread(target=self._loop, name="a10g-nvml", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name="v100-nvml", daemon=True)
         self._thread.start()
 
     def _loop(self) -> None:
@@ -239,9 +239,9 @@ class AsyncTelemetryCollector:
             self._epoch = None
             rows = [row for row in self._rows if row.epoch == epoch]
         if self._error is not None:
-            raise A10GRunError("asynchronous telemetry failed") from self._error
+            raise V100RunError("asynchronous telemetry failed") from self._error
         if not rows:
-            raise A10GRunError("measured epoch has no telemetry")
+            raise V100RunError("measured epoch has no telemetry")
         samples = []
         for index, row in enumerate(rows):
             next_timestamp = rows[index + 1].timestamp if index + 1 < len(rows) else boundary
@@ -267,9 +267,9 @@ class AsyncTelemetryCollector:
         if self._thread is not None:
             self._thread.join(timeout=max(1.0, 4 * self.interval_seconds))
             if self._thread.is_alive():
-                raise A10GRunError("telemetry thread did not terminate")
+                raise V100RunError("telemetry thread did not terminate")
         if self._error is not None:
-            raise A10GRunError("asynchronous telemetry failed") from self._error
+            raise V100RunError("asynchronous telemetry failed") from self._error
 
 
 @dataclass(frozen=True)
@@ -292,11 +292,11 @@ class FiveEpochRunResult:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "FiveEpochRunResult":
         if not isinstance(value, Mapping) or set(value) != set(cls.__dataclass_fields__):
-            raise A10GRunError("serialized five-epoch result schema differs")
+            raise V100RunError("serialized five-epoch result schema differs")
         measurements = []
         for raw in value["epoch_measurements"]:
             if not isinstance(raw, Mapping):
-                raise A10GRunError("serialized epoch measurement is invalid")
+                raise V100RunError("serialized epoch measurement is invalid")
             samples = tuple(TelemetrySample(**row) for row in raw["telemetry_samples"])
             measurements.append(EpochMeasurement(**{**raw, "telemetry_samples": samples}))
         result = cls(
@@ -312,20 +312,20 @@ class FiveEpochRunResult:
         return result
 
     def validate(self) -> None:
-        if self.version != A10G_RUN_RESULT_VERSION:
-            raise A10GRunError("five-epoch result version mismatch")
+        if self.version != V100_RUN_RESULT_VERSION:
+            raise V100RunError("five-epoch result version mismatch")
         if self.completed_epochs != (1, 2, 3, 4, 5):
-            raise A10GRunError("five-epoch result is partial")
+            raise V100RunError("five-epoch result is partial")
         if self.finite_loss_epochs != self.completed_epochs or self.finite_gradient_epochs != self.completed_epochs:
-            raise A10GRunError("five-epoch result contains non-finite training state")
+            raise V100RunError("five-epoch result contains non-finite training state")
         if tuple(row.epoch for row in self.epoch_measurements) != (3, 4, 5):
-            raise A10GRunError("five-epoch result must retain epochs 3-5 only")
+            raise V100RunError("five-epoch result must retain epochs 3-5 only")
         for row in self.epoch_measurements:
             row.validate(accepted=True)
         if not self.gpu_uuid or len(self.hardware_sha256) != 64:
-            raise A10GRunError("five-epoch hardware identity is invalid")
+            raise V100RunError("five-epoch hardware identity is invalid")
         if not self.requested_backend_id or self.requested_backend_id != self.observed_backend_id:
-            raise A10GRunError("five-epoch backend identity differs")
+            raise V100RunError("five-epoch backend identity differs")
 
 
 def _compile_training_path(
@@ -365,7 +365,7 @@ def _optimizer_step(
     scaler: torch.amp.GradScaler | None,
 ) -> tuple[bool, bool, torch.Tensor]:
     if not batches:
-        raise A10GRunError("optimizer step has no microbatches")
+        raise V100RunError("optimizer step has no microbatches")
     optimizer.zero_grad(set_to_none=True)
     outputs_finite = True
     losses_finite = True
@@ -417,7 +417,7 @@ def _optimizer_step(
             scaler.update()
     gradients_finite = _gradients_finite(model)
     if last_loss is None:
-        raise A10GRunError("optimizer step produced no loss")
+        raise V100RunError("optimizer step produced no loss")
     scheduler.step(last_loss, unit="optimizer_step")
     return losses_finite and outputs_finite, gradients_finite, last_loss.detach()
 
@@ -432,23 +432,23 @@ def run_five_epoch_training(
     telemetry_backend: TelemetryBackend,
     telemetry_interval_seconds: float = 0.1,
     device: str | torch.device = "cuda",
-    allow_non_a10g_test_device: bool = False,
+    allow_non_v100_test_device: bool = False,
 ) -> FiveEpochRunResult:
     """Execute exactly one accepted-path attempt; callers isolate it in a child."""
 
     candidate.validate()
     task_entry.validate()
     if candidate.task_id != task_entry.task_id:
-        raise A10GRunError("candidate/task mismatch")
+        raise V100RunError("candidate/task mismatch")
     resolved_device = torch.device(device)
     if resolved_device.type != "cuda":
-        if not allow_non_a10g_test_device:
-            raise A10GRunError("A10G label training requires one visible CUDA device")
+        if not allow_non_v100_test_device:
+            raise V100RunError("V100 label training requires one visible CUDA device")
     else:
         if not torch.cuda.is_available():
-            raise A10GRunError("A10G label training requires one visible CUDA device")
+            raise V100RunError("V100 label training requires one visible CUDA device")
         if torch.cuda.device_count() != 1:
-            raise A10GRunError("fresh label child must see exactly one physical GPU")
+            raise V100RunError("fresh label child must see exactly one physical GPU")
     torch.manual_seed(int(candidate.seed_policy["seed"]))
     if resolved_device.type == "cuda":
         torch.cuda.manual_seed_all(int(candidate.seed_policy["seed"]))
@@ -460,7 +460,7 @@ def run_five_epoch_training(
         archive_sha256,
     )
     if len(dataset) != task_entry.expected_train_examples:
-        raise A10GRunError("prepared dataset traversal count changed")
+        raise V100RunError("prepared dataset traversal count changed")
     model = _build_model(candidate, adapter, resolved_device)
     first = dataset.build_batch(range(candidate.microbatch_size))
     first = bind_candidate_batch_shape(candidate, adapter, _move(first, resolved_device))
@@ -534,7 +534,7 @@ def run_five_epoch_training(
                     optimizer_steps += 1
                     buffered.clear()
             if last_loss_for_epoch is None:
-                raise A10GRunError("epoch produced no optimizer steps")
+                raise V100RunError("epoch produced no optimizer steps")
             scheduler.step(last_loss_for_epoch, unit="epoch")
             if resolved_device.type == "cuda":
                 torch.cuda.synchronize()
@@ -574,7 +574,7 @@ def run_five_epoch_training(
         if collector._thread is not None:
             collector.stop()
     result = FiveEpochRunResult(
-        version=A10G_RUN_RESULT_VERSION,
+        version=V100_RUN_RESULT_VERSION,
         gpu_uuid=telemetry_backend.gpu_uuid,
         hardware_sha256=telemetry_backend.hardware_fingerprint,
         requested_backend_id=str(candidate.execution["backend_id"]),
@@ -590,8 +590,8 @@ def run_five_epoch_training(
 
 
 __all__ = [
-    "A10G_RUN_RESULT_VERSION",
-    "A10GRunError",
+    "V100_RUN_RESULT_VERSION",
+    "V100RunError",
     "AsyncTelemetryCollector",
     "FiveEpochRunResult",
     "NvmlTelemetryBackend",

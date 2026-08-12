@@ -19,7 +19,7 @@ from .task_registry import TaskRegistry, load_task_registry
 
 
 DEFAULT_MODEL_REGISTRY_PATH = (
-    Path(__file__).resolve().parents[1] / "registries" / "a10g_model_registry.yaml"
+    Path(__file__).resolve().parents[1] / "registries" / "v100_model_registry.yaml"
 )
 _ROOT_KEYS = {
     "version",
@@ -205,8 +205,8 @@ class ModelRegistry:
         tasks = tasks or load_task_registry()
         if self.version != MODEL_REGISTRY_VERSION:
             raise ModelRegistryError("model registry version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise ModelRegistryError("model registry must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise ModelRegistryError("model registry must target NRP V100")
         if type(self.training_approved) is not bool or self.training_approved:
             raise ModelRegistryError("local model registry must remain explicitly unapproved")
         if self.factory_status != "implemented_phase3_factories_v1":

@@ -1,4 +1,4 @@
-"""Strict loader for frozen A10G operation-coverage gates."""
+"""Strict loader for frozen V100 operation-coverage gates."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .fingerprints import canonical_sha256
 
 
 DEFAULT_COVERAGE_CONFIG_PATH = (
-    Path(__file__).resolve().parents[1] / "configs" / "a10g_operation_coverage.yaml"
+    Path(__file__).resolve().parents[1] / "configs" / "v100_operation_coverage.yaml"
 )
 FROZEN_SHAPE_REGIMES = ("tiny", "small", "medium", "large", "boundary")
 FROZEN_COVERAGE_DIMENSIONS = (
@@ -119,10 +119,10 @@ class OperationCoverageConfig:
     coverage_dimensions: tuple[str, ...]
 
     def validate(self) -> None:
-        if self.version != "perfseer_v3_a10g_operation_coverage_gates_v1":
+        if self.version != "perfseer_v3_v100_operation_coverage_gates_v1":
             raise CoverageConfigError("operation coverage config version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise CoverageConfigError("operation coverage config must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise CoverageConfigError("operation coverage config must target NRP V100")
         if type(self.training_approved) is not bool or self.training_approved:
             raise CoverageConfigError("local coverage config must remain explicitly unapproved")
         self.gates.validate()

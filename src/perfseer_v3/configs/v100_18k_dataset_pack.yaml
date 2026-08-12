@@ -1,5 +1,5 @@
-version: perfseer_v3_a10g_18k_quota_v2
-target_hardware_id: nvidia_a10g_24gb_aws_g5
+version: perfseer_v3_v100_18k_quota_v2
+target_hardware_id: nvidia_tesla_v100_sxm2_32gb_nrp
 maximum_cloud_working_set_gib: 600
 cloud_free_space_safety_margin_gib: 40
 

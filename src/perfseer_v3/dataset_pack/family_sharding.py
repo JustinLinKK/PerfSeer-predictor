@@ -1,4 +1,4 @@
-"""Fail-closed single-family projections for Nautilus A10 labeling."""
+"""Fail-closed single-family projections for Nautilus V100 labeling."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 from .fingerprints import canonical_sha256, canonical_value
 from .modality_sharding import (
-    A10_FAMILY_ID,
+    V100_FAMILY_ID,
     LOGICAL_TARGET_HARDWARE_ID,
     MEASURED_EPOCHS_PER_LABEL,
     ModalityShardError,
@@ -29,8 +29,8 @@ from .task_registry import load_task_registry
 
 
 SUPPORTED_FAMILIES = ("panns_cnn14",)
-FAMILY_CONTRACT_VERSION = "perfseer_v3_nautilus_a10_family_contract_v1"
-FAMILY_COMPLETION_VERSION = "perfseer_v3_nautilus_a10_family_completion_v1"
+FAMILY_CONTRACT_VERSION = "perfseer_v3_nautilus_v100_family_contract_v1"
+FAMILY_COMPLETION_VERSION = "perfseer_v3_nautilus_v100_family_completion_v1"
 
 
 class FamilyShardError(ModalityShardError):
@@ -109,7 +109,7 @@ class FamilyContract:
             or self.display_name != cell.display_name
             or self.modality != cell.modality
             or self.accepted_configurations != cell.accepted_configurations
-            or self.hardware_family_id != A10_FAMILY_ID
+            or self.hardware_family_id != V100_FAMILY_ID
             or self.logical_target_hardware_id != LOGICAL_TARGET_HARDWARE_ID
             or self.target_manifest_sha256 != manifest_sha256
             or self.task_registry_sha256 != task_registry_sha256
@@ -168,7 +168,7 @@ def build_family_contract(family_id: str) -> FamilyContract:
         display_name=cell.display_name,
         modality=cell.modality,
         accepted_configurations=cell.accepted_configurations,
-        hardware_family_id=A10_FAMILY_ID,
+        hardware_family_id=V100_FAMILY_ID,
         logical_target_hardware_id=LOGICAL_TARGET_HARDWARE_ID,
         target_manifest_sha256=manifest_sha256,
         task_registry_sha256=task_registry_sha256,
@@ -238,7 +238,7 @@ class FamilyCompletion:
         if (
             self.version != FAMILY_COMPLETION_VERSION
             or self.modality != contract.modality
-            or self.hardware_family_id != A10_FAMILY_ID
+            or self.hardware_family_id != V100_FAMILY_ID
             or self.logical_target_hardware_id != LOGICAL_TARGET_HARDWARE_ID
             or self.contract_sha256 != contract.contract_sha256
             or self.target_manifest_sha256 != contract.target_manifest_sha256
@@ -321,7 +321,7 @@ def verify_family_workspace(
         version=FAMILY_COMPLETION_VERSION,
         family_id=family_id,
         modality=contract.modality,
-        hardware_family_id=A10_FAMILY_ID,
+        hardware_family_id=V100_FAMILY_ID,
         logical_target_hardware_id=LOGICAL_TARGET_HARDWARE_ID,
         contract_sha256=contract.contract_sha256,
         target_manifest_sha256=contract.target_manifest_sha256,

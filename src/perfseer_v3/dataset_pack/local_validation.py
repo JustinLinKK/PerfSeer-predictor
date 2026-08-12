@@ -281,7 +281,7 @@ class LocalValidationPlan:
     manifest_sha256: str
     target_hardware_id: str
     validation_hardware_id: str
-    accepted_a10g_measurement: bool
+    accepted_v100_measurement: bool
     validation_harness_sha256: str
     static_row_count: int
     execution_signature_count: int
@@ -302,12 +302,12 @@ class LocalValidationPlan:
             raise LocalValidationError("local validation plan version mismatch")
         if self.manifest_sha256 != manifest._sha256_unchecked():
             raise LocalValidationError("local validation plan targets another manifest")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise LocalValidationError("local plan target must remain AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise LocalValidationError("local plan target must remain NRP V100")
         if self.validation_hardware_id != "nvidia_rtx_5090_32gb":
             raise LocalValidationError("local plan must identify the RTX 5090 verifier")
-        if self.accepted_a10g_measurement is not False:
-            raise LocalValidationError("local validation can never become A10G label evidence")
+        if self.accepted_v100_measurement is not False:
+            raise LocalValidationError("local validation can never become V100 label evidence")
         if self.validation_harness_sha256 != validation_harness_sha256():
             raise LocalValidationError("local validation harness source identity drifted")
         if (
@@ -620,7 +620,7 @@ def build_local_validation_plan(
         manifest_sha256=manifest_sha256,
         target_hardware_id=target_hardware_id,
         validation_hardware_id="nvidia_rtx_5090_32gb",
-        accepted_a10g_measurement=False,
+        accepted_v100_measurement=False,
         validation_harness_sha256=validation_harness_sha256(),
         static_row_count=static_row_count,
         execution_signature_count=execution_signature_count,

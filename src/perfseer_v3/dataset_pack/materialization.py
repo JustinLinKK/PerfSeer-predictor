@@ -1,4 +1,4 @@
-"""Resumable one-task-at-a-time materialization for the A10G label runner."""
+"""Resumable one-task-at-a-time materialization for the V100 label runner."""
 
 from __future__ import annotations
 
@@ -37,9 +37,9 @@ from .storage import (
 from .task_registry import TaskRegistryEntry, load_task_registry
 
 
-MATERIALIZATION_STATE_VERSION = "perfseer_v3_a10g_task_materialization_state_v1"
-TASK_LOOP_STATE_VERSION = "perfseer_v3_a10g_task_loop_state_v2"
-TASK_COMPLETION_VERSION = "perfseer_v3_a10g_task_completion_v1"
+MATERIALIZATION_STATE_VERSION = "perfseer_v3_v100_task_materialization_state_v1"
+TASK_LOOP_STATE_VERSION = "perfseer_v3_v100_task_loop_state_v2"
+TASK_COMPLETION_VERSION = "perfseer_v3_v100_task_completion_v1"
 MATERIALIZATION_STAGES = (
     "selected",
     "downloaded",
@@ -163,6 +163,24 @@ class MaterializedTask:
     inventory: ArchiveInventory
     view_manifest: PreparedViewManifest
     state: TaskMaterializationState
+
+
+def seal_worker_inputs(materialized: MaterializedTask) -> None:
+    """Remove write bits from the two trees exposed to label workers."""
+
+    for root in (materialized.public, materialized.prepared_view):
+        if not root.is_dir() or root.is_symlink():
+            raise TaskMaterializationError("worker input root is not a regular directory")
+        paths = (root, *tuple(sorted(root.rglob("*"))))
+        for path in paths:
+            if path.is_symlink():
+                raise TaskMaterializationError("worker input tree contains a symlink")
+            if path.is_dir():
+                os.chmod(path, 0o555)
+            elif path.is_file():
+                os.chmod(path, 0o444)
+            else:
+                raise TaskMaterializationError("worker input tree contains a special file")
 
 
 @dataclass(frozen=True)
@@ -879,4 +897,5 @@ __all__ = [
     "load_task_loop_state",
     "save_task_loop_state",
     "verify_task_completion",
+    "seal_worker_inputs",
 ]

@@ -1,6 +1,6 @@
 """Minimal local-disk admission and atomic state writes for the 18K pack.
 
-There is deliberately no artifact ledger or storage controller.  The AWS
+There is deliberately no artifact ledger or storage controller.  The NRP
 runner keeps one reconstructible Kaggle task at a time and applies the one
 projection formula defined by the dataset design report.
 """
@@ -20,7 +20,7 @@ from .fingerprints import canonical_sha256, canonical_value
 GIB = 1024**3
 DEFAULT_STORAGE_BUDGET_BYTES = 600 * GIB
 DEFAULT_SAFETY_HEADROOM_BYTES = 40 * GIB
-DISK_GUARD_VERSION = "perfseer_v3_a10g_disk_guard_v1"
+DISK_GUARD_VERSION = "perfseer_v3_v100_disk_guard_v1"
 
 
 class DiskAdmissionError(RuntimeError):

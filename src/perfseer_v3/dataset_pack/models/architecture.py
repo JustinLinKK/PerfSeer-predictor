@@ -15,7 +15,7 @@ class ArchitectureBindingError(ValueError):
     """Raised when a factory ignores or invents an adjustable architecture field."""
 
 
-_MODEL_REGISTRY_PATH = Path(__file__).resolve().parents[2] / "registries" / "a10g_model_registry.yaml"
+_MODEL_REGISTRY_PATH = Path(__file__).resolve().parents[2] / "registries" / "v100_model_registry.yaml"
 _DEFAULTS: Mapping[str, Any] = {
     "activation": "elu",
     "architecture_specification": "residual_conv_gelu_v1",

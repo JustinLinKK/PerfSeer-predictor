@@ -595,10 +595,12 @@ def _nested_close(left: Any, right: Any, *, rtol: float, atol: float) -> bool:
 
 def _precision_context(candidate: TargetCandidate, device: torch.device) -> Any:
     policy = str(candidate.precision_policy["policy_id"])
-    if device.type != "cuda" or policy == "fp32_tf32":
+    if device.type != "cuda" or policy == "fp32_ieee":
         return nullcontext()
-    dtype = torch.float16 if policy == "fp16_grad_scaler" else torch.bfloat16
-    return torch.autocast(device_type="cuda", dtype=dtype)
+    # Volta has no BF16 or TF32 execution mode.  Both the ordinary FP16 policy
+    # and structured mixed-precision fixtures therefore autocast to FP16 and
+    # accumulate in FP32.
+    return torch.autocast(device_type="cuda", dtype=torch.float16)
 
 
 def _build_model(candidate: TargetCandidate, adapter: TaskAdapter, device: torch.device) -> FamilyModel:
@@ -720,7 +722,7 @@ class LocalExecutionResult:
     compile_backend: str
     observed_hardware_id: str
     target_hardware_id: str
-    accepted_a10g_measurement: bool
+    accepted_v100_measurement: bool
     validation_harness_sha256: str
     validation_environment_sha256: str
     eager_update_passed: bool
@@ -754,10 +756,10 @@ class LocalExecutionResult:
                 raise LocalExecutionError("local execution result has an invalid SHA-256 identity")
         if self.validation_harness_sha256 != validation_harness_sha256():
             raise LocalExecutionError("local execution result targets another validation harness")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
             raise LocalExecutionError("local execution target identity drifted")
-        if self.accepted_a10g_measurement is not False:
-            raise LocalExecutionError("RTX verification cannot become A10G label evidence")
+        if self.accepted_v100_measurement is not False:
+            raise LocalExecutionError("RTX verification cannot become V100 label evidence")
         if self.compiled_update_count != 2:
             raise LocalExecutionError("local execution must perform exactly two compiled updates")
         checks = (
@@ -793,7 +795,8 @@ def validate_candidate_execution(
         raise LocalExecutionError("CUDA is unavailable for the RTX verification gate")
     if resolved_device.type == "cuda":
         observed_hardware = torch.cuda.get_device_name(resolved_device)
-        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
     else:
         observed_hardware = f"local_{resolved_device.type}_test_fixture"
     adapter = adapter_for_task(candidate.task_id)
@@ -876,7 +879,7 @@ def validate_candidate_execution(
         2e-2
         if candidate.precision_policy["autocast"]
         else 1e-3
-        if candidate.precision_policy["policy_id"] == "fp32_tf32"
+        if candidate.precision_policy["policy_id"] == "fp32_ieee"
         else 1e-5
     )
     equivalent = _nested_close(
@@ -929,7 +932,7 @@ def validate_candidate_execution(
         compile_backend=compile_backend,
         observed_hardware_id=observed_hardware,
         target_hardware_id=candidate.target_hardware_id,
-        accepted_a10g_measurement=False,
+        accepted_v100_measurement=False,
         validation_harness_sha256=validation_harness_sha256(),
         validation_environment_sha256=validation_environment_sha256(
             resolved_device, compile_backend

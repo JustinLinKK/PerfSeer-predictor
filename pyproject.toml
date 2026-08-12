@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Reproduction of PerfSeer (arXiv:2502.01206) SeerNet performance predictor"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "torch==2.11.0",
+    "torch==2.10.0",
     "torch_geometric==2.7.0",
     "ogb",
     "networkx",
@@ -28,19 +28,19 @@ dependencies = [
 
 [project.optional-dependencies]
 coverage = [
-    "torchvision==0.26.0",
+    "torchvision==0.25.0",
     "transformers==5.7.0",
-    "torchaudio==2.11.0",
+    "torchaudio==2.10.0",
 ]
-a10g-dataset-pack = [
+v100-labeler = [
     "appdirs>=1.4.4",
     "kaggle==2.2.2",
     "pandas>=2.2",
     "py7zr>=0.21",
     # Only used by the pinned SIIM-ISIC MLE-bench preparer to read TFRecord IDs.
     "tensorflow-cpu>=2.16",
-    "torchaudio==2.11.0",
-    "torchvision==0.26.0",
+    "torchaudio==2.10.0",
+    "torchvision==0.25.0",
     "transformers==5.7.0",
 ]
 

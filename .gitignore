@@ -211,11 +211,16 @@ tempCodeRunnerFile.py
 kaggle.json
 .kaggle/
 
-# PerfSeer V3 A10G dataset-pack workspaces must remain external and local.
+# Legacy PerfSeer A10G dataset-pack workspaces remain local until gated cleanup.
 /a10g_18k_workspace/
 /perfseer-a10g-18k/
 /.triton/
 /torchinductor_*/
+
+# V100 image manifests are generated from the exact committed source. Local
+# smoke datasets are reproducible and too large to enter version control.
+/containers/v100-labeler/build-manifest.json
+/record/v100-labeler-local-smoke-*/materialized/
 
 # Local RTX gate internals are deterministic and too large/noisy for review.
 # Keep only the canonical execution results and concise gate summary visible.

@@ -1,4 +1,4 @@
-"""Fail-closed modality projections and merge receipts for Nautilus A10 work.
+"""Fail-closed modality projections and merge receipts for Nautilus V100 work.
 
 The original 18K target manifest remains immutable.  This module projects the
 canonical 5,500-row ``rest`` task shard into four execution workspaces without
@@ -14,6 +14,7 @@ from functools import lru_cache
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import tempfile
 from typing import Any, Mapping, Sequence
@@ -35,11 +36,11 @@ EXPECTED_MODALITY_COUNTS = {
 EXPECTED_REST_COUNT = 5_500
 MEASURED_EPOCHS_PER_LABEL = 3
 EXPECTED_MEASURED_EPOCHS = 16_500
-A10_FAMILY_ID = "nvidia_a10_24gb_family_v1"
-LOGICAL_TARGET_HARDWARE_ID = "nvidia_a10g_24gb_aws_g5"
-MODALITY_CONTRACT_VERSION = "perfseer_v3_nautilus_a10_modality_contract_v1"
-MODALITY_COMPLETION_VERSION = "perfseer_v3_nautilus_a10_modality_completion_v1"
-MODALITY_MERGE_VERSION = "perfseer_v3_nautilus_a10_modality_merge_v1"
+V100_FAMILY_ID = "nvidia_volta_v100_32gb_family_v1"
+LOGICAL_TARGET_HARDWARE_ID = "nvidia_tesla_v100_sxm2_32gb_nrp"
+MODALITY_CONTRACT_VERSION = "perfseer_v3_nautilus_v100_modality_contract_v1"
+MODALITY_COMPLETION_VERSION = "perfseer_v3_nautilus_v100_modality_completion_v1"
+MODALITY_MERGE_VERSION = "perfseer_v3_nautilus_v100_modality_merge_v1"
 
 
 class ModalityShardError(RuntimeError):
@@ -68,9 +69,17 @@ def _revision(value: str) -> None:
 
 
 def _image_digest(value: str) -> None:
-    if not isinstance(value, str) or not value.startswith("sha256:"):
+    if not isinstance(value, str):
         raise ModalityShardError("container image must use an immutable sha256 digest")
-    _digest(value.removeprefix("sha256:"), context="container image digest")
+    if "@" in value:
+        reference, digest = value.rsplit("@", 1)
+        if not reference or ":" in reference.rsplit("/", 1)[-1]:
+            raise ModalityShardError("container image reference must not include a mutable tag")
+    else:
+        digest = value
+    if not digest.startswith("sha256:"):
+        raise ModalityShardError("container image must use an immutable sha256 digest")
+    _digest(digest.removeprefix("sha256:"), context="container image digest")
 
 
 def _load_json(path: Path) -> Mapping[str, Any]:
@@ -151,7 +160,7 @@ class ModalityContract:
         if (
             self.version != MODALITY_CONTRACT_VERSION
             or self.modality not in MODALITIES
-            or self.hardware_family_id != A10_FAMILY_ID
+            or self.hardware_family_id != V100_FAMILY_ID
             or self.logical_target_hardware_id != LOGICAL_TARGET_HARDWARE_ID
             or self.target_manifest_sha256 != manifest_sha256
             or self.task_registry_sha256 != task_registry_sha256
@@ -206,7 +215,7 @@ def build_modality_contract(modality: str) -> ModalityContract:
     draft = ModalityContract(
         version=MODALITY_CONTRACT_VERSION,
         modality=modality,
-        hardware_family_id=A10_FAMILY_ID,
+        hardware_family_id=V100_FAMILY_ID,
         logical_target_hardware_id=LOGICAL_TARGET_HARDWARE_ID,
         target_manifest_sha256=manifest_sha256,
         task_registry_sha256=task_registry_sha256,
@@ -235,7 +244,7 @@ def analysis_summary() -> Mapping[str, Any]:
         raise ModalityShardError("four modality projections are not an exact disjoint union")
     return canonical_value(
         {
-            "hardware_family_id": A10_FAMILY_ID,
+            "hardware_family_id": V100_FAMILY_ID,
             "logical_target_hardware_id": LOGICAL_TARGET_HARDWARE_ID,
             "target_manifest_sha256": _frozen_registry_identities()[0],
             "rest_candidate_count": len(ids),
@@ -280,7 +289,7 @@ def freeze_run_identity(
     _image_digest(image_digest)
     root = Path(workspace).resolve()
     identity = {
-        "version": "perfseer_v3_nautilus_a10_run_identity_v1",
+        "version": "perfseer_v3_nautilus_v100_run_identity_v1",
         "repository_revision": repository_revision,
         "image_digest": image_digest,
     }
@@ -299,17 +308,19 @@ def freeze_run_identity(
 def _verify_hardware_provenance(value: Mapping[str, Any], expected_sha256: str) -> None:
     if canonical_sha256(value) != expected_sha256:
         raise ModalityShardError("hardware provenance hash differs from its label record")
-    name = str(value.get("name", "")).upper().replace(" ", "")
+    name = re.sub(r"[^A-Z0-9]", "", str(value.get("name", "")).upper())
     capability = value.get("compute_capability")
     memory = value.get("total_memory_bytes")
     if (
-        "A10" not in name
-        or capability not in ([8, 6], (8, 6))
+        "TESLAV100SXM2" not in name
+        or capability not in ([7, 0], (7, 0))
         or type(memory) is not int
-        or not 22 * 1024**3 <= memory <= 26 * 1024**3
+        or not 30 * 1024**3 <= memory <= 34 * 1024**3
         or not str(value.get("uuid", ""))
     ):
-        raise ModalityShardError("label record is not backed by physical A10/A10G provenance")
+        raise ModalityShardError(
+            "label record is not backed by a physical Tesla V100 SXM2 32GB"
+        )
 
 
 def _verify_record(
@@ -368,7 +379,7 @@ class ModalityCompletion:
         _image_digest(self.image_digest)
         if (
             self.version != MODALITY_COMPLETION_VERSION
-            or self.hardware_family_id != A10_FAMILY_ID
+            or self.hardware_family_id != V100_FAMILY_ID
             or self.logical_target_hardware_id != LOGICAL_TARGET_HARDWARE_ID
             or self.contract_sha256 != contract.contract_sha256
             or self.target_manifest_sha256 != contract.target_manifest_sha256
@@ -471,7 +482,7 @@ def verify_modality_workspace(
     draft = ModalityCompletion(
         version=MODALITY_COMPLETION_VERSION,
         modality=modality,
-        hardware_family_id=A10_FAMILY_ID,
+        hardware_family_id=V100_FAMILY_ID,
         logical_target_hardware_id=LOGICAL_TARGET_HARDWARE_ID,
         contract_sha256=contract.contract_sha256,
         target_manifest_sha256=contract.target_manifest_sha256,
@@ -580,7 +591,7 @@ def merge_modality_workspaces(
             )
         receipt = {
             "version": MODALITY_MERGE_VERSION,
-            "hardware_family_id": A10_FAMILY_ID,
+            "hardware_family_id": V100_FAMILY_ID,
             "logical_target_hardware_id": LOGICAL_TARGET_HARDWARE_ID,
             "target_manifest_sha256": next(iter(manifests)),
             "repository_revision": next(iter(revisions)),
@@ -604,7 +615,7 @@ def merge_modality_workspaces(
 
 
 __all__ = [
-    "A10_FAMILY_ID",
+    "V100_FAMILY_ID",
     "EXPECTED_MEASURED_EPOCHS",
     "EXPECTED_MODALITY_COUNTS",
     "EXPECTED_REST_COUNT",

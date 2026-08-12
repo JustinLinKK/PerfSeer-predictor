@@ -139,7 +139,7 @@ def _attention(operation: str, candidate: OperationCandidate) -> BenchmarkRecipe
         "aten.scaled_dot_product_attention.efficient",
     }:
         return _unavailable(
-            "specialized SDPA kernel requires pinned CUDA A10G backend qualification"
+            "specialized SDPA kernel requires pinned CUDA V100 backend qualification"
         )
     if operation == "aten.native_multi_head_attention":
         q = _tensor(candidate, b, n, d)
@@ -462,7 +462,7 @@ def _sequence(operation: str, candidate: OperationCandidate) -> BenchmarkRecipe:
             (_tensor(candidate, b, n, n), _tensor(candidate, 1, b, n)),
         )
     if operation == "aten.cudnn_rnn":
-        return _unavailable("cuDNN RNN requires pinned CUDA A10G backend qualification")
+        return _unavailable("cuDNN RNN requires pinned CUDA V100 backend qualification")
     raise OperationBenchmarkError(f"missing sequence recipe for {operation}")
 
 

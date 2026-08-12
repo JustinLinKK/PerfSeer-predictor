@@ -10,15 +10,15 @@ from .fingerprints import canonical_sha256
 from .operation_sampler import OperationGeneratorRegistry, build_operation_generator_registry
 
 
-DISPATCH_REQUEST_VERSION = "perfseer_v3_a10g_dispatch_request_v1"
-DISPATCH_EVIDENCE_VERSION = "perfseer_v3_a10g_dispatch_evidence_v1"
+DISPATCH_REQUEST_VERSION = "perfseer_v3_v100_dispatch_request_v1"
+DISPATCH_EVIDENCE_VERSION = "perfseer_v3_v100_dispatch_evidence_v1"
 IDENTITY_SOURCES = {
     "dispatcher_trace",
     "capture_semantic_summary",
     "perfseer_phase_annotation",
 }
-MEASUREMENT_SCOPES = {"local_smoke", "a10g_measurement"}
-TARGET_HARDWARE_ID = "nvidia_a10g_24gb_aws_g5"
+MEASUREMENT_SCOPES = {"local_smoke", "v100_measurement"}
+TARGET_HARDWARE_ID = "nvidia_tesla_v100_sxm2_32gb_nrp"
 CAPTURE_SEMANTIC_TARGETS = {
     "prim.getitem": ("prim::TupleIndex",),
 }
@@ -104,7 +104,7 @@ class DispatchRequest:
             "training_graph_annotation": "perfseer_phase_annotation",
             "capture_observed_python_semantics": "capture_semantic_summary",
         }.get(generator.execution_route, "dispatcher_trace")
-        expected_gated = generator.execution_route == "a10g_environment_gated_dispatcher"
+        expected_gated = generator.execution_route == "v100_environment_gated_dispatcher"
         if self.identity_source != expected_source:
             raise DispatchVerificationError("dispatch identity source differs from generator route")
         if self.environment_gated != expected_gated or self.specialized_backend != expected_gated:
@@ -113,7 +113,7 @@ class DispatchRequest:
             if self.requested_backend_id != "cpu_eager":
                 raise DispatchVerificationError("local smoke must request cpu_eager")
         elif self.requested_backend_id not in generator.required_backends:
-            raise DispatchVerificationError("A10G backend differs from generator requirements")
+            raise DispatchVerificationError("V100 backend differs from generator requirements")
 
 
 @dataclass(frozen=True)
@@ -163,8 +163,8 @@ class DispatchEvidence:
                 raise DispatchVerificationError("supported evidence requires observed identities")
         elif type(self.unsupported_reason) is not str or not self.unsupported_reason:
             raise DispatchVerificationError("unsupported evidence requires a written reason")
-        if self.accepted_measurement and self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise DispatchVerificationError("accepted dispatcher evidence must come from AWS A10G")
+        if self.accepted_measurement and self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise DispatchVerificationError("accepted dispatcher evidence must come from NRP V100")
 
 
 @dataclass(frozen=True)
@@ -213,9 +213,9 @@ class DispatchVerification:
                 self.requested_backend_id,
             ):
                 raise DispatchVerificationError("verified dispatch must retain exact matches")
-            if self.measurement_scope == "a10g_measurement":
+            if self.measurement_scope == "v100_measurement":
                 if not self.accepted_measurement or self.target_hardware_id != TARGET_HARDWARE_ID:
-                    raise DispatchVerificationError("A10G verification requires accepted A10G evidence")
+                    raise DispatchVerificationError("V100 verification requires accepted V100 evidence")
             elif self.accepted_measurement:
                 raise DispatchVerificationError("local smoke cannot be accepted measurement evidence")
         elif self.matched_raw_targets or self.matched_backend_ids or self.accepted_measurement:
@@ -242,9 +242,9 @@ def verify_dispatch(
         raise DispatchVerificationError("requested and observed identity sources differ")
     if request.measurement_scope == "local_smoke":
         if evidence.accepted_measurement or evidence.target_hardware_id == TARGET_HARDWARE_ID:
-            raise DispatchVerificationError("local smoke evidence cannot claim AWS A10G acceptance")
+            raise DispatchVerificationError("local smoke evidence cannot claim NRP V100 acceptance")
     elif evidence.target_hardware_id != TARGET_HARDWARE_ID:
-        raise DispatchVerificationError("A10G request requires AWS A10G evidence")
+        raise DispatchVerificationError("V100 request requires NRP V100 evidence")
     if not evidence.supported:
         if not request.environment_gated:
             raise DispatchVerificationError("non-gated operation cannot be accepted as unsupported")
@@ -265,8 +265,8 @@ def verify_dispatch(
         )
         result.validate()
         return result
-    if request.measurement_scope == "a10g_measurement" and not evidence.accepted_measurement:
-        raise DispatchVerificationError("supported A10G evidence must be accepted")
+    if request.measurement_scope == "v100_measurement" and not evidence.accepted_measurement:
+        raise DispatchVerificationError("supported V100 evidence must be accepted")
     semantic_targets = CAPTURE_SEMANTIC_TARGETS.get(request.canonical_operation_id, ())
     matched_raw = tuple(
         sorted(

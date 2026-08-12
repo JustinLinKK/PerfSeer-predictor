@@ -1,4 +1,4 @@
-"""Registry-derived A10G operation support planning contract."""
+"""Registry-derived V100 operation support planning contract."""
 
 from __future__ import annotations
 
@@ -22,12 +22,12 @@ from .coverage_config import (
 
 
 DEFAULT_SUPPORT_POLICY_PATH = (
-    Path(__file__).resolve().parents[1] / "registries" / "operation_support_a10g.yaml"
+    Path(__file__).resolve().parents[1] / "registries" / "operation_support_v100.yaml"
 )
 DEFAULT_GENERATED_CONTRACT_PATH = (
     Path(__file__).resolve().parents[1]
     / "registries"
-    / "operation_support_a10g.generated.json"
+    / "operation_support_v100.generated.json"
 )
 SUPPORT_STATES = frozenset(
     {
@@ -38,7 +38,7 @@ SUPPORT_STATES = frozenset(
         "deprecated",
     }
 )
-FROZEN_DTYPES = ("float32", "float16", "bfloat16")
+FROZEN_DTYPES = ("float32", "float16")
 FROZEN_LAYOUTS = ("contiguous", "non_contiguous")
 FROZEN_COMPOSITE_CONTEXTS = (
     "sequential",
@@ -194,10 +194,10 @@ class OperationSupportContract:
         family_policies: tuple[FamilySupportPolicy, ...] | None = None,
         coverage_config: Any | None = None,
     ) -> None:
-        if self.version != "perfseer_v3_a10g_operation_support_contract_v1":
+        if self.version != "perfseer_v3_v100_operation_support_contract_v1":
             raise OperationSupportError("operation support contract version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise OperationSupportError("operation support contract must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise OperationSupportError("operation support contract must target NRP V100")
         if (
             self.contract_status != "planning"
             or type(self.training_approved) is not bool
@@ -256,10 +256,10 @@ class OperationSupportContract:
             if entry.exactly_covered is not False or entry.accuracy_validated is not False:
                 raise OperationSupportError("planning entries cannot claim measured/accuracy coverage")
             if entry.support_state == "required_measured":
-                expected_micro = (_identifier("a10g_microbenchmark", rule.canonical_id),)
-                expected_golden = (_identifier("a10g_golden", rule.canonical_id),)
+                expected_micro = (_identifier("v100_microbenchmark", rule.canonical_id),)
+                expected_golden = (_identifier("v100_golden", rule.canonical_id),)
                 expected_composites = tuple(
-                    _identifier("a10g_composite", f"{rule.family}_{context}")
+                    _identifier("v100_composite", f"{rule.family}_{context}")
                     for context in FROZEN_COMPOSITE_CONTEXTS
                 )
                 if (
@@ -335,10 +335,10 @@ def _load_policy(
         raise OperationSupportError("support policy expected operation count is stale")
     if type(root["training_approved"]) is not bool or root["training_approved"]:
         raise OperationSupportError("planning support policy must be explicitly unapproved")
-    if _string(root["version"], context="version") != "perfseer_v3_a10g_operation_support_policy_v1":
+    if _string(root["version"], context="version") != "perfseer_v3_v100_operation_support_policy_v1":
         raise OperationSupportError("support policy version mismatch")
-    if _string(root["target_hardware_id"], context="target_hardware_id") != "nvidia_a10g_24gb_aws_g5":
-        raise OperationSupportError("support policy must target AWS A10G")
+    if _string(root["target_hardware_id"], context="target_hardware_id") != "nvidia_tesla_v100_sxm2_32gb_nrp":
+        raise OperationSupportError("support policy must target NRP V100")
     if _string(root["contract_status"], context="contract_status") != "planning":
         raise OperationSupportError("support policy must remain in planning status")
     if _string(root["generator_mapping_status"], context="generator_mapping_status") != "declared_pending_phase2_implementation":
@@ -393,7 +393,7 @@ def build_operation_support_contract(
     contexts = _string_tuple(defaults["composite_contexts"], context="composite_contexts")
     coverage_config = load_operation_coverage_config(coverage_config_path)
     if dtypes != FROZEN_DTYPES:
-        raise OperationSupportError("support policy dtypes differ from the frozen A10G set")
+        raise OperationSupportError("support policy dtypes differ from the frozen V100 set")
     if layouts != FROZEN_LAYOUTS:
         raise OperationSupportError("support policy layouts differ from the frozen set")
     if shapes != coverage_config.required_shape_regimes:
@@ -426,22 +426,22 @@ def build_operation_support_contract(
                 required_layouts=layouts if required else (),
                 required_shape_regimes=shapes if required else (),
                 microbenchmark_generator_ids=(
-                    (_identifier("a10g_microbenchmark", rule.canonical_id),) if required else ()
+                    (_identifier("v100_microbenchmark", rule.canonical_id),) if required else ()
                 ),
                 composite_block_ids=(
-                    tuple(_identifier("a10g_composite", f"{rule.family}_{context}") for context in contexts)
+                    tuple(_identifier("v100_composite", f"{rule.family}_{context}") for context in contexts)
                     if required
                     else ()
                 ),
                 golden_test_ids=(
-                    (_identifier("a10g_golden", rule.canonical_id),) if required else ()
+                    (_identifier("v100_golden", rule.canonical_id),) if required else ()
                 ),
                 mapping_status=str(root["generator_mapping_status"]),
             )
         )
     feature_schema = build_feature_schema(registry)
     contract = OperationSupportContract(
-        version="perfseer_v3_a10g_operation_support_contract_v1",
+        version="perfseer_v3_v100_operation_support_contract_v1",
         target_hardware_id=str(root["target_hardware_id"]),
         contract_status=str(root["contract_status"]),
         training_approved=bool(root["training_approved"]),

@@ -13,7 +13,7 @@ from .fingerprints import canonical_sha256, canonical_value
 
 
 DEFAULT_TASK_REGISTRY_PATH = (
-    Path(__file__).resolve().parents[1] / "registries" / "a10g_task_registry.yaml"
+    Path(__file__).resolve().parents[1] / "registries" / "v100_task_registry.yaml"
 )
 FROZEN_TASKS = (
     ("histopathologic-cancer", "histopathologic-cancer-detection", "vision"),
@@ -288,8 +288,8 @@ class TaskRegistry:
     def validate(self) -> None:
         if self.version != TASK_REGISTRY_VERSION:
             raise TaskRegistryError("task registry version mismatch")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise TaskRegistryError("task registry must target AWS A10G")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise TaskRegistryError("task registry must target NRP V100")
         if type(self.training_approved) is not bool or self.training_approved:
             raise TaskRegistryError("local task registry must remain explicitly unapproved")
         if self.metadata_source_url != "https://github.com/openai/mle-bench":

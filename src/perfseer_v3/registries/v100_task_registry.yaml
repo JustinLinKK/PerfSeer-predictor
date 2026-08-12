@@ -1,5 +1,5 @@
-version: perfseer_v3_a10g_task_registry_v1
-target_hardware_id: nvidia_a10g_24gb_aws_g5
+version: perfseer_v3_v100_task_registry_v1
+target_hardware_id: nvidia_tesla_v100_sxm2_32gb_nrp
 training_approved: false
 metadata_source_url: https://github.com/openai/mle-bench
 metadata_revision: 507f92e1138bb6e40dac5c6ee7a6758e6424bf97

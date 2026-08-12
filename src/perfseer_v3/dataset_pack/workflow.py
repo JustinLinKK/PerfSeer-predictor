@@ -1,4 +1,4 @@
-"""One resumable, task-by-task command for the exact A10G 18K campaign."""
+"""One resumable, task-by-task command for the exact V100 18K campaign."""
 
 from __future__ import annotations
 
@@ -35,13 +35,13 @@ from .storage import atomic_write_json
 from .supervisor import (
     AttemptSupervisor,
     GpuProbe,
-    discover_a10g_probes,
+    discover_v100_probes,
     lock_campaign_environment,
 )
 from .task_registry import load_task_registry
 
 
-WORKFLOW_VERSION = "perfseer_v3_a10g_18k_workflow_v2"
+WORKFLOW_VERSION = "perfseer_v3_v100_18k_workflow_v2"
 
 
 class WorkflowError(RuntimeError):
@@ -432,7 +432,7 @@ def run_task_workflow(
         preparer=PinnedMleBenchPreparer(Path(mlebench_checkout)),
     )
     _verify_completed_prefix(root, loop, manifest)
-    workers = tuple(probes or (() if materialize_only else discover_a10g_probes()))
+    workers = tuple(probes or (() if materialize_only else discover_v100_probes()))
     if not materialize_only:
         lock_campaign_environment(root)
     accepted_at_start_index = (
@@ -504,7 +504,7 @@ def run_task_workflow(
                 break
             batch_roots = unresolved[: len(workers)]
             if not batch_roots:
-                raise WorkflowError("label workflow has no qualified physical A10G workers")
+                raise WorkflowError("label workflow has no qualified physical V100 workers")
             with ThreadPoolExecutor(max_workers=len(batch_roots)) as executor:
                 futures = []
                 for probe, root_id in zip(workers, batch_roots, strict=False):

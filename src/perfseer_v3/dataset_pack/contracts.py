@@ -1,4 +1,4 @@
-"""Typed contracts for the simplified A10G 18K planning and label records."""
+"""Typed contracts for the simplified V100 18K planning and label records."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from typing import Any, Mapping
 from .fingerprints import canonical_sha256, canonical_value
 
 
-WORKLOAD_CONFIG_VERSION = "perfseer_v3_a10g_workload_config_v2"
-LABEL_RUN_RECORD_VERSION = "perfseer_v3_a10g_label_run_v2"
-EPOCH_MEASUREMENT_VERSION = "perfseer_v3_a10g_epoch_measurement_v1"
-TASK_REGISTRY_VERSION = "perfseer_v3_a10g_task_registry_v1"
-MODEL_REGISTRY_VERSION = "perfseer_v3_a10g_model_registry_v1"
+WORKLOAD_CONFIG_VERSION = "perfseer_v3_v100_workload_config_v2"
+LABEL_RUN_RECORD_VERSION = "perfseer_v3_v100_label_run_v2"
+EPOCH_MEASUREMENT_VERSION = "perfseer_v3_v100_epoch_measurement_v1"
+TASK_REGISTRY_VERSION = "perfseer_v3_v100_task_registry_v1"
+MODEL_REGISTRY_VERSION = "perfseer_v3_v100_model_registry_v1"
 TARGET_NAMES = (
     "train_epoch_ms",
     "train_avg_sm_util_percent",
@@ -178,8 +178,8 @@ class WorkloadConfiguration:
     def validate(self) -> None:
         if self.version != WORKLOAD_CONFIG_VERSION:
             raise ValueError(f"unsupported workload config version {self.version!r}")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise ValueError("workload configuration must target AWS A10G, never generic A10")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise ValueError("workload configuration must target NRP V100, never generic V100")
         for name in (
             "source_lineage",
             "generator_version",
@@ -227,7 +227,7 @@ class TargetVector:
 
 @dataclass(frozen=True)
 class AuxiliaryTargetVector:
-    """Historical/local-QA target vector; never emitted by the 18K AWS workflow."""
+    """Historical/local-QA target vector; never emitted by the 18K NRP workflow."""
 
     values: tuple[float | None, ...]
     validity: tuple[bool, ...]
@@ -461,8 +461,8 @@ class LabelRunRecord:
             raise ValueError("failure_stage must be a FailureStage enum")
         self.fingerprints.validate(CorpusLayer.END_TO_END)
         _require_text(self.gpu_uuid, context="gpu_uuid")
-        if self.target_hardware_id != "nvidia_a10g_24gb_aws_g5":
-            raise ValueError("label records must be measured on the frozen AWS A10G target")
+        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
+            raise ValueError("label records must be measured on the frozen NRP V100 target")
         _require_sha256(self.capture_workload_sha256, context="capture_workload_sha256")
         _require_sha256(self.profile_workload_sha256, context="profile_workload_sha256")
         if self.capture_workload_sha256 != self.profile_workload_sha256:

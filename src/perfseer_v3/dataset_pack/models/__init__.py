@@ -1,4 +1,4 @@
-"""Faithful Phase 3 model factories for all frozen A10G quota families."""
+"""Faithful Phase 3 model factories for all frozen V100 quota families."""
 
 from .base import (
     FamilyBuildConfig,

@@ -1,4 +1,4 @@
-"""Fresh-process entry point for exactly one A10G configuration attempt."""
+"""Fresh-process entry point for exactly one V100 configuration attempt."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 
 import torch
 
-from .a10g_runner import NvmlTelemetryBackend, run_five_epoch_training
+from .v100_runner import NvmlTelemetryBackend, run_five_epoch_training
 from .fingerprints import canonical_sha256
 from .sampler import target_candidate_from_dict
 from .storage import atomic_write_json
@@ -25,7 +25,7 @@ from .transfer_labeling import (
 )
 
 
-WORKER_ENVELOPE_VERSION = "perfseer_v3_a10g_label_worker_envelope_v1"
+WORKER_ENVELOPE_VERSION = "perfseer_v3_v100_label_worker_envelope_v1"
 
 
 class LabelWorkerError(RuntimeError):
@@ -92,13 +92,13 @@ def resolve_transfer_inputs(
         }
     ]
     if len(base_matches) != 1:
-        raise LabelWorkerError("candidate does not have exactly one frozen A10 label row")
+        raise LabelWorkerError("candidate does not have exactly one frozen V100 label row")
     raw_targets = base_matches[0].get("target_values", base_matches[0].get("target"))
     if not isinstance(raw_targets, (list, tuple)):
-        raise LabelWorkerError("frozen A10 row has no six-target values")
+        raise LabelWorkerError("frozen V100 row has no six-target values")
     targets = tuple(float(value) for value in raw_targets)
     if len(targets) != 6 or any(not math.isfinite(value) or value < 0 for value in targets):
-        raise LabelWorkerError("frozen A10 row violates the six-target contract")
+        raise LabelWorkerError("frozen V100 row violates the six-target contract")
     return matches[0], targets
 
 
@@ -157,7 +157,7 @@ def run_worker(arguments: argparse.Namespace) -> int:
                 raise LabelWorkerError("target profile and transfer subset hardware IDs differ")
             if not arguments.memory_probe and candidate.candidate_id != base_configuration_id:
                 raise LabelWorkerError(
-                    "selected paired labels must execute the exact frozen A10 configuration"
+                    "selected paired labels must execute the exact frozen V100 configuration"
                 )
             if arguments.memory_probe and arguments.base_configuration_id is None:
                 raise LabelWorkerError("memory probes require --base-configuration-id")
