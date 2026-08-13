@@ -11,6 +11,7 @@ import tempfile
 from typing import Any, Mapping, Protocol, Sequence
 
 from .fingerprints import canonical_sha256, canonical_value
+from .labeler_profile import PROFILE
 from .contracts import LabelRunRecord
 from .kaggle import (
     ArchiveInventory,
@@ -35,11 +36,26 @@ from .storage import (
     non_task_workspace_bytes,
 )
 from .task_registry import TaskRegistryEntry, load_task_registry
+from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
 
 
-MATERIALIZATION_STATE_VERSION = "perfseer_v3_v100_task_materialization_state_v1"
-TASK_LOOP_STATE_VERSION = "perfseer_v3_v100_task_loop_state_v2"
-TASK_COMPLETION_VERSION = "perfseer_v3_v100_task_completion_v1"
+_SPEECH_V2 = PROFILE.name == "native_a10_speech_v2"
+MATERIALIZATION_STATE_VERSION = (
+    "perfseer_v3_nrp_a10_speech_task_materialization_state_v2"
+    if _SPEECH_V2
+    else "perfseer_v3_v100_task_materialization_state_v1"
+)
+TASK_LOOP_STATE_VERSION = (
+    "perfseer_v3_nrp_a10_speech_task_loop_state_v2"
+    if _SPEECH_V2
+    else "perfseer_v3_v100_task_loop_state_v2"
+)
+TASK_COMPLETION_VERSION = (
+    "perfseer_v3_nrp_a10_speech_task_completion_v2"
+    if _SPEECH_V2
+    else "perfseer_v3_v100_task_completion_v1"
+)
+SPEECH_SOURCE_LOCK_VERSION = "perfseer_v3_nrp_a10_speech_source_lock_v2"
 MATERIALIZATION_STAGES = (
     "selected",
     "downloaded",
@@ -53,6 +69,77 @@ MATERIALIZATION_STAGES = (
 
 class TaskMaterializationError(RuntimeError):
     """Raised when resume state or a task materialization stage is invalid."""
+
+
+@dataclass(frozen=True)
+class SpeechSourceLock:
+    version: str
+    task_id: str
+    kaggle_slug: str
+    remote_inventory_sha256: str
+    archive_sha256: str
+    archive_inventory_sha256: str
+    substitution_contract_sha256: str
+    lock_sha256: str
+
+    def unhashed_payload(self) -> Mapping[str, Any]:
+        payload = canonical_value(asdict(self))
+        payload.pop("lock_sha256")
+        return payload
+
+    def validate(self) -> None:
+        if (
+            self.version != SPEECH_SOURCE_LOCK_VERSION
+            or self.task_id != SPEECH_TASK_ID
+            or self.kaggle_slug != "tensorflow-speech-recognition-challenge"
+        ):
+            raise TaskMaterializationError("speech source-lock identity differs")
+        for name in (
+            "remote_inventory_sha256",
+            "archive_sha256",
+            "archive_inventory_sha256",
+            "substitution_contract_sha256",
+            "lock_sha256",
+        ):
+            _digest(getattr(self, name), context=f"speech source lock {name}")
+        if self.substitution_contract_sha256 != load_speech_substitution_contract().sha256:
+            raise TaskMaterializationError("speech source lock uses another substitution")
+        if self.lock_sha256 != canonical_sha256(self.unhashed_payload()):
+            raise TaskMaterializationError("speech source lock hash differs")
+
+    def to_dict(self) -> Mapping[str, Any]:
+        self.validate()
+        return canonical_value(asdict(self))
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        remote_inventory_sha256: str,
+        archive_sha256: str,
+        archive_inventory_sha256: str,
+    ) -> "SpeechSourceLock":
+        draft = cls(
+            version=SPEECH_SOURCE_LOCK_VERSION,
+            task_id=SPEECH_TASK_ID,
+            kaggle_slug="tensorflow-speech-recognition-challenge",
+            remote_inventory_sha256=remote_inventory_sha256,
+            archive_sha256=archive_sha256,
+            archive_inventory_sha256=archive_inventory_sha256,
+            substitution_contract_sha256=load_speech_substitution_contract().sha256,
+            lock_sha256="",
+        )
+        result = replace(draft, lock_sha256=canonical_sha256(draft.unhashed_payload()))
+        result.validate()
+        return result
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "SpeechSourceLock":
+        if not isinstance(value, Mapping) or set(value) != set(cls.__dataclass_fields__):
+            raise TaskMaterializationError("serialized speech source-lock schema differs")
+        result = cls(**dict(value))
+        result.validate()
+        return result
 
 
 class KaggleAcquirer(Protocol):
@@ -163,6 +250,7 @@ class MaterializedTask:
     inventory: ArchiveInventory
     view_manifest: PreparedViewManifest
     state: TaskMaterializationState
+    source_lock: SpeechSourceLock | None = None
 
 
 def seal_worker_inputs(materialized: MaterializedTask) -> None:
@@ -372,12 +460,55 @@ class TaskMaterializer:
         free = shutil.disk_usage(self.workspace).free
         return retained, free
 
+    def _freeze_speech_source_lock(
+        self,
+        entry: TaskRegistryEntry,
+        state: TaskMaterializationState,
+        inventory: ArchiveInventory,
+    ) -> SpeechSourceLock | None:
+        if PROFILE.name != "native_a10_speech_v2" or entry.task_id != SPEECH_TASK_ID:
+            return None
+        if state.archive_inventory_sha256 is None:
+            raise TaskMaterializationError("speech source cannot lock before archive inspection")
+        expected = SpeechSourceLock.build(
+            remote_inventory_sha256=state.remote_inventory_sha256,
+            archive_sha256=inventory.archive_sha256,
+            archive_inventory_sha256=state.archive_inventory_sha256,
+        )
+        path = self.workspace / "state" / "source_locks" / f"{entry.task_id}.json"
+        if path.is_file():
+            actual = SpeechSourceLock.from_dict(_load_json(path))
+            if actual != expected:
+                raise TaskMaterializationError(
+                    "speech source archive or remote inventory drifted from the PVC lock"
+                )
+            return actual
+        if path.exists() or path.is_symlink():
+            raise TaskMaterializationError("speech source lock path is not a regular file")
+        atomic_write_json(path, expected.to_dict())
+        return expected
+
     def materialize(self, entry: TaskRegistryEntry) -> MaterializedTask:
         entry.validate()
         credentials = validate_external_credentials(self.repository_root)
         self.kaggle.authenticate()
         probe = self.kaggle.probe_competition(entry.kaggle_slug)
         probe.validate()
+        if PROFILE.name == "native_a10_speech_v2" and entry.task_id == SPEECH_TASK_ID:
+            expected_inventory = sorted(
+                (
+                    str(row["name"]),
+                    int(row["size_bytes"]),
+                )
+                for row in load_speech_substitution_contract().payload["new_task"][
+                    "source_inventory"
+                ]
+            )
+            actual_inventory = sorted((row.name, row.size_bytes) for row in probe.files)
+            if actual_inventory != expected_inventory:
+                raise TaskMaterializationError(
+                    "TensorFlow Speech Recognition remote inventory differs from V2"
+                )
         self.task_cache.mkdir(parents=True, exist_ok=True)
         state = self._resume_state(entry)
         resumed_preparing = state is not None and state.stage == "preparing"
@@ -462,6 +593,7 @@ class TaskMaterializer:
             self._save_state(state)
         elif state.archive_inventory_sha256 != inventory.inventory_sha256:
             raise TaskMaterializationError("resume archive inventory changed")
+        source_lock = self._freeze_speech_source_lock(entry, state, inventory)
 
         extracted = self.task_cache / "extracted"
         stage_index = MATERIALIZATION_STAGES.index(state.stage)
@@ -593,6 +725,7 @@ class TaskMaterializer:
             inventory=inventory,
             view_manifest=view_manifest,
             state=state,
+            source_lock=source_lock,
         )
 
     def cleanup_completed_task(

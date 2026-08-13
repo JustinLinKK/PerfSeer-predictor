@@ -35,11 +35,12 @@ from .task_registry import TaskRegistryEntry
 
 
 MIB = 1024**2
-V100_RUN_RESULT_VERSION = (
-    "perfseer_v3_nrp_a10_five_epoch_result_v1"
-    if PROFILE.name == "native_a10"
-    else "perfseer_v3_v100_five_epoch_result_v1"
-)
+if PROFILE.name == "native_a10_speech_v2":
+    V100_RUN_RESULT_VERSION = "perfseer_v3_nrp_a10_speech_v2_five_epoch_result_v2"
+elif PROFILE.is_native_a10:
+    V100_RUN_RESULT_VERSION = "perfseer_v3_nrp_a10_five_epoch_result_v1"
+else:
+    V100_RUN_RESULT_VERSION = "perfseer_v3_v100_five_epoch_result_v1"
 
 
 class V100RunError(RuntimeError):
@@ -92,7 +93,7 @@ class NvmlTelemetryBackend:
                 normalized_name = "".join(
                     character for character in str(name).upper() if character.isalnum()
                 )
-                if PROFILE.name == "native_a10":
+                if PROFILE.is_native_a10:
                     qualified = (
                         normalized_name == "NVIDIAA10"
                         and 22 * 1024**3 <= memory.total <= 26 * 1024**3

@@ -1,89 +1,102 @@
-# PerfSeer V3 Native Nautilus A10 18K Labeler Branch
+# PerfSeer V3 Native A10 Speech-Substitution V2
 
-## Objective
+## Objective and scope
 
-Preserve the completed V100 work and implement a separate native Nautilus A10
-labeling workflow on `feature/perfseer-v3-nautilus-a10-18k-labeler`. Reuse the
-immutable-image, unified-CLI, digest-only Kubernetes Job, monitoring, and
-verification design. Build and test locally only: do not publish an image or
-create, modify, or submit any Nautilus resource.
+Create `feature/perfseer-v3-nautilus-a10-18k-labeler-speech-v2` from the clean
+native-A10 branch. Preserve the existing V1 and original AWS A10G contracts as
+historical, reproducible references. Replace only the unavailable 650-row ICML
+whale task with a deterministic binary `yes`/`no` view of the TensorFlow Speech
+Recognition Challenge. Build and test locally only: do not publish an image or
+create, modify, or submit Nautilus resources.
 
-## Frozen reference and native contract
+## Versioned data and design contract
 
-- Freeze source commit `d7abb69b3c79e65e2f3834065ce284484a020ad4`,
-  manifest hash `bf805655d2a9fe978ce2ad4d8bb1f0c0efa400b013e2d1f1fa258ffc83cbeb8e`,
-  and task-registry hash
-  `781b93ddc020d7cbc77d816458fc213065088a27b9e72d42290ddd8e656de049`.
-- Preserve exactly 18,000 rows, 22 tasks, 35 families, and 54,000 retained
-  measured epochs, including 5,193 TF32, 5,232 BF16, 4,171 FP16 AMP, and
-  3,404 mixed-structured candidates.
-- Introduce hardware `nvidia_a10_24gb_nrp` and family
-  `nvidia_ampere_a10_24gb_nrp_v1`. Require one visible `NVIDIA A10`, compute
-  capability 8.6, and 22--26 GiB of memory.
-- Enable TF32 only for TF32 candidates. Run BF16 autocast without scaling and
-  FP16 autocast with gradient scaling. Preserve the original mixed-structured
-  semantics.
-- Keep the V100 implementation intact.
+- Add a `native_a10_speech_v2` profile and separate V2 task, model, manifest,
+  campaign, image, and Kubernetes contracts.
+- Keep the V1 native manifest `361f31ed...`, V1 crosswalk `d66c4f09...`, and
+  original AWS A10G manifest `bf805655...` reproducible and unchanged.
+- Preserve exactly 18,000 candidates, 22 tasks, 35 families, 54,000 retained
+  measured epochs, and every family, precision, batch, execution, optimizer,
+  scheduler, checkpoint, regime, seed, and coverage quota.
+- Replace `icml-2013-whale` at the same task ordinal with
+  `tensorflow-speech-yes-no`, using Kaggle competition
+  `tensorflow-speech-recognition-challenge` and binary targets `no -> 0` and
+  `yes -> 1`.
+- Build the prepared view from exactly 2,048 valid 16 kHz WAVs per class,
+  ordered by `(SHA-256(relative path), relative path)`. Fail closed on corrupt
+  audio, archive drift, or fewer than 2,048 valid examples in either class.
+- Use the pinned MLE-bench preparer only to extract the public training corpus.
+  Ignore its test split and independently hash and verify the PerfSeer view.
+- Preserve the affected 650-row allocation: 275 PANNs, 200 TCN, 175 M5; and
+  130 TF32, 195 BF16, 195 FP16 AMP, 130 mixed-structured candidates.
 
-## Crosswalk and execution
+## Lineage and provenance
 
-- Generate an immutable 18,000-row crosswalk containing ordinal, original A10G
-  candidate ID, native NRP-A10 candidate ID, and semantic distribution
-  signature.
-- Prove a bijection and equality of the task, family, modality, architecture,
-  precision, optimizer, scheduler, execution, batch, seed, and coverage
-  distributions. Keep the AWS A10G and NRP A10 corpora separate.
-- Include the original candidate ID and reference-manifest hash in every native
-  result.
-- Execute exactly one worker. Use a CephFS-compatible exclusive workspace lock,
-  atomic state/results, fail-closed task-cache cleanup, GPU cleanup checks, and
-  deterministic OOM repair.
-- Select a canonical 96-label pilot covering all 22 tasks, 35 families, four
-  precision modes, eager/compiled execution, regimes, checkpoint settings, and
-  memory tiers. Resume the same pilot after interruption.
-- Preserve pilot records in the production workspace. Complete the remaining
-  17,904 labels through 70 ordered chunks of at most 256 new accepted labels;
-  reject out-of-order or concurrent chunks and resume an interrupted chunk.
+- Regenerate all 1,300 audio candidate IDs because the three audio-family
+  registry fingerprints change; require all 16,700 non-audio IDs to remain
+  byte-identical.
+- Produce a three-way V2 lineage crosswalk with original AWS A10G, native V1,
+  and native V2 IDs; old/new semantic signatures; row classification; and a
+  task-independent compute signature.
+- Require crosswalk classes of 16,700 `unchanged`, 650
+  `audio_registry_rebound` for MLSP Birds, and 650 `dataset_substitution` for
+  Speech Commands. Prove all 18,000 task-independent compute signatures match.
+- Record both historical IDs, both historical manifest hashes, substitution
+  contract hash, source archive hash, remote inventory hash, and
+  `dataset_substitution` in every V2 label record. Never silently merge the
+  substituted speech measurements with historical whale measurements.
+- Store V2 state only in
+  `/workspace/perfseer-v3-native-a10-18k-speech-v2`; reject V1 manifests,
+  receipts, locks, and workspaces instead of migrating them.
 
-## Container and Nautilus handoff
+## Runtime, image, and Nautilus handoff
 
-- Build `linux/amd64` from
-  `pytorch/pytorch:2.10.0-cuda12.8-cudnn9-runtime@sha256:b85566342b86d13a67712e9315d40cdc2dad7f8d86df1aff3831f80835edbcca`.
-- Pin and hash the full 18K runtime, including TorchAudio, TorchVision, PyG,
-  Transformers, TensorFlow CPU, Kaggle, audio/archive, NLP, graph, and tabular
-  dependencies. Embed clean PerfSeer source and MLE-bench revision
-  `507f92e1138bb6e40dac5c6ee7a6758e6424bf97`.
-- Perform no Git, apt, pip, or conda operation when a Job starts, and never put
-  credentials or datasets in image layers.
-- Provide one CLI with `analyze`, `image-preflight`, `smoke-local`,
+- Keep the unified CLI commands: `analyze`, `image-preflight`, `smoke-local`,
   `run-campaign --pilot`, `run-campaign --chunk-index N
   --max-new-accepted 256`, and `verify --partial|--complete`.
-- Render digest-only one-Pod Jobs requesting and limiting one `NVIDIA-A10`,
-  8 CPUs, 32 GiB RAM, and 16 GiB `/dev/shm`, with `backoffLimit: 0`, a
-  read-only Kaggle Secret, and a 700 GiB RWX PVC.
-- Document all 22 Kaggle download gates, NRP GitLab publication, pilot and 70
-  chunks, immediate diagnostics, durable monitoring, and failure handling.
+- Preserve the native one-A10 execution, 96-label canonical pilot, ordered
+  256-new-label chunks, exclusive CephFS-compatible lock, atomic state/results,
+  deterministic OOM repair, GPU cleanup verification, and fail-closed cache
+  cleanup.
+- Build a separate immutable `linux/amd64` image with the V2 profile baked in,
+  the pinned CUDA/PyTorch and MLE-bench revisions, fully pinned dependencies,
+  no startup installs, and no credentials or datasets in layers.
+- Add V2-specific pilot/chunk Job names while keeping one `NVIDIA-A10`, equal
+  requests and limits of 8 CPU and 32 GiB RAM, 16 GiB `/dev/shm`,
+  `backoffLimit: 0`, a read-only Kaggle Secret, and a 700 GiB RWX PVC.
+- Update the active 22-source gate and runbook to replace ICML Whale with the
+  TensorFlow competition. Keep the whale URL only as historical context.
+- Do not push an image, access Nautilus, or create any Kubernetes resource.
 
-## Verification
+## Verification and acceptance
 
-- Verify the frozen hashes/counts, native-ID uniqueness, complete crosswalk,
-  hardware acceptance/rejection, precision behavior, one-worker enforcement,
-  pilot coverage, ordered chunks, interruption resume, exclusive locking, OOM
-  repair, atomic writes, and cleanup failure isolation.
-- Build the final image and verify pinned imports, `sm_86` plus `sm_120`, source
-  and MLE-bench hashes, and absence of credentials.
-- On the RTX 5090, run one-batch fixtures for all 35 families and all precision
-  modes, plus five real epochs for PANNs/MLSP Birds with TF32 and CGCNN/NOMAD
-  with BF16. Mark every RTX result `production_eligible: false`.
-- Require actual smallest-file downloads from all 22 Kaggle competitions with
-  bounded retry/backoff. If an agreement blocks a test, retain an explicit
-  external-blocker record and do not substitute synthetic production evidence.
-- Validate pilot, production-chunk, and finalization YAML offline. Actual A10
-  concurrency and long-run stability remain future pilot acceptance gates.
+- Before real-data testing, require acceptance of the TensorFlow competition
+  rules and prove access by downloading the advertised 50-byte
+  `link_to_gcp_credits_form.txt`; file listing alone is not sufficient.
+- Download the complete competition once, validate its archive safely, and
+  persist source archive and remote inventory hashes. Require all later chunks
+  to match that immutable source lock.
+- Verify historical V1 hashes remain unchanged; V2 counts, distributions,
+  affected allocations, ID lineage, and compute signatures are exact.
+- Test deterministic filtering, exact 2,048/2,048 balance, corrupt and
+  insufficient WAV rejection, source drift rejection, resume behavior, and
+  V1/V2 workspace isolation.
+- On the RTX 5090, run real one-batch PANNs, TCN, and M5 labels over all four
+  precision paths, then a five-real-epoch PANNs/Speech Commands TF32 label with
+  epochs 3--5 retained and `production_eligible: false`.
+- Re-run the 35-family fixture matrix, focused V1/V2 regressions, secret scan,
+  dependency checks, image preflight, `sm_86`/`sm_120` verification, and fully
+  offline pilot/chunk YAML validation.
+- Rebuild after all source changes so the tested image exactly matches the final
+  executable source.
+- If the smallest-file probe remains HTTP 403 after the operator accepts the
+  rules, record an external blocker. Do not use a mirror or synthetic evidence
+  as a substitute for the required real-data acceptance tests.
 
-## Scope controls
+## Assumptions
 
-- Commit only concise V100 evidence before branching; keep bulky local datasets
-  ignored.
-- Keep `backup/pre-v100-labeler-20260811` unchanged.
-- Perform no legacy cleanup on this branch.
+- Binary `yes`/`no` is intentional to preserve the historical binary output
+  head and compute comparability, despite the standard Speech Commands
+  benchmark having more classes.
+- Existing V1 evidence and non-production smoke records remain historical.
+- No legacy cleanup, registry publication, or Nautilus submission is in scope.

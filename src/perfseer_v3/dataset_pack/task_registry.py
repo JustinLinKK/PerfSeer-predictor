@@ -11,6 +11,12 @@ import yaml
 from .contracts import TASK_REGISTRY_VERSION, TaskRegistryEntry
 from .fingerprints import canonical_sha256, canonical_value
 from .labeler_profile import PROFILE
+from .speech_substitution import (
+    HISTORICAL_WHALE_TASK_ID,
+    SPEECH_KAGGLE_SLUG,
+    SPEECH_TASK_ID,
+    load_speech_substitution_contract,
+)
 
 
 DEFAULT_TASK_REGISTRY_PATH = (
@@ -60,6 +66,12 @@ FROZEN_TASKS = (
         "tabular",
     ),
 )
+SPEECH_V2_TASKS = tuple(
+    (SPEECH_TASK_ID, SPEECH_KAGGLE_SLUG, modality)
+    if task_id == HISTORICAL_WHALE_TASK_ID
+    else (task_id, slug, modality)
+    for task_id, slug, modality in FROZEN_TASKS
+)
 FROZEN_COMPRESSED_SIZE_HINTS = (
     7_760_000_000,
     850_000_000,
@@ -83,6 +95,10 @@ FROZEN_COMPRESSED_SIZE_HINTS = (
     6_240_000,
     700_000_000,
     570_000_000,
+)
+SPEECH_V2_COMPRESSED_SIZE_HINTS = tuple(
+    3_762_295_706 if index == 17 else value
+    for index, value in enumerate(FROZEN_COMPRESSED_SIZE_HINTS)
 )
 MLEBENCH_METADATA_REVISION = "507f92e1138bb6e40dac5c6ee7a6758e6424bf97"
 TASK_SCHEMA_VERSION = "perfseer_v3_task_schema_v1"
@@ -109,6 +125,18 @@ FROZEN_TASK_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     "nomad2018": {"kind": "graph_regression", "target_width": 2, "target_encoding": "float_vector"},
     "tabular-playground-dec-2021": {"kind": "single_label_classification", "target_width": 7, "target_encoding": "categorical_index"},
     "tabular-playground-may-2022": {"kind": "single_label_classification", "target_width": 2, "target_encoding": "categorical_index"},
+}
+SPEECH_V2_TASK_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
+    **{
+        task_id: schema
+        for task_id, schema in FROZEN_TASK_SCHEMAS.items()
+        if task_id != HISTORICAL_WHALE_TASK_ID
+    },
+    SPEECH_TASK_ID: {
+        "kind": "single_label_classification",
+        "target_width": 2,
+        "target_encoding": "categorical_index",
+    },
 }
 MLEBENCH_SIZE_HINT_SOURCE_URL = (
     "https://github.com/openai/mle-bench/blob/"
@@ -301,10 +329,19 @@ class TaskRegistry:
             raise TaskRegistryError("size-hint source URL must be the pinned MLE-bench Lite table")
         if self.archive_checksum_state != "materialization_required":
             raise TaskRegistryError("archive checksums must be resolved during materialization")
+        speech_v2 = PROFILE.name == "native_a10_speech_v2"
+        expected_tasks = SPEECH_V2_TASKS if speech_v2 else FROZEN_TASKS
+        expected_sizes = (
+            SPEECH_V2_COMPRESSED_SIZE_HINTS
+            if speech_v2
+            else FROZEN_COMPRESSED_SIZE_HINTS
+        )
+        expected_schemas = SPEECH_V2_TASK_SCHEMAS if speech_v2 else FROZEN_TASK_SCHEMAS
+        substitution = load_speech_substitution_contract() if speech_v2 else None
         identities = tuple((entry.task_id, entry.kaggle_slug, entry.modality) for entry in self.entries)
-        if identities != FROZEN_TASKS:
+        if identities != expected_tasks:
             raise TaskRegistryError("task IDs/slugs/modalities differ from the frozen MLE-bench mapping")
-        if tuple(entry.compressed_size_hint_bytes for entry in self.entries) != FROZEN_COMPRESSED_SIZE_HINTS:
+        if tuple(entry.compressed_size_hint_bytes for entry in self.entries) != expected_sizes:
             raise TaskRegistryError("task size hints differ from the pinned MLE-bench Lite table")
         if len({entry.task_id for entry in self.entries}) != len(self.entries):
             raise TaskRegistryError("task IDs must be unique")
@@ -320,10 +357,17 @@ class TaskRegistry:
                 raise TaskRegistryError("Kaggle competition rules require explicit acceptance preflight")
             if entry.expected_archive_files != (f"{entry.kaggle_slug}.zip",):
                 raise TaskRegistryError("expected Kaggle archive name drifted")
-            if entry.dataset_revision != (
+            expected_revision = (
                 f"kaggle:{entry.kaggle_slug}:unmaterialized@mlebench:{self.metadata_revision}"
                 f"@task_schema:{TASK_SCHEMA_VERSION}"
-            ):
+            )
+            if speech_v2 and entry.task_id == SPEECH_TASK_ID:
+                assert substitution is not None
+                expected_revision += (
+                    "@prepared_view:binary_yes_no_v2"
+                    f"@substitution:{substitution.sha256}"
+                )
+            if entry.dataset_revision != expected_revision:
                 raise TaskRegistryError("task dataset revision is not pinned to its source metadata")
             if entry.source_checksums:
                 raise TaskRegistryError("local source registry must not fabricate archive checksums")
@@ -331,7 +375,7 @@ class TaskRegistry:
                 raise TaskRegistryError("task entry must fail closed until archive materialization")
             expected_schema = {
                 "schema_version": TASK_SCHEMA_VERSION,
-                **FROZEN_TASK_SCHEMAS[entry.task_id],
+                **expected_schemas[entry.task_id],
             }
             if entry.target_schema != expected_schema:
                 raise TaskRegistryError("task executable target schema drifted")
@@ -339,12 +383,27 @@ class TaskRegistry:
                 raise TaskRegistryError("extracted-size admission ceiling must use the frozen 4x bound")
             if entry.expected_train_examples != 4_096:
                 raise TaskRegistryError("prepared epoch cardinality must be the frozen 4,096 examples")
-            if entry.prepared_view_recipe != {
+            expected_view_recipe: Mapping[str, Any] = {
                 "kind": "pinned_mlebench_preparer",
                 "atomic_publish": True,
                 "expected_train_examples": entry.expected_train_examples,
                 "require_exact_prepared_count": True,
-            }:
+            }
+            if speech_v2 and entry.task_id == SPEECH_TASK_ID:
+                assert substitution is not None
+                expected_view_recipe = {
+                    "kind": "perfseer_binary_speech_view_v2",
+                    "atomic_publish": True,
+                    "expected_train_examples": entry.expected_train_examples,
+                    "require_exact_prepared_count": True,
+                    "classes": {"no": 0, "yes": 1},
+                    "valid_wavs_per_class": 2_048,
+                    "sample_rate_hz": 16_000,
+                    "selection": "sha256_relative_path_then_relative_path_v1",
+                    "ignore_mlebench_test_split": True,
+                    "substitution_contract_sha256": substitution.sha256,
+                }
+            if entry.prepared_view_recipe != expected_view_recipe:
                 raise TaskRegistryError("prepared-view exact-count contract drifted")
             if entry.cache_policy != {"kind": "single_current_task"} or entry.eviction_policy != {
                 "delete_after_task_complete": True
@@ -356,8 +415,24 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
     raw = yaml.load(Path(path).read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     root = _mapping(raw, context="task registry root")
     _exact_keys(root, _ROOT_KEYS, context="task registry root")
-    if PROFILE.name != "v100" and Path(path).resolve() == DEFAULT_TASK_REGISTRY_PATH.resolve():
+    default_source = Path(path).resolve() == DEFAULT_TASK_REGISTRY_PATH.resolve()
+    if PROFILE.name != "v100" and default_source:
         root = {**root, "version": PROFILE.task_registry_version, "target_hardware_id": PROFILE.target_hardware_id}
+    if PROFILE.name == "native_a10_speech_v2" and default_source:
+        substitution = load_speech_substitution_contract()
+        source_entries = list(root["entries"])
+        ordinal = int(substitution.payload["new_task"]["ordinal"])
+        expected_old = {
+            key: substitution.payload["old_task"][key]
+            for key in _SOURCE_ENTRY_KEYS
+        }
+        if canonical_value(source_entries[ordinal]) != canonical_value(expected_old):
+            raise TaskRegistryError("V1 task at the substitution ordinal drifted")
+        source_entries[ordinal] = {
+            key: substitution.payload["new_task"][key]
+            for key in _SOURCE_ENTRY_KEYS
+        }
+        root = {**root, "entries": source_entries}
     if root["version"] != TASK_REGISTRY_VERSION:
         raise TaskRegistryError("task registry source version mismatch")
     entries = root["entries"]
@@ -368,6 +443,11 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
     if type(expected_train_examples) is not int or expected_train_examples != 4_096:
         raise TaskRegistryError("expected_train_examples_per_task must be exactly 4,096")
     expanded = []
+    substitution = (
+        load_speech_substitution_contract()
+        if PROFILE.name == "native_a10_speech_v2"
+        else None
+    )
     for index, value in enumerate(entries):
         source = _mapping(value, context=f"task source entry {index}")
         _exact_keys(source, _SOURCE_ENTRY_KEYS, context=f"task source entry {index}")
@@ -377,6 +457,51 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
         size = source["compressed_size_hint_bytes"]
         if type(size) is not int or size < 1:
             raise TaskRegistryError("compressed size hint must be a positive integer")
+        dataset_revision = (
+            f"kaggle:{slug}:unmaterialized@mlebench:{metadata_revision}"
+            f"@task_schema:{TASK_SCHEMA_VERSION}"
+        )
+        split_recipe: Mapping[str, Any] = {
+            "kind": "pinned_mlebench_preparer",
+            "metadata_revision": metadata_revision,
+            "seed": 0,
+        }
+        prepared_view_recipe: Mapping[str, Any] = {
+            "kind": "pinned_mlebench_preparer",
+            "atomic_publish": True,
+            "expected_train_examples": expected_train_examples,
+            "require_exact_prepared_count": True,
+        }
+        if PROFILE.name == "native_a10_speech_v2" and task_id == SPEECH_TASK_ID:
+            assert substitution is not None
+            dataset_revision += (
+                "@prepared_view:binary_yes_no_v2"
+                f"@substitution:{substitution.sha256}"
+            )
+            split_recipe = {
+                "kind": "pinned_mlebench_public_training_extraction_then_perfseer_binary_view",
+                "metadata_revision": metadata_revision,
+                "seed": 0,
+                "ignore_mlebench_test_split": True,
+                "substitution_contract_sha256": substitution.sha256,
+            }
+            prepared_view_recipe = {
+                "kind": "perfseer_binary_speech_view_v2",
+                "atomic_publish": True,
+                "expected_train_examples": expected_train_examples,
+                "require_exact_prepared_count": True,
+                "classes": {"no": 0, "yes": 1},
+                "valid_wavs_per_class": 2_048,
+                "sample_rate_hz": 16_000,
+                "selection": "sha256_relative_path_then_relative_path_v1",
+                "ignore_mlebench_test_split": True,
+                "substitution_contract_sha256": substitution.sha256,
+            }
+        schemas = (
+            SPEECH_V2_TASK_SCHEMAS
+            if PROFILE.name == "native_a10_speech_v2"
+            else FROZEN_TASK_SCHEMAS
+        )
         expanded.append(
             TaskRegistryEntry(
                 registry_version=TASK_REGISTRY_VERSION,
@@ -392,31 +517,19 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
                 compressed_size_hint_bytes=size,
                 maximum_extracted_bytes=size * 4,
                 expected_train_examples=expected_train_examples,
-                dataset_revision=(
-                    f"kaggle:{slug}:unmaterialized@mlebench:{metadata_revision}"
-                    f"@task_schema:{TASK_SCHEMA_VERSION}"
-                ),
+                dataset_revision=dataset_revision,
                 source_checksums={},
-                split_recipe={
-                    "kind": "pinned_mlebench_preparer",
-                    "metadata_revision": metadata_revision,
-                    "seed": 0,
-                },
+                split_recipe=split_recipe,
                 target_schema={
                     "schema_version": TASK_SCHEMA_VERSION,
-                    **FROZEN_TASK_SCHEMAS[task_id],
+                    **schemas[task_id],
                 },
                 validation_rules={
                     "archive_checksum_state": root["archive_checksum_state"],
                     "minimum_files": 1,
                     "reject_symlinks_escaping_root": True,
                 },
-                prepared_view_recipe={
-                    "kind": "pinned_mlebench_preparer",
-                    "atomic_publish": True,
-                    "expected_train_examples": expected_train_examples,
-                    "require_exact_prepared_count": True,
-                },
+                prepared_view_recipe=prepared_view_recipe,
                 cache_policy={"kind": "single_current_task"},
                 eviction_policy={
                     "delete_after_task_complete": True,
@@ -447,6 +560,9 @@ __all__ = [
     "MLEBENCH_METADATA_REVISION",
     "MLEBENCH_SIZE_HINT_SOURCE_URL",
     "TASK_SCHEMA_VERSION",
+    "SPEECH_V2_COMPRESSED_SIZE_HINTS",
+    "SPEECH_V2_TASK_SCHEMAS",
+    "SPEECH_V2_TASKS",
     "TaskRegistry",
     "TaskRegistryError",
     "load_task_registry",

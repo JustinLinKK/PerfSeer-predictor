@@ -265,6 +265,7 @@ nrp_calibration_pack/workload_specs/
 /scheduler_resource_label.jsonl
 /label_v3.jsonl
 /containers/a10-labeler/build-manifest.json
+/containers/a10-speech-v2-labeler/build-manifest.json
 /record/a10-local-smoke/materialized/
 /record/a10-labeler-local-smoke-*/materialized/
 

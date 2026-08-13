@@ -38,7 +38,15 @@ class LabelerProfile:
 
     @property
     def is_a10(self) -> bool:
-        return self.name in {"legacy_a10g", "native_a10"}
+        return self.name in {
+            "legacy_a10g",
+            "native_a10",
+            "native_a10_speech_v2",
+        }
+
+    @property
+    def is_native_a10(self) -> bool:
+        return self.name in {"native_a10", "native_a10_speech_v2"}
 
 
 _A10_PRECISION_PATTERN = (
@@ -108,6 +116,30 @@ PROFILES = {
         label_run_record_version="perfseer_v3_nrp_a10_label_run_v1",
         epoch_measurement_version="perfseer_v3_nrp_a10_epoch_measurement_v1",
         target_manifest_version="perfseer_v3_nrp_a10_18k_target_manifest_v1",
+        candidate_version="perfseer_v3_nrp_a10_candidate_v1",
+        planner_version="perfseer_v3_nrp_a10_constrained_sampler_v1",
+        batch_plan_version="perfseer_v3_nrp_a10_batch_plan_v1",
+        compatibility_version="perfseer_v3_nrp_a10_compatibility_v1",
+        generated_lineage_version="perfseer_v3_nrp_a10_generated_lineage_v1",
+        generated_lineage_registry_version="perfseer_v3_nrp_a10_generated_lineage_registry_v1",
+        precision_pattern=_A10_PRECISION_PATTERN,
+    ),
+    "native_a10_speech_v2": LabelerProfile(
+        name="native_a10_speech_v2",
+        target_hardware_id="nvidia_a10_24gb_nrp",
+        hardware_family_id="nvidia_ampere_a10_24gb_nrp_v1",
+        identity_token="nrp_a10_speech_v2",
+        display_name="NRP NVIDIA A10 24GB (Speech substitution V2)",
+        # Candidate-independent planning versions intentionally remain V1.  A
+        # registry rebound changes only the 1,300 audio rows; changing these
+        # versions would needlessly re-identify all 18,000 candidates.
+        quota_version="perfseer_v3_nrp_a10_18k_quota_v1",
+        task_registry_version="perfseer_v3_nrp_a10_speech_task_registry_v2",
+        model_registry_version="perfseer_v3_nrp_a10_speech_model_registry_v2",
+        workload_config_version="perfseer_v3_nrp_a10_workload_config_v1",
+        label_run_record_version="perfseer_v3_nrp_a10_speech_label_run_v2",
+        epoch_measurement_version="perfseer_v3_nrp_a10_epoch_measurement_v1",
+        target_manifest_version="perfseer_v3_nrp_a10_speech_18k_target_manifest_v2",
         candidate_version="perfseer_v3_nrp_a10_candidate_v1",
         planner_version="perfseer_v3_nrp_a10_constrained_sampler_v1",
         batch_plan_version="perfseer_v3_nrp_a10_batch_plan_v1",

@@ -1,5 +1,9 @@
 # PerfSeer V3 Native Nautilus A10 18K Labeling Runbook
 
+> **Historical V1 reference.** ICML Whale is no longer downloadable. Do not use
+> this guide for a new campaign. Use
+> [the active Speech-V2 runbook](PerfSeer_V3_Native_Nautilus_A10_Speech_V2_18K_Labeling_Runbook.md).
+
 This runbook is the operator handoff for the native `NVIDIA-A10` branch. The
 implementation and its automated tests do not push an image or create Nautilus
 resources. Run the commands below only after the local acceptance gates pass.

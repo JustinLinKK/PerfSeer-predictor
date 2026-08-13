@@ -13,14 +13,21 @@ from pathlib import Path, PurePosixPath
 import shutil
 import tempfile
 from typing import Any, Iterable, Mapping, Sequence
+import wave
 import zipfile
 
 from .fingerprints import canonical_sha256, canonical_value
+from .labeler_profile import PROFILE
+from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
 from .storage import atomic_write_json, atomic_write_jsonl
 from .task_registry import MLEBENCH_METADATA_REVISION, TaskRegistryEntry
 
 
-PREPARED_VIEW_VERSION = "perfseer_v3_v100_prepared_view_v2"
+PREPARED_VIEW_VERSION = (
+    "perfseer_v3_nrp_a10_speech_prepared_view_v2"
+    if PROFILE.name == "native_a10_speech_v2"
+    else "perfseer_v3_v100_prepared_view_v2"
+)
 PREPARED_EXAMPLE_COUNT = 4_096
 
 
@@ -514,6 +521,8 @@ def _source_samples(entry: TaskRegistryEntry, public: Path) -> list[SourceSample
                 raise PreparedViewError("whale training filename has no binary target")
             result.append(SourceSample(name, {"media": _zip_ref("train2.zip", member, members)}, int(label_text)))
         return result
+    if task == SPEECH_TASK_ID:
+        return _speech_yes_no_samples(public)
     if task == "nyc-taxi-fare":
         return _tabular_table(public, table="labels.csv", id_column="key", target_columns=("fare_amount",))
     if task == "nomad2018":
@@ -534,6 +543,55 @@ def _source_samples(entry: TaskRegistryEntry, public: Path) -> list[SourceSample
     if task == "tabular-playground-may-2022":
         return _tabular_table(public, table="train.csv", id_column="id", target_columns=("target",))
     raise PreparedViewError(f"task {task!r} has no real prepared-view recipe")
+
+
+def _speech_yes_no_samples(public: Path) -> list[SourceSample]:
+    """Select an exact balanced view without consulting MLE-bench's test split."""
+
+    contract = load_speech_substitution_contract().payload["new_task"]
+    audio_root = public / str(contract["public_training_root"])
+    if not audio_root.is_dir() or audio_root.is_symlink():
+        raise PreparedViewError("MLE-bench public speech training root is missing")
+    required = int(contract["required_valid_wavs_per_class"])
+    sample_rate = int(contract["required_sample_rate_hz"])
+    selected: list[SourceSample] = []
+    for class_name, target in (("no", 0), ("yes", 1)):
+        class_root = audio_root / class_name
+        if not class_root.is_dir() or class_root.is_symlink():
+            raise PreparedViewError(f"speech class {class_name!r} is missing")
+        qualified: list[tuple[str, str]] = []
+        for path in sorted(class_root.rglob("*.wav")):
+            if not path.is_file() or path.is_symlink():
+                raise PreparedViewError("speech training view contains a non-regular WAV")
+            relative = path.relative_to(public).as_posix()
+            try:
+                with wave.open(str(path), "rb") as stream:
+                    actual_sample_rate = stream.getframerate()
+                    frames = stream.getnframes()
+                    channels = stream.getnchannels()
+            except (OSError, EOFError, wave.Error) as error:
+                raise PreparedViewError(f"speech WAV is corrupt: {relative!r}") from error
+            if (
+                actual_sample_rate != sample_rate
+                or frames < 1
+                or channels < 1
+            ):
+                raise PreparedViewError(
+                    f"speech WAV violates the 16 kHz non-empty audio contract: {relative!r}"
+                )
+            qualified.append((hashlib.sha256(relative.encode("utf-8")).hexdigest(), relative))
+        if len(qualified) < required:
+            raise PreparedViewError(
+                f"speech class {class_name!r} has {len(qualified)} valid WAVs; "
+                f"at least {required} are required"
+            )
+        for _, relative in sorted(qualified)[:required]:
+            selected.append(
+                SourceSample(relative, {"media": _file(public, relative)}, target)
+            )
+    if len(selected) != PREPARED_EXAMPLE_COUNT:
+        raise PreparedViewError("speech binary view is not exactly 2,048/2,048")
+    return selected
 
 
 @dataclass(frozen=True)
@@ -615,13 +673,17 @@ def build_shared_prepared_view(
         source.validate(entry.target_schema)
     if len({source.source_sample_id for source in sources}) != len(sources):
         raise PreparedViewError("prepared source sample IDs are not unique")
-    ordered = sorted(
-        sources,
-        key=lambda source: canonical_sha256(
-            {"task_id": entry.task_id, "source_sample_id": source.source_sample_id}
-        ),
-    )
-    selected = [ordered[index % len(ordered)] for index in range(PREPARED_EXAMPLE_COUNT)]
+    speech_view = entry.task_id == SPEECH_TASK_ID
+    if speech_view:
+        selected = sources
+    else:
+        ordered = sorted(
+            sources,
+            key=lambda source: canonical_sha256(
+                {"task_id": entry.task_id, "source_sample_id": source.source_sample_id}
+            ),
+        )
+        selected = [ordered[index % len(ordered)] for index in range(PREPARED_EXAMPLE_COUNT)]
     occurrences: dict[str, int] = {}
     rows = []
     content_cache: dict[tuple[str, ...], tuple[str, int]] = {}
@@ -637,15 +699,27 @@ def build_shared_prepared_view(
                 "target": _bind_input_content(public, source.target, content_cache),
             }
         )
-    recipe_sha256 = canonical_sha256(
-        {
-            "version": PREPARED_VIEW_VERSION,
-            "task_id": entry.task_id,
-            "mlebench_revision": MLEBENCH_METADATA_REVISION,
-            "prepared_example_count": PREPARED_EXAMPLE_COUNT,
-            "selection": "sha256_order_then_deterministic_cycle_v1",
-        }
-    )
+    recipe: dict[str, Any] = {
+        "version": PREPARED_VIEW_VERSION,
+        "task_id": entry.task_id,
+        "mlebench_revision": MLEBENCH_METADATA_REVISION,
+        "prepared_example_count": PREPARED_EXAMPLE_COUNT,
+        "selection": "sha256_order_then_deterministic_cycle_v1",
+    }
+    if speech_view:
+        substitution = load_speech_substitution_contract()
+        recipe.update(
+            {
+                "selection": "sha256_relative_path_then_relative_path_v1",
+                "classes": {"no": 0, "yes": 1},
+                "valid_wavs_per_class": 2_048,
+                "sample_rate_hz": 16_000,
+                "public_training_root": "train/audio",
+                "ignore_mlebench_test_split": True,
+                "substitution_contract_sha256": substitution.sha256,
+            }
+        )
+    recipe_sha256 = canonical_sha256(recipe)
     samples_sha256 = canonical_sha256(rows)
     task_schema_sha256 = canonical_sha256(entry.target_schema)
     fingerprint = canonical_sha256(
@@ -659,7 +733,9 @@ def build_shared_prepared_view(
             "archive_sha256": archive_sha256,
             "source_example_count": len(sources),
             "prepared_example_count": len(rows),
-            "sampling_with_replacement": len(sources) < PREPARED_EXAMPLE_COUNT,
+            "sampling_with_replacement": False
+            if speech_view
+            else len(sources) < PREPARED_EXAMPLE_COUNT,
             "recipe_sha256": recipe_sha256,
             "samples_sha256": samples_sha256,
         }
@@ -674,7 +750,9 @@ def build_shared_prepared_view(
         archive_sha256=archive_sha256,
         source_example_count=len(sources),
         prepared_example_count=len(rows),
-        sampling_with_replacement=len(sources) < PREPARED_EXAMPLE_COUNT,
+        sampling_with_replacement=False
+        if speech_view
+        else len(sources) < PREPARED_EXAMPLE_COUNT,
         recipe_sha256=recipe_sha256,
         samples_sha256=samples_sha256,
         dataset_fingerprint=fingerprint,

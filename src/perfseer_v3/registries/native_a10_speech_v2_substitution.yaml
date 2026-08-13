@@ -1,0 +1,44 @@
+version: perfseer_v3_native_a10_speech_substitution_contract_v2
+old_task:
+  ordinal: 17
+  task_id: icml-2013-whale
+  kaggle_slug: the-icml-2013-whale-challenge-right-whale-redux
+  modality: audio
+  compressed_size_hint_bytes: 293140000
+new_task:
+  ordinal: 17
+  task_id: tensorflow-speech-yes-no
+  kaggle_slug: tensorflow-speech-recognition-challenge
+  modality: audio
+  compressed_size_hint_bytes: 3762295706
+  source_inventory:
+    - name: link_to_gcp_credits_form.txt
+      size_bytes: 50
+    - name: sample_submission.7z
+      size_bytes: 512684
+    - name: test.7z
+      size_bytes: 2640679130
+    - name: train.7z
+      size_bytes: 1121103842
+  public_training_root: train/audio
+  classes:
+    "no": 0
+    "yes": 1
+  required_valid_wavs_per_class: 2048
+  required_sample_rate_hz: 16000
+  selection: sha256_relative_path_then_relative_path_v1
+  use_mlebench_public_training_extraction_only: true
+  ignore_mlebench_test_split: true
+affected_families:
+  panns_cnn14: 275
+  temporal_convolutional_network: 200
+  m5_waveform_cnn: 175
+affected_precision_counts:
+  fp32_tf32: 130
+  bf16: 195
+  fp16_grad_scaler: 195
+  mixed_structured: 130
+lineage_expectations:
+  unchanged: 16700
+  audio_registry_rebound: 650
+  dataset_substitution: 650

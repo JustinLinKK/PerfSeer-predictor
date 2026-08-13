@@ -11,21 +11,38 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
-from .a10_crosswalk import (
-    REFERENCE_MANIFEST_SHA256,
-    build_crosswalk,
-    freeze_crosswalk,
-)
+from .a10_crosswalk import REFERENCE_MANIFEST_SHA256
 from .fingerprints import canonical_sha256, canonical_value
 from .labeler_profile import PROFILE
 from .storage import atomic_write_json
 
 
-A10_CAMPAIGN_VERSION = "perfseer_v3_nrp_a10_18k_campaign_v1"
-A10_RUN_IDENTITY_VERSION = "perfseer_v3_nrp_a10_run_identity_v1"
-A10_PILOT_RECEIPT_VERSION = "perfseer_v3_nrp_a10_96_pilot_receipt_v1"
-A10_CHUNK_RECEIPT_VERSION = "perfseer_v3_nrp_a10_chunk_receipt_v1"
-A10_TASK_RECEIPT_VERSION = "perfseer_v3_nrp_a10_partial_task_receipt_v1"
+_SPEECH_V2 = PROFILE.name == "native_a10_speech_v2"
+A10_CAMPAIGN_VERSION = (
+    "perfseer_v3_nrp_a10_speech_18k_campaign_v2"
+    if _SPEECH_V2
+    else "perfseer_v3_nrp_a10_18k_campaign_v1"
+)
+A10_RUN_IDENTITY_VERSION = (
+    "perfseer_v3_nrp_a10_speech_run_identity_v2"
+    if _SPEECH_V2
+    else "perfseer_v3_nrp_a10_run_identity_v1"
+)
+A10_PILOT_RECEIPT_VERSION = (
+    "perfseer_v3_nrp_a10_speech_96_pilot_receipt_v2"
+    if _SPEECH_V2
+    else "perfseer_v3_nrp_a10_96_pilot_receipt_v1"
+)
+A10_CHUNK_RECEIPT_VERSION = (
+    "perfseer_v3_nrp_a10_speech_chunk_receipt_v2"
+    if _SPEECH_V2
+    else "perfseer_v3_nrp_a10_chunk_receipt_v1"
+)
+A10_TASK_RECEIPT_VERSION = (
+    "perfseer_v3_nrp_a10_speech_partial_task_receipt_v2"
+    if _SPEECH_V2
+    else "perfseer_v3_nrp_a10_partial_task_receipt_v1"
+)
 PILOT_SIZE = 96
 CHUNK_SIZE = 256
 PRODUCTION_CHUNK_COUNT = 70
@@ -35,6 +52,58 @@ MEASURED_EPOCHS_PER_LABEL = 3
 
 class A10CampaignError(RuntimeError):
     """Raised when campaign ordering, resume state, or verification fails closed."""
+
+
+def _crosswalk_functions() -> tuple[Callable[..., Any], Callable[..., Any]]:
+    if _SPEECH_V2:
+        from .a10_speech_crosswalk import build_crosswalk, freeze_crosswalk
+    else:
+        from .a10_crosswalk import build_crosswalk, freeze_crosswalk
+    return build_crosswalk, freeze_crosswalk
+
+
+def _campaign_contract_path(root: Path) -> Path:
+    name = (
+        "a10_speech_v2_campaign_contract.json"
+        if _SPEECH_V2
+        else "a10_campaign_contract.json"
+    )
+    return root / "state" / name
+
+
+def _pilot_receipt_path(root: Path) -> Path:
+    name = "speech_v2_pilot_receipt.json" if _SPEECH_V2 else "pilot_receipt.json"
+    return root / "state" / name
+
+
+def _chunk_receipt_path(root: Path, index: int) -> Path:
+    directory = "speech_v2_chunk_receipts" if _SPEECH_V2 else "chunk_receipts"
+    return root / "state" / directory / f"chunk-{index:02d}.json"
+
+
+def _partial_task_receipt_path(root: Path, task_id: str) -> Path:
+    directory = (
+        "speech_v2_partial_task_receipts"
+        if _SPEECH_V2
+        else "partial_task_receipts"
+    )
+    return root / "state" / directory / f"{task_id}.json"
+
+
+def _assert_workspace_generation(root: Path) -> None:
+    if not _SPEECH_V2:
+        return
+    forbidden = (
+        root / "state" / "a10_campaign_contract.json",
+        root / "state" / "a10_crosswalk_summary.json",
+        root / "state" / "a10_crosswalk.jsonl",
+        root / "state" / "campaign.lock",
+        root / "state" / "pilot_receipt.json",
+        root / "state" / "chunk_receipts",
+        root / "state" / "partial_task_receipts",
+    )
+    if any(path.exists() or path.is_symlink() for path in forbidden):
+        raise A10CampaignError("speech V2 refuses a native-A10 V1 workspace")
 
 
 def _coverage_tokens(candidate: Any) -> set[tuple[str, str]]:
@@ -115,9 +184,10 @@ def build_campaign_contract() -> Mapping[str, Any]:
     from .sampler import build_target_manifest
     from .task_registry import load_task_registry
 
-    if PROFILE.name != "native_a10":
-        raise A10CampaignError("A10 campaign requires the native_a10 process profile")
+    if not PROFILE.is_native_a10:
+        raise A10CampaignError("A10 campaign requires a native A10 process profile")
     manifest = build_target_manifest()
+    build_crosswalk, _ = _crosswalk_functions()
     crosswalk = build_crosswalk(manifest)
     pilot = pilot_candidates(manifest)
     production = production_candidates(manifest)
@@ -149,6 +219,20 @@ def build_campaign_contract() -> Mapping[str, Any]:
         "production_chunk_sizes": (*((CHUNK_SIZE,) * 69), 240),
         "worker_count": 1,
     }
+    if _SPEECH_V2:
+        from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
+        from .speech_substitution import load_speech_substitution_contract
+
+        payload.update(
+            {
+                "native_v1_manifest_sha256": NATIVE_V1_MANIFEST_SHA256,
+                "substitution_contract_sha256": load_speech_substitution_contract().sha256,
+                "lineage_classification_counts": crosswalk.summary[
+                    "classification_counts"
+                ],
+                "workspace_generation": "native_a10_speech_v2",
+            }
+        )
     if (
         payload["candidate_count"] != TOTAL_CANDIDATES
         or payload["measured_epoch_count"] != 54_000
@@ -174,7 +258,9 @@ def analysis_summary() -> Mapping[str, Any]:
 @contextmanager
 def exclusive_workspace_lock(workspace: str | Path) -> Iterator[Path]:
     root = Path(workspace).resolve()
-    lock_path = root / "state" / "campaign.lock"
+    lock_path = root / "state" / (
+        "campaign-speech-v2.lock" if _SPEECH_V2 else "campaign.lock"
+    )
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
@@ -220,12 +306,14 @@ def freeze_campaign_state(
     from .supervisor import lock_campaign_environment
 
     root = Path(workspace).resolve()
+    _assert_workspace_generation(root)
     manifest, _ = freeze_initial_target_manifest(root)
+    _, freeze_crosswalk = _crosswalk_functions()
     crosswalk = freeze_crosswalk(root, manifest)
     contract = build_campaign_contract()
     if manifest.sha256 != contract["native_manifest_sha256"]:
         raise A10CampaignError("workspace manifest differs from campaign contract")
-    _freeze_json(root / "state" / "a10_campaign_contract.json", contract, context="campaign contract")
+    _freeze_json(_campaign_contract_path(root), contract, context="campaign contract")
     identity: dict[str, Any] = {
         "version": A10_RUN_IDENTITY_VERSION,
         "repository_revision": repository_revision,
@@ -250,17 +338,62 @@ def _load_record_for_root(root: Path, candidate: Any) -> tuple[Any, Any] | None:
 
 def _verify_native_record(record: Any, resolved: Any, root_candidate: Any) -> None:
     record.validate()
-    expected_reference = root_candidate.candidate_id
     reference = record.reference_provenance
-    if (
+    common_invalid = (
         record.status.value != "accepted"
         or record.production_eligible is not True
         or record.target_hardware_id != PROFILE.target_hardware_id
         or not isinstance(reference, Mapping)
-        or reference.get("native_root_candidate_id") != expected_reference
-        or reference.get("reference_manifest_sha256") != REFERENCE_MANIFEST_SHA256
         or not record.build_identity
-    ):
+    )
+    if common_invalid:
+        raise A10CampaignError("accepted record lacks native/reference/build provenance")
+    assert isinstance(reference, Mapping)
+    if _SPEECH_V2:
+        from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
+        from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
+
+        substituted = reference.get("dataset_substitution") is True
+        provenance_invalid = (
+            reference.get("native_v2_root_candidate_id") != root_candidate.candidate_id
+            or reference.get("original_a10g_manifest_sha256")
+            != REFERENCE_MANIFEST_SHA256
+            or reference.get("native_v1_manifest_sha256")
+            != NATIVE_V1_MANIFEST_SHA256
+            or reference.get("substitution_contract_sha256")
+            != load_speech_substitution_contract().sha256
+            or type(reference.get("dataset_substitution")) is not bool
+            or substituted != (root_candidate.task_id == SPEECH_TASK_ID)
+            or (
+                substituted
+                and (
+                    not isinstance(reference.get("speech_source_lock_sha256"), str)
+                    or len(str(reference.get("speech_source_lock_sha256"))) != 64
+                )
+            )
+            or (
+                not substituted
+                and reference.get("speech_source_lock_sha256") is not None
+            )
+            or any(
+                not isinstance(reference.get(key), str)
+                or len(str(reference.get(key))) != 64
+                for key in (
+                    "original_a10g_candidate_id",
+                    "native_v1_candidate_id",
+                    "native_v1_manifest_sha256",
+                    "substitution_contract_sha256",
+                    "source_archive_sha256",
+                    "remote_inventory_sha256",
+                )
+            )
+        )
+    else:
+        provenance_invalid = (
+            reference.get("native_root_candidate_id") != root_candidate.candidate_id
+            or reference.get("reference_manifest_sha256") != REFERENCE_MANIFEST_SHA256
+        )
+    if provenance_invalid:
         raise A10CampaignError("accepted record lacks native/reference/build provenance")
     if record.configuration_id != resolved.candidate_id:
         raise A10CampaignError("accepted record differs from its resolved candidate")
@@ -374,7 +507,7 @@ def _execute_candidates(
             }
             partial["receipt_sha256"] = canonical_sha256(partial)
             atomic_write_json(
-                workspace / "state" / "partial_task_receipts" / f"{task_id}.json",
+                _partial_task_receipt_path(workspace, task_id),
                 partial,
             )
             materializer._delete_task_cache()
@@ -404,6 +537,7 @@ def run_campaign(
     if not pilot and max_new_accepted != CHUNK_SIZE:
         raise A10CampaignError("production Jobs must cap new accepted labels at exactly 256")
     root = Path(workspace).resolve()
+    _assert_workspace_generation(root)
     with exclusive_workspace_lock(root):
         contract = freeze_campaign_state(
             root,
@@ -415,20 +549,20 @@ def run_campaign(
             candidates = pilot_candidates(manifest)
             name = "pilot"
             version = A10_PILOT_RECEIPT_VERSION
-            receipt_path = root / "state" / "pilot_receipt.json"
+            receipt_path = _pilot_receipt_path(root)
         else:
             assert chunk_index is not None
-            pilot_path = root / "state" / "pilot_receipt.json"
+            pilot_path = _pilot_receipt_path(root)
             if not pilot_path.is_file():
                 raise A10CampaignError("production cannot start before the pilot receipt")
-            if chunk_index > 0 and not (
-                root / "state" / "chunk_receipts" / f"chunk-{chunk_index - 1:02d}.json"
+            if chunk_index > 0 and not _chunk_receipt_path(
+                root, chunk_index - 1
             ).is_file():
                 raise A10CampaignError("production chunks must run in strict index order")
             candidates = chunk_candidates(chunk_index, manifest)
             name = f"chunk-{chunk_index:02d}"
             version = A10_CHUNK_RECEIPT_VERSION
-            receipt_path = root / "state" / "chunk_receipts" / f"{name}.json"
+            receipt_path = _chunk_receipt_path(root, chunk_index)
         if receipt_path.is_file():
             expected = _receipt(
                 root=root,
@@ -469,8 +603,9 @@ def verify_campaign(
     from .sampler import build_target_manifest
 
     root = Path(workspace).resolve()
+    _assert_workspace_generation(root)
     contract = build_campaign_contract()
-    _freeze_json(root / "state" / "a10_campaign_contract.json", contract, context="campaign contract")
+    _freeze_json(_campaign_contract_path(root), contract, context="campaign contract")
     pilot = pilot_candidates(build_target_manifest())
     pilot_receipt = _receipt(
         root=root,
@@ -479,11 +614,11 @@ def verify_campaign(
         candidates=pilot,
         contract_sha256=str(contract["contract_sha256"]),
     )
-    _freeze_json(root / "state" / "pilot_receipt.json", pilot_receipt, context="pilot receipt")
+    _freeze_json(_pilot_receipt_path(root), pilot_receipt, context="pilot receipt")
     completed_chunks = 0
     accepted = len(pilot)
     for index in range(PRODUCTION_CHUNK_COUNT):
-        path = root / "state" / "chunk_receipts" / f"chunk-{index:02d}.json"
+        path = _chunk_receipt_path(root, index)
         if not path.exists():
             break
         candidates = chunk_candidates(index)

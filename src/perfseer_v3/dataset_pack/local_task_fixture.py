@@ -56,12 +56,12 @@ def _image_bytes(color: tuple[int, int, int]) -> bytes:
         raise LocalTaskFixtureError("Pillow cannot create a local image fixture") from error
 
 
-def _wave_bytes() -> bytes:
+def _wave_bytes(sample_rate: int = 8_000) -> bytes:
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as stream:
         stream.setnchannels(1)
         stream.setsampwidth(2)
-        stream.setframerate(8_000)
+        stream.setframerate(sample_rate)
         stream.writeframes(b"\x00\x00" * 64)
     return buffer.getvalue()
 
@@ -186,6 +186,14 @@ def _populate(task_id: str, public: Path) -> None:
             public / "train2.zip",
             {"train2/20130101_x_TRAIN0_1.aif": _wave_bytes()},
         )
+    elif task_id == "tensorflow-speech-yes-no":
+        payload = _wave_bytes(16_000)
+        for label in ("no", "yes"):
+            for index in range(2_048):
+                _write(
+                    public / "train" / "audio" / label / f"speaker_{index:04d}.wav",
+                    payload,
+                )
     elif task_id == "nyc-taxi-fare":
         _write_csv(
             public / "labels.csv",

@@ -14,9 +14,12 @@ import sys
 from typing import Any, Mapping, Sequence
 
 
-os.environ.setdefault("PERFSEER_LABELER_PROFILE", "native_a10")
-if os.environ["PERFSEER_LABELER_PROFILE"] != "native_a10":
-    raise RuntimeError("A10 image refuses a non-native labeler profile")
+EXPECTED_PROFILE = os.environ.get("PERFSEER_A10_IMAGE_PROFILE", "native_a10")
+if EXPECTED_PROFILE not in {"native_a10", "native_a10_speech_v2"}:
+    raise RuntimeError("A10 image declares an unsupported baked profile")
+os.environ.setdefault("PERFSEER_LABELER_PROFILE", EXPECTED_PROFILE)
+if os.environ["PERFSEER_LABELER_PROFILE"] != EXPECTED_PROFILE:
+    raise RuntimeError("A10 image refuses a labeler profile other than its baked identity")
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPOSITORY_ROOT / "src"
@@ -35,6 +38,7 @@ from perfseer_v3.dataset_pack.local_smoke import (
     LOCAL_SMOKE_MODELS,
     run_family_matrix_smoke,
     run_local_smoke,
+    run_speech_precision_matrix_smoke,
     verify_local_smoke,
 )
 from perfseer_v3.dataset_pack.mlebench_bridge import validate_mlebench_checkout
@@ -99,7 +103,12 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
     if set(manifest) != expected_keys:
         raise RuntimeError("A10 image build manifest schema differs")
     if (
-        manifest["version"] != "perfseer_v3_nrp_a10_image_build_manifest_v1"
+        manifest["version"]
+        != (
+            "perfseer_v3_nrp_a10_speech_image_build_manifest_v2"
+            if EXPECTED_PROFILE == "native_a10_speech_v2"
+            else "perfseer_v3_nrp_a10_image_build_manifest_v1"
+        )
         or manifest["target_hardware_id"] != "nvidia_a10_24gb_nrp"
         or manifest["mle_bench_revision"] != MLEBENCH_METADATA_REVISION
     ):
@@ -181,14 +190,40 @@ def _preflight_kaggle() -> tuple[Mapping[str, Any], ...]:
     entries = load_task_registry().entries
     if len(entries) != 22:
         raise RuntimeError("native campaign must gate exactly 22 Kaggle competitions")
-    return tuple(
+    ordered_entries = (
+        tuple(
+            entry
+            for entry in entries
+            if entry.task_id == "tensorflow-speech-yes-no"
+        )
+        + tuple(
+            entry
+            for entry in entries
+            if entry.task_id != "tensorflow-speech-yes-no"
+        )
+        if EXPECTED_PROFILE == "native_a10_speech_v2"
+        else entries
+    )
+    results = tuple(
         {
             "task_id": entry.task_id,
             "rules_url": entry.license_or_rules_url,
             **client.download_smallest_file(entry.kaggle_slug).to_dict(),
         }
-        for entry in entries
+        for entry in ordered_entries
     )
+    if EXPECTED_PROFILE == "native_a10_speech_v2":
+        speech = results[0]
+        if (
+            speech.get("task_id") != "tensorflow-speech-yes-no"
+            or speech.get("remote_name") != "link_to_gcp_credits_form.txt"
+            or speech.get("advertised_bytes") != 50
+            or speech.get("downloaded_bytes") != 50
+        ):
+            raise RuntimeError(
+                "speech rules gate did not download the advertised 50-byte file"
+            )
+    return results
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -198,7 +233,13 @@ def _parser() -> argparse.ArgumentParser:
 
     preflight = commands.add_parser("image-preflight")
     preflight.add_argument("--build-manifest", type=Path, default=Path("/opt/perfseer/build-manifest.json"))
-    preflight.add_argument("--dependency-lock", type=Path, default=Path("/opt/perfseer/repository/containers/a10-labeler/requirements.lock"))
+    preflight.add_argument(
+        "--dependency-lock",
+        type=Path,
+        default=Path(
+            "/opt/perfseer/repository/containers/a10-labeler/requirements.lock"
+        ),
+    )
     preflight.add_argument("--mlebench-checkout", type=Path, default=Path("/opt/mle-bench"))
     preflight.add_argument("--repository-root", type=Path, default=REPOSITORY_ROOT)
     preflight.add_argument("--require-cuda", action="store_true")
@@ -207,10 +248,15 @@ def _parser() -> argparse.ArgumentParser:
     smoke = commands.add_parser("smoke-local")
     smoke.add_argument("--workspace", type=Path, required=True)
     smoke.add_argument("--mlebench-checkout", type=Path, default=Path("/opt/mle-bench"))
-    smoke.add_argument("--dependency-lock", type=Path, default=REPOSITORY_ROOT / "containers/a10-labeler/requirements.lock")
+    smoke.add_argument(
+        "--dependency-lock",
+        type=Path,
+        default=REPOSITORY_ROOT / "containers/a10-labeler/requirements.lock",
+    )
     smoke.add_argument("--build-manifest", type=Path, default=Path("/opt/perfseer/build-manifest.json"))
     smoke.add_argument("--model", action="append", choices=LOCAL_SMOKE_MODELS)
     smoke.add_argument("--all-families", action="store_true")
+    smoke.add_argument("--speech-precision-matrix", action="store_true")
     smoke.add_argument("--kaggle-executable", default="kaggle")
 
     run = commands.add_parser("run-campaign")
@@ -248,10 +294,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if arguments.command == "smoke-local":
+        if arguments.all_families and arguments.speech_precision_matrix:
+            raise ValueError("select only one fixture matrix")
         if arguments.all_families:
             if arguments.model:
                 raise ValueError("--all-families cannot be combined with --model")
             result = run_family_matrix_smoke(arguments.workspace)
+        elif arguments.speech_precision_matrix:
+            if arguments.model:
+                raise ValueError(
+                    "--speech-precision-matrix cannot be combined with --model"
+                )
+            result = run_speech_precision_matrix_smoke(
+                arguments.workspace,
+                repository_root=REPOSITORY_ROOT,
+                mlebench_checkout=arguments.mlebench_checkout,
+                kaggle_executable=arguments.kaggle_executable,
+            )
         else:
             manifest = _load_json(arguments.build_manifest)
             result = run_local_smoke(
@@ -271,7 +330,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = _load_json(arguments.build_manifest)
         if manifest.get("source_revision") != arguments.repository_revision:
             raise RuntimeError("Job revision differs from the embedded build manifest")
-        if file_sha256(REPOSITORY_ROOT / "containers/a10-labeler/requirements.lock") != manifest.get("dependency_lock_sha256"):
+        lock_path = REPOSITORY_ROOT / "containers/a10-labeler/requirements.lock"
+        if file_sha256(lock_path) != manifest.get("dependency_lock_sha256"):
             raise RuntimeError("Job dependency lock differs from its build manifest")
         if not arguments.skip_kaggle_preflight:
             _preflight_kaggle()

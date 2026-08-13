@@ -17,6 +17,11 @@ from .fingerprints import canonical_sha256, canonical_value
 from .labeler_profile import PROFILE
 from .quota import FROZEN_QUOTA_CELLS, QuotaPlan, load_quota_plan
 from .task_registry import TaskRegistry, load_task_registry
+from .speech_substitution import (
+    HISTORICAL_WHALE_TASK_ID,
+    SPEECH_TASK_ID,
+    load_speech_substitution_contract,
+)
 
 
 DEFAULT_MODEL_REGISTRY_PATH = (
@@ -315,8 +320,32 @@ def load_model_registry(
     raw = yaml.load(Path(path).read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     root = _mapping(raw, context="model registry root")
     _exact_keys(root, _ROOT_KEYS, context="model registry root")
-    if PROFILE.name != "v100" and Path(path).resolve() == DEFAULT_MODEL_REGISTRY_PATH.resolve():
+    default_source = Path(path).resolve() == DEFAULT_MODEL_REGISTRY_PATH.resolve()
+    if PROFILE.name != "v100" and default_source:
         root = {**root, "version": PROFILE.model_registry_version, "target_hardware_id": PROFILE.target_hardware_id}
+    if PROFILE.name == "native_a10_speech_v2" and default_source:
+        contract = load_speech_substitution_contract()
+        expected_families = set(contract.payload["affected_families"])
+        rebound_entries = []
+        rebound_families: set[str] = set()
+        for raw_entry in root["entries"]:
+            source_entry = dict(raw_entry)
+            adapters = tuple(source_entry.get("adapter_ids", ()))
+            if HISTORICAL_WHALE_TASK_ID in adapters:
+                family_id = str(source_entry.get("family_id", ""))
+                if family_id not in expected_families:
+                    raise ModelRegistryError(
+                        "an unexpected model family references the historical whale task"
+                    )
+                source_entry["adapter_ids"] = [
+                    SPEECH_TASK_ID if value == HISTORICAL_WHALE_TASK_ID else value
+                    for value in adapters
+                ]
+                rebound_families.add(family_id)
+            rebound_entries.append(source_entry)
+        if rebound_families != expected_families:
+            raise ModelRegistryError("V2 audio-family registry rebound is incomplete")
+        root = {**root, "entries": rebound_entries}
     entries = root["entries"]
     if not isinstance(entries, list):
         raise ModelRegistryError("model registry entries must be a list")

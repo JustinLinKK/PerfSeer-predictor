@@ -41,11 +41,17 @@ from .v100_runner import (
 
 
 LOCAL_SMOKE_VERSION = (
-    "perfseer_v3_nrp_a10_rtx5090_real_label_smoke_v1"
-    if PROFILE.name == "native_a10"
+    "perfseer_v3_nrp_a10_speech_rtx5090_real_label_smoke_v2"
+    if PROFILE.name == "native_a10_speech_v2"
+    else "perfseer_v3_nrp_a10_rtx5090_real_label_smoke_v1"
+    if PROFILE.is_native_a10
     else "perfseer_v3_rtx5090_real_label_smoke_v1"
 )
-LOCAL_SMOKE_MODELS = ("panns_cnn14", "cgcnn")
+LOCAL_SMOKE_MODELS = (
+    ("panns_cnn14",)
+    if PROFILE.name == "native_a10_speech_v2"
+    else ("panns_cnn14", "cgcnn")
+)
 _V100_CAMPAIGN_FAMILIES = (
     "panns_cnn14",
     "temporal_convolutional_network",
@@ -60,17 +66,19 @@ _V100_CAMPAIGN_FAMILIES = (
 )
 CAMPAIGN_FAMILIES = (
     tuple(row[1] for row in FROZEN_QUOTA_CELLS)
-    if PROFILE.name == "native_a10"
+    if PROFILE.is_native_a10
     else _V100_CAMPAIGN_FAMILIES
 )
 _MODEL_RULES = {
     "panns_cnn14": (
-        "mlsp-2013-birds",
-        "fp32_tf32" if PROFILE.name == "native_a10" else "fp32_ieee",
+        "tensorflow-speech-yes-no"
+        if PROFILE.name == "native_a10_speech_v2"
+        else "mlsp-2013-birds",
+        "fp32_tf32" if PROFILE.is_native_a10 else "fp32_ieee",
     ),
     "cgcnn": (
         "nomad2018",
-        "bf16" if PROFILE.name == "native_a10" else "fp16_grad_scaler",
+        "bf16" if PROFILE.is_native_a10 else "fp16_grad_scaler",
     ),
 }
 
@@ -172,7 +180,7 @@ def select_family_matrix_candidate(family: str) -> TargetCandidate:
         raise LocalSmokeError(f"family {family!r} is outside the campaign")
     precision_order = (
         ("fp32_tf32", "bf16", "fp16_grad_scaler", "mixed_structured")
-        if PROFILE.name == "native_a10"
+        if PROFILE.is_native_a10
         else ("fp32_ieee",)
     )
     desired = precision_order[CAMPAIGN_FAMILIES.index(family) % len(precision_order)]
@@ -181,13 +189,13 @@ def select_family_matrix_candidate(family: str) -> TargetCandidate:
         for row in build_target_manifest().candidates
         if row.family_id == family
         and (
-            PROFILE.name == "native_a10"
+            PROFILE.is_native_a10
             or row.quota_modality in {"audio", "tabular", "graph"}
         )
         and row.precision_policy["policy_id"] == desired
         and row.execution["mode"] == "eager"
     )
-    if not matches and PROFILE.name == "native_a10":
+    if not matches and PROFILE.is_native_a10:
         matches = tuple(
             row
             for row in build_target_manifest().candidates
@@ -205,74 +213,98 @@ def select_family_matrix_candidate(family: str) -> TargetCandidate:
     )[0]
 
 
+def _execute_one_batch_update(
+    candidate: TargetCandidate,
+    device: torch.device,
+    *,
+    adapter: Any,
+    raw: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    configure_precision_backends(candidate)
+    batch = bind_candidate_batch_shape(candidate, adapter, _move(raw, device))
+    model = _build_model(candidate, adapter, device)
+    optimizer = _build_optimizer(candidate, model)
+    scheduler = _build_scheduler(
+        candidate,
+        optimizer,
+        total_optimizer_steps=five_epoch_optimizer_steps(
+            candidate, expected_train_examples=4_096
+        ),
+    )
+    with _precision_context(candidate, device):
+        _, loss = _forward_loss(
+            model,
+            adapter,
+            batch,
+            bool(candidate.activation_checkpointing["enabled"]),
+        )
+    if not bool(torch.isfinite(loss)):
+        raise LocalSmokeError(f"{candidate.family_id} fixture forward loss is non-finite")
+    scaler = (
+        torch.amp.GradScaler("cuda", init_scale=1.0, growth_interval=1_000)
+        if candidate.precision_policy["gradient_scaler"]
+        else None
+    )
+    _, updated_loss = _update(
+        candidate=candidate,
+        model=model,
+        batch=batch,
+        adapter=adapter,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        forward_loss=lambda: _forward_loss(
+            model,
+            adapter,
+            batch,
+            bool(candidate.activation_checkpointing["enabled"]),
+        ),
+        scaler=scaler,
+    )
+    if not bool(torch.isfinite(updated_loss)) or not _gradients_finite(model):
+        raise LocalSmokeError(f"{candidate.family_id} fixture update is non-finite")
+    return {
+        "family_id": candidate.family_id,
+        "task_id": candidate.task_id,
+        "configuration_id": candidate.candidate_id,
+        "precision_policy": candidate.precision_policy["policy_id"],
+        "one_batch_update": "passed",
+    }
+
+
+def _run_fixture_one_batch_update(
+    candidate: TargetCandidate, device: torch.device
+) -> Mapping[str, Any]:
+    adapter = adapter_for_task(candidate.task_id)
+    fixture_sha256, raw = build_local_real_format_batch(adapter)
+    result = {
+        **_execute_one_batch_update(
+            candidate,
+            device,
+            adapter=adapter,
+            raw=raw,
+        ),
+        "fixture_sha256": fixture_sha256,
+    }
+    if PROFILE.name == "native_a10_speech_v2":
+        result["input_kind"] = "local_real_format_fixture_only"
+    return result
+
+
 def run_family_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
     """Run one real-format fixture optimizer update for each campaign family."""
 
     backend = Rtx5090TelemetryBackend()
     device = torch.device("cuda")
-    rows = []
-    for family in CAMPAIGN_FAMILIES:
-        candidate = select_family_matrix_candidate(family)
-        configure_precision_backends(candidate)
-        adapter = adapter_for_task(candidate.task_id)
-        fixture_sha256, raw = build_local_real_format_batch(adapter)
-        batch = bind_candidate_batch_shape(
-            candidate, adapter, _move(raw, device)
-        )
-        model = _build_model(candidate, adapter, device)
-        optimizer = _build_optimizer(candidate, model)
-        scheduler = _build_scheduler(
-            candidate,
-            optimizer,
-            total_optimizer_steps=five_epoch_optimizer_steps(
-                candidate, expected_train_examples=4_096
-            ),
-        )
-        with _precision_context(candidate, device):
-            output, loss = _forward_loss(
-                model,
-                adapter,
-                batch,
-                bool(candidate.activation_checkpointing["enabled"]),
-            )
-        if not bool(torch.isfinite(loss)):
-            raise LocalSmokeError(f"{family} fixture forward loss is non-finite")
-        scaler = (
-            torch.amp.GradScaler("cuda", init_scale=1.0, growth_interval=1_000)
-            if candidate.precision_policy["gradient_scaler"]
-            else None
-        )
-        _, updated_loss = _update(
-            candidate=candidate,
-            model=model,
-            batch=batch,
-            adapter=adapter,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            forward_loss=lambda: _forward_loss(
-                model,
-                adapter,
-                batch,
-                bool(candidate.activation_checkpointing["enabled"]),
-            ),
-            scaler=scaler,
-        )
-        if not bool(torch.isfinite(updated_loss)) or not _gradients_finite(model):
-            raise LocalSmokeError(f"{family} fixture update is non-finite")
-        rows.append(
-            {
-                "family_id": family,
-                "task_id": candidate.task_id,
-                "configuration_id": candidate.candidate_id,
-                "precision_policy": candidate.precision_policy["policy_id"],
-                "fixture_sha256": fixture_sha256,
-                "one_batch_update": "passed",
-            }
-        )
+    rows = [
+        _run_fixture_one_batch_update(select_family_matrix_candidate(family), device)
+        for family in CAMPAIGN_FAMILIES
+    ]
     result: dict[str, Any] = {
         "version": (
-            "perfseer_v3_nrp_a10_rtx5090_family_matrix_smoke_v1"
-            if PROFILE.name == "native_a10"
+            "perfseer_v3_nrp_a10_speech_rtx5090_family_matrix_smoke_v2"
+            if PROFILE.name == "native_a10_speech_v2"
+            else "perfseer_v3_nrp_a10_rtx5090_family_matrix_smoke_v1"
+            if PROFILE.is_native_a10
             else "perfseer_v3_rtx5090_family_matrix_smoke_v1"
         ),
         "production_eligible": False,
@@ -282,6 +314,114 @@ def run_family_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
     }
     result["result_sha256"] = canonical_sha256(result)
     atomic_write_json(Path(workspace).resolve() / "family-matrix.json", result)
+    return canonical_value(result)
+
+
+def run_speech_precision_matrix_smoke(
+    workspace: str | Path,
+    *,
+    repository_root: str | Path,
+    mlebench_checkout: str | Path,
+    kaggle_executable: str = "kaggle",
+) -> Mapping[str, Any]:
+    """Exercise all rebound audio/precision paths on one verified real speech view."""
+
+    if PROFILE.name != "native_a10_speech_v2":
+        raise LocalSmokeError("speech precision matrix requires the speech V2 profile")
+    backend = Rtx5090TelemetryBackend()
+    device = torch.device("cuda")
+    manifest = build_target_manifest()
+    entry = _entry("tensorflow-speech-yes-no")
+    materialized = TaskMaterializer(
+        workspace=Path(workspace).resolve() / "materialized" / entry.task_id,
+        repository_root=Path(repository_root).resolve(),
+        kaggle=KaggleCliClient(executable=kaggle_executable),
+        preparer=PinnedMleBenchPreparer(Path(mlebench_checkout)),
+    ).materialize(entry)
+    from .a10_speech_crosswalk import build_crosswalk
+    from .real_data import VerifiedPreparedDataset
+    from .speech_substitution import load_speech_substitution_contract
+
+    lineage = {
+        str(row["native_v2_candidate_id"]): row for row in build_crosswalk(manifest).rows
+    }
+    dataset = VerifiedPreparedDataset(
+        entry,
+        materialized.public,
+        materialized.prepared_view,
+        materialized.inventory.archive_sha256,
+    )
+    rows = []
+    families = (
+        "panns_cnn14",
+        "temporal_convolutional_network",
+        "m5_waveform_cnn",
+    )
+    precisions = ("fp32_tf32", "bf16", "fp16_grad_scaler", "mixed_structured")
+    for family in families:
+        for precision in precisions:
+            matches = tuple(
+                row
+                for row in manifest.candidates
+                if row.task_id == "tensorflow-speech-yes-no"
+                and row.family_id == family
+                and row.precision_policy["policy_id"] == precision
+                and row.execution["mode"] == "eager"
+            )
+            if not matches:
+                raise LocalSmokeError(
+                    f"speech V2 has no eager {family}/{precision} candidate"
+                )
+            candidate = sorted(
+                matches,
+                key=lambda row: (
+                    row.microbatch_size,
+                    row.gradient_accumulation_steps,
+                    row.candidate_id,
+                ),
+            )[0]
+            raw = dataset.build_batch(tuple(range(candidate.microbatch_size)))
+            update = _execute_one_batch_update(
+                candidate,
+                device,
+                adapter=adapter_for_task(candidate.task_id),
+                raw=raw,
+            )
+            row_lineage = lineage[candidate.candidate_id]
+            rows.append(
+                {
+                    **update,
+                    "input_kind": "verified_real_speech_prepared_view",
+                    "dataset_fingerprint": dataset.dataset_fingerprint,
+                    "original_a10g_candidate_id": row_lineage[
+                        "original_a10g_candidate_id"
+                    ],
+                    "native_v1_candidate_id": row_lineage["native_v1_candidate_id"],
+                    "dataset_substitution": True,
+                }
+            )
+    result: dict[str, Any] = {
+        "version": "perfseer_v3_nrp_a10_speech_rtx5090_precision_matrix_v2",
+        "production_eligible": False,
+        "hardware_provenance": backend.hardware_provenance,
+        "family_count": len(families),
+        "precision_count": len(precisions),
+        "update_count": len(rows),
+        "dataset_fingerprint": materialized.view_manifest.dataset_fingerprint,
+        "source_archive_sha256": materialized.inventory.archive_sha256,
+        "remote_inventory_sha256": materialized.state.remote_inventory_sha256,
+        "speech_source_lock_sha256": (
+            materialized.source_lock.lock_sha256
+            if materialized.source_lock is not None
+            else None
+        ),
+        "substitution_contract_sha256": load_speech_substitution_contract().sha256,
+        "updates": rows,
+    }
+    result["result_sha256"] = canonical_sha256(result)
+    atomic_write_json(
+        Path(workspace).resolve() / "speech-precision-matrix.json", result
+    )
     return canonical_value(result)
 
 
@@ -318,6 +458,14 @@ def run_local_smoke(
     backend = Rtx5090TelemetryBackend()
     preparer = PinnedMleBenchPreparer(Path(mlebench_checkout))
     records: list[Mapping[str, Any]] = []
+    speech_lineage: Mapping[str, Mapping[str, Any]] = {}
+    if PROFILE.name == "native_a10_speech_v2":
+        from .a10_speech_crosswalk import build_crosswalk
+
+        speech_lineage = {
+            str(row["native_v2_candidate_id"]): row
+            for row in build_crosswalk().rows
+        }
     for model in models:
         candidate = select_smoke_candidate(model)
         entry = _entry(candidate.task_id)
@@ -361,6 +509,30 @@ def run_local_smoke(
             "measured_epochs": [3, 4, 5],
             "run": result.to_dict(),
         }
+        if PROFILE.name == "native_a10_speech_v2":
+            from .a10_crosswalk import REFERENCE_MANIFEST_SHA256
+            from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
+            from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
+
+            lineage = speech_lineage.get(candidate.candidate_id)
+            if lineage is None:
+                raise LocalSmokeError("speech V2 smoke candidate has no lineage row")
+            record["reference_provenance"] = {
+                "original_a10g_candidate_id": lineage["original_a10g_candidate_id"],
+                "native_v1_candidate_id": lineage["native_v1_candidate_id"],
+                "native_v2_root_candidate_id": candidate.candidate_id,
+                "original_a10g_manifest_sha256": REFERENCE_MANIFEST_SHA256,
+                "native_v1_manifest_sha256": NATIVE_V1_MANIFEST_SHA256,
+                "substitution_contract_sha256": load_speech_substitution_contract().sha256,
+                "dataset_substitution": candidate.task_id == SPEECH_TASK_ID,
+                "source_archive_sha256": materialized.inventory.archive_sha256,
+                "remote_inventory_sha256": materialized.state.remote_inventory_sha256,
+                "speech_source_lock_sha256": (
+                    materialized.source_lock.lock_sha256
+                    if materialized.source_lock is not None
+                    else None
+                ),
+            }
         record["record_sha256"] = canonical_sha256(record)
         atomic_write_json(root / "records" / f"{model}.json", record)
         records.append(canonical_value(record))
@@ -403,6 +575,27 @@ def verify_local_smoke(
             or tuple(row.epoch for row in run.epoch_measurements) != (3, 4, 5)
         ):
             raise LocalSmokeError(f"smoke record for {model} violates the contract")
+        if PROFILE.name == "native_a10_speech_v2":
+            provenance = value.get("reference_provenance")
+            if (
+                not isinstance(provenance, Mapping)
+                or provenance.get("dataset_substitution") is not True
+                or any(
+                    not isinstance(provenance.get(key), str)
+                    or len(str(provenance.get(key))) != 64
+                    for key in (
+                        "original_a10g_candidate_id",
+                        "native_v1_candidate_id",
+                        "original_a10g_manifest_sha256",
+                        "native_v1_manifest_sha256",
+                        "substitution_contract_sha256",
+                        "source_archive_sha256",
+                        "remote_inventory_sha256",
+                        "speech_source_lock_sha256",
+                    )
+                )
+            ):
+                raise LocalSmokeError("speech V2 smoke lineage/source provenance differs")
         dataset_fingerprint = value.get("dataset_fingerprint")
         if not isinstance(dataset_fingerprint, str) or len(dataset_fingerprint) != 64:
             raise LocalSmokeError("smoke record has no real dataset fingerprint")
@@ -421,6 +614,7 @@ __all__ = [
     "Rtx5090TelemetryBackend",
     "run_local_smoke",
     "run_family_matrix_smoke",
+    "run_speech_precision_matrix_smoke",
     "select_smoke_candidate",
     "verify_local_smoke",
 ]

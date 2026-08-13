@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: perfseer-v3-a10-speech-v2-labels
+  namespace: REPLACE_NAMESPACE
+  labels:
+    app.kubernetes.io/name: perfseer-v3-a10-speech-v2-labeler
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 700Gi
+  storageClassName: rook-cephfs

@@ -33,6 +33,11 @@ from .a10_crosswalk import (
     REFERENCE_MANIFEST_SHA256,
     semantic_distribution_signature,
 )
+from .a10_speech_crosswalk import (
+    NATIVE_V1_CROSSWALK_SHA256,
+    NATIVE_V1_MANIFEST_SHA256,
+)
+from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
 from .operation_support import build_operation_support_contract
 from .prepared_view import PreparedViewManifest
 from .sampler import TargetCandidate
@@ -154,7 +159,7 @@ class ParentNvmlProbe:
                 uuid = uuid.decode()
             memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
             capability = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
-            if PROFILE.name == "native_a10":
+            if PROFILE.is_native_a10:
                 validate_a10_gpu_identity(str(name), capability, int(memory.total))
             else:
                 validate_v100_gpu_identity(str(name), capability, int(memory.total))
@@ -221,8 +226,8 @@ def discover_v100_probes() -> tuple[ParentNvmlProbe, ...]:
 
 
 def discover_a10_probe() -> ParentNvmlProbe:
-    if PROFILE.name != "native_a10":
-        raise SupervisorError("A10 discovery requires the native_a10 process profile")
+    if not PROFILE.is_native_a10:
+        raise SupervisorError("A10 discovery requires a native A10 process profile")
     try:
         import pynvml
 
@@ -440,10 +445,15 @@ def _bind_native_a10_provenance(
     task_entry: TaskRegistryEntry,
     workspace: Path,
 ) -> LabelRunRecord:
-    if PROFILE.name != "native_a10":
+    if not PROFILE.is_native_a10:
         return record
-    mapping_path = workspace / "state" / "a10_crosswalk.jsonl"
+    speech_v2 = PROFILE.name == "native_a10_speech_v2"
+    mapping_path = workspace / "state" / (
+        "a10_speech_v2_crosswalk.jsonl" if speech_v2 else "a10_crosswalk.jsonl"
+    )
     original_id = None
+    v1_id = None
+    lineage_row: Mapping[str, Any] | None = None
     root_candidate_id = candidate.candidate_id
     repair_history = candidate.mutation_specification.get("oom_repair_history", ())
     replacement = candidate.mutation_specification.get("quota_replacement")
@@ -454,21 +464,110 @@ def _bind_native_a10_provenance(
     if mapping_path.is_file():
         for line in mapping_path.read_text(encoding="utf-8").splitlines():
             row = json.loads(line)
-            if row.get("native_nrp_a10_candidate_id") == root_candidate_id:
+            native_key = (
+                "native_v2_candidate_id"
+                if speech_v2
+                else "native_nrp_a10_candidate_id"
+            )
+            if row.get(native_key) == root_candidate_id:
                 original_id = row.get("original_a10g_candidate_id")
+                v1_id = row.get("native_v1_candidate_id")
+                lineage_row = row
                 break
     if original_id is None:
         raise SupervisorError("native A10 record has no frozen reference crosswalk row")
-    environment = environment_provenance()
-    bound = replace(
-        record,
-        production_eligible=True,
-        reference_provenance={
+    if speech_v2:
+        if not isinstance(lineage_row, Mapping) or not isinstance(v1_id, str):
+            raise SupervisorError("speech V2 record has no three-way lineage row")
+        try:
+            materialization_state = json.loads(
+                (workspace / "task_cache" / "materialization_state.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise SupervisorError(
+                "speech V2 record cannot bind source archive provenance"
+            ) from error
+        if (
+            not isinstance(materialization_state, Mapping)
+            or materialization_state.get("task_id") != task_entry.task_id
+            or materialization_state.get("archive_sha256") is None
+            or materialization_state.get("stage") != "view_ready"
+            or materialization_state.get("dataset_fingerprint")
+            != record.fingerprints.dataset_sha256
+        ):
+            raise SupervisorError("speech V2 materialization provenance is incomplete")
+        state_payload = dict(materialization_state)
+        state_sha256 = state_payload.pop("state_sha256", None)
+        if state_sha256 != canonical_sha256(state_payload):
+            raise SupervisorError("speech V2 materialization state hash differs")
+        archive_sha256 = materialization_state.get("archive_sha256")
+        remote_inventory_sha256 = materialization_state.get(
+            "remote_inventory_sha256"
+        )
+        if any(
+            not isinstance(value, str) or len(value) != 64
+            for value in (archive_sha256, remote_inventory_sha256)
+        ):
+            raise SupervisorError("speech V2 source provenance digests are invalid")
+        source_lock_sha256 = None
+        if task_entry.task_id == SPEECH_TASK_ID:
+            try:
+                source_lock = json.loads(
+                    (
+                        workspace
+                        / "state"
+                        / "source_locks"
+                        / f"{SPEECH_TASK_ID}.json"
+                    ).read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as error:
+                raise SupervisorError("speech dataset has no immutable source lock") from error
+            if not isinstance(source_lock, Mapping) or (
+                source_lock.get("archive_sha256") != archive_sha256
+                or source_lock.get("remote_inventory_sha256")
+                != remote_inventory_sha256
+            ):
+                raise SupervisorError("speech source lock differs from materialization")
+            source_lock_sha256 = source_lock.get("lock_sha256")
+            if not isinstance(source_lock_sha256, str) or len(source_lock_sha256) != 64:
+                raise SupervisorError("speech source-lock digest is invalid")
+        substitution = load_speech_substitution_contract()
+        reference_provenance: Mapping[str, Any] = {
+            "original_a10g_candidate_id": original_id,
+            "native_v1_candidate_id": v1_id,
+            "native_v2_root_candidate_id": root_candidate_id,
+            "original_a10g_manifest_sha256": REFERENCE_MANIFEST_SHA256,
+            "native_v1_manifest_sha256": NATIVE_V1_MANIFEST_SHA256,
+            "native_v1_crosswalk_sha256": NATIVE_V1_CROSSWALK_SHA256,
+            "substitution_contract_sha256": substitution.sha256,
+            "row_classification": lineage_row["row_classification"],
+            "old_semantic_signature": lineage_row["old_semantic_signature"],
+            "new_semantic_signature": lineage_row["new_semantic_signature"],
+            "task_independent_compute_signature": lineage_row[
+                "task_independent_compute_signature"
+            ],
+            "resolved_semantic_distribution_signature": semantic_distribution_signature(
+                candidate
+            ),
+            "dataset_substitution": task_entry.task_id == SPEECH_TASK_ID,
+            "source_archive_sha256": archive_sha256,
+            "remote_inventory_sha256": remote_inventory_sha256,
+            "speech_source_lock_sha256": source_lock_sha256,
+        }
+    else:
+        reference_provenance = {
             "original_a10g_candidate_id": original_id,
             "native_root_candidate_id": root_candidate_id,
             "reference_manifest_sha256": REFERENCE_MANIFEST_SHA256,
             "semantic_distribution_signature": semantic_distribution_signature(candidate),
-        },
+        }
+    environment = environment_provenance()
+    bound = replace(
+        record,
+        production_eligible=True,
+        reference_provenance=reference_provenance,
         build_identity={
             key: str(environment[key])
             for key in (

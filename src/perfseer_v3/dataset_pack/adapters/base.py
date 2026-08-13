@@ -15,7 +15,12 @@ import torch
 import torch.nn.functional as F
 
 from ..fingerprints import canonical_sha256
-from ..task_registry import FROZEN_TASK_SCHEMAS, TaskRegistryEntry, load_task_registry
+from ..task_registry import (
+    FROZEN_TASK_SCHEMAS,
+    SPEECH_V2_TASK_SCHEMAS,
+    TaskRegistryEntry,
+    load_task_registry,
+)
 
 
 class AdapterError(ValueError):
@@ -44,7 +49,7 @@ class PreparedTaskFixture:
 
 _TASK_KINDS = {
     task_id: (str(schema["kind"]), int(schema["target_width"]))
-    for task_id, schema in FROZEN_TASK_SCHEMAS.items()
+    for task_id, schema in {**FROZEN_TASK_SCHEMAS, **SPEECH_V2_TASK_SCHEMAS}.items()
 }
 
 
