@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from .fingerprints import canonical_sha256, file_sha256
+from .labeler_profile import PROFILE
 
 
-SOURCE_ROOTS = (
+V100_SOURCE_ROOTS = (
     "pyproject.toml",
     "scripts/run_perfseer_v3_v100_labeling.py",
     "src/perfseer_v3",
@@ -15,6 +16,15 @@ SOURCE_ROOTS = (
     "containers/v100-labeler/requirements.in",
     "containers/v100-labeler/requirements.lock",
 )
+A10_SOURCE_ROOTS = (
+    "pyproject.toml",
+    "scripts/run_perfseer_v3_a10_labeling.py",
+    "src/perfseer_v3",
+    "containers/a10-labeler/Dockerfile",
+    "containers/a10-labeler/requirements.in",
+    "containers/a10-labeler/requirements.lock",
+)
+SOURCE_ROOTS = A10_SOURCE_ROOTS if PROFILE.name == "native_a10" else V100_SOURCE_ROOTS
 
 
 def _is_source_file(path: Path) -> bool:
@@ -43,4 +53,4 @@ def source_tree_sha256(repository_root: str | Path) -> str:
     )
 
 
-__all__ = ["SOURCE_ROOTS", "source_tree_sha256"]
+__all__ = ["A10_SOURCE_ROOTS", "SOURCE_ROOTS", "V100_SOURCE_ROOTS", "source_tree_sha256"]

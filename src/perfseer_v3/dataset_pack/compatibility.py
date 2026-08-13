@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from perfseer_v3.training_semantics import OPTIMIZERS, SCHEDULERS
 
 from .fingerprints import canonical_sha256, canonical_value
+from .labeler_profile import PROFILE
 from .models.architecture import (
     ArchitectureBindingError,
     declared_architecture_fields,
@@ -15,11 +16,11 @@ from .models.architecture import (
 from .quota import FROZEN_QUOTA_CELLS
 
 
-COMPATIBILITY_VERSION = "perfseer_v3_v100_compatibility_v3"
+COMPATIBILITY_VERSION = PROFILE.compatibility_version
 SUPPORTED_PRECISIONS = (
-    "fp32_ieee",
-    "fp16_grad_scaler",
-    "mixed_structured",
+    ("fp32_tf32", "bf16", "fp16_grad_scaler", "mixed_structured")
+    if PROFILE.is_a10
+    else ("fp32_ieee", "fp16_grad_scaler", "mixed_structured")
 )
 DEPLOYMENT_OPTIMIZERS = tuple(
     value for value in OPTIMIZERS if value not in {"none", "other"}
@@ -35,7 +36,7 @@ FAMILY_MODALITIES = {
 REASON_CODES = (
     "family_not_registered",
     "family_modality_mismatch",
-    "precision_not_supported_on_v100",
+    "precision_not_supported_on_target",
     "fp16_moe_routing_unstable",
     "head_hidden_not_divisible",
     "optimizer_not_pinned",
@@ -121,7 +122,7 @@ def evaluate_compatibility(request: CompatibilityRequest) -> CompatibilityDecisi
             if set(parameters) != declared_fields:
                 reasons.add("architecture_field_contract_invalid")
     if request.precision_id not in SUPPORTED_PRECISIONS:
-        reasons.add("precision_not_supported_on_v100")
+        reasons.add("precision_not_supported_on_target")
     if request.family_id == "switch_moe" and request.precision_id == "fp16_grad_scaler":
         reasons.add("fp16_moe_routing_unstable")
     if request.optimizer_id not in DEPLOYMENT_OPTIMIZERS:
@@ -264,7 +265,9 @@ def evaluate_compatibility(request: CompatibilityRequest) -> CompatibilityDecisi
         reasons.add("optimizer_parameter_contract_invalid")
     if sparse_capable and request.optimizer_id != "sparse_adam":
         reasons.add("optimizer_parameter_contract_invalid")
-    if request.optimizer_id == "lbfgs" and request.precision_id != "fp32_ieee":
+    if request.optimizer_id == "lbfgs" and request.precision_id != (
+        "fp32_tf32" if PROFILE.is_a10 else "fp32_ieee"
+    ):
         reasons.add("optimizer_parameter_contract_invalid")
     if (
         request.optimizer_id == "muon"

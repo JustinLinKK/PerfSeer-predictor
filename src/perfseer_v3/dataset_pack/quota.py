@@ -9,6 +9,7 @@ from typing import Any, Mapping
 import yaml
 
 from .fingerprints import canonical_sha256
+from .labeler_profile import PROFILE
 
 
 DEFAULT_QUOTA_CONFIG_PATH = (
@@ -235,10 +236,10 @@ class QuotaPlan:
         return canonical_sha256(self)
 
     def validate(self) -> None:
-        if self.version != "perfseer_v3_v100_18k_quota_v2":
+        if self.version != PROFILE.quota_version:
             raise QuotaConfigError(f"unsupported quota plan version {self.version!r}")
-        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
-            raise QuotaConfigError("quota plan must target the frozen NRP V100 hardware ID")
+        if self.target_hardware_id != PROFILE.target_hardware_id:
+            raise QuotaConfigError("quota plan target differs from the active profile")
         if self.maximum_cloud_working_set_gib != 600:
             raise QuotaConfigError("maximum cloud working set must be exactly 600 GiB")
         if self.cloud_free_space_safety_margin_gib != 40:
@@ -326,6 +327,8 @@ def load_quota_plan(path: str | Path = DEFAULT_QUOTA_CONFIG_PATH) -> QuotaPlan:
     raw = yaml.load(Path(path).read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     root = _mapping(raw, context="quota plan root")
     _exact_keys(root, _ROOT_KEYS, context="quota plan root")
+    if PROFILE.name != "v100" and Path(path).resolve() == DEFAULT_QUOTA_CONFIG_PATH.resolve():
+        root = {**root, "version": PROFILE.quota_version, "target_hardware_id": PROFILE.target_hardware_id}
     end_to_end = _mapping(root["end_to_end"], context="end_to_end")
     _exact_keys(
         end_to_end,

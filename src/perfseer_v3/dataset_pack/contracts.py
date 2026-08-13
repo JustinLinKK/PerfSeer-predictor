@@ -8,13 +8,14 @@ from enum import Enum
 from typing import Any, Mapping
 
 from .fingerprints import canonical_sha256, canonical_value
+from .labeler_profile import PROFILE
 
 
-WORKLOAD_CONFIG_VERSION = "perfseer_v3_v100_workload_config_v2"
-LABEL_RUN_RECORD_VERSION = "perfseer_v3_v100_label_run_v2"
-EPOCH_MEASUREMENT_VERSION = "perfseer_v3_v100_epoch_measurement_v1"
-TASK_REGISTRY_VERSION = "perfseer_v3_v100_task_registry_v1"
-MODEL_REGISTRY_VERSION = "perfseer_v3_v100_model_registry_v1"
+WORKLOAD_CONFIG_VERSION = PROFILE.workload_config_version
+LABEL_RUN_RECORD_VERSION = PROFILE.label_run_record_version
+EPOCH_MEASUREMENT_VERSION = PROFILE.epoch_measurement_version
+TASK_REGISTRY_VERSION = PROFILE.task_registry_version
+MODEL_REGISTRY_VERSION = PROFILE.model_registry_version
 TARGET_NAMES = (
     "train_epoch_ms",
     "train_avg_sm_util_percent",
@@ -178,8 +179,8 @@ class WorkloadConfiguration:
     def validate(self) -> None:
         if self.version != WORKLOAD_CONFIG_VERSION:
             raise ValueError(f"unsupported workload config version {self.version!r}")
-        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
-            raise ValueError("workload configuration must target NRP V100, never generic V100")
+        if self.target_hardware_id != PROFILE.target_hardware_id:
+            raise ValueError("workload configuration target differs from the active profile")
         for name in (
             "source_lineage",
             "generator_version",
@@ -417,6 +418,9 @@ class LabelRunRecord:
     epoch_measurements: tuple[EpochMeasurement, ...]
     cleanup: GpuCleanupEvidence
     targets: TargetVector | None = None
+    production_eligible: bool = True
+    reference_provenance: Mapping[str, Any] | None = None
+    build_identity: Mapping[str, str] = field(default_factory=dict)
 
     def aggregate_targets(self) -> TargetVector:
         if tuple(row.epoch for row in self.epoch_measurements) != (3, 4, 5):
@@ -461,8 +465,24 @@ class LabelRunRecord:
             raise ValueError("failure_stage must be a FailureStage enum")
         self.fingerprints.validate(CorpusLayer.END_TO_END)
         _require_text(self.gpu_uuid, context="gpu_uuid")
-        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
-            raise ValueError("label records must be measured on the frozen NRP V100 target")
+        if self.target_hardware_id != PROFILE.target_hardware_id:
+            raise ValueError("label record target differs from the active profile")
+        if type(self.production_eligible) is not bool:
+            raise ValueError("production_eligible must be boolean")
+        if self.reference_provenance is not None:
+            canonical_value(self.reference_provenance)
+        if self.build_identity:
+            expected_build_keys = {
+                "source_revision",
+                "source_tree_sha256",
+                "dependency_lock_sha256",
+                "image_identity",
+            }
+            if set(self.build_identity) != expected_build_keys or any(
+                type(value) is not str or not value
+                for value in self.build_identity.values()
+            ):
+                raise ValueError("label build identity schema differs")
         _require_sha256(self.capture_workload_sha256, context="capture_workload_sha256")
         _require_sha256(self.profile_workload_sha256, context="profile_workload_sha256")
         if self.capture_workload_sha256 != self.profile_workload_sha256:
@@ -610,6 +630,8 @@ def label_run_record_from_dict(value: Mapping[str, Any]) -> LabelRunRecord:
             "epoch_measurements": tuple(measurements),
             "cleanup": GpuCleanupEvidence(**value["cleanup"]),
             "targets": targets,
+            "reference_provenance": value["reference_provenance"],
+            "build_identity": value["build_identity"],
         }
     )
     result.validate()

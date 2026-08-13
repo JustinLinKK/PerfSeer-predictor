@@ -10,6 +10,7 @@ import yaml
 
 from .contracts import TASK_REGISTRY_VERSION, TaskRegistryEntry
 from .fingerprints import canonical_sha256, canonical_value
+from .labeler_profile import PROFILE
 
 
 DEFAULT_TASK_REGISTRY_PATH = (
@@ -288,8 +289,8 @@ class TaskRegistry:
     def validate(self) -> None:
         if self.version != TASK_REGISTRY_VERSION:
             raise TaskRegistryError("task registry version mismatch")
-        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
-            raise TaskRegistryError("task registry must target NRP V100")
+        if self.target_hardware_id != PROFILE.target_hardware_id:
+            raise TaskRegistryError("task registry target differs from the active profile")
         if type(self.training_approved) is not bool or self.training_approved:
             raise TaskRegistryError("local task registry must remain explicitly unapproved")
         if self.metadata_source_url != "https://github.com/openai/mle-bench":
@@ -355,6 +356,8 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
     raw = yaml.load(Path(path).read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     root = _mapping(raw, context="task registry root")
     _exact_keys(root, _ROOT_KEYS, context="task registry root")
+    if PROFILE.name != "v100" and Path(path).resolve() == DEFAULT_TASK_REGISTRY_PATH.resolve():
+        root = {**root, "version": PROFILE.task_registry_version, "target_hardware_id": PROFILE.target_hardware_id}
     if root["version"] != TASK_REGISTRY_VERSION:
         raise TaskRegistryError("task registry source version mismatch")
     entries = root["entries"]

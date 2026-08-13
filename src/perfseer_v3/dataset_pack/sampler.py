@@ -25,22 +25,19 @@ from .generated_lineages import (
     GeneratedLineageSpec,
     build_generated_lineage_registry,
 )
+from .labeler_profile import PROFILE
 from .model_registry import ModelRegistry, load_model_registry
 from .models.architecture import resolve_architecture_parameters
 from .quota import QuotaPlan, load_quota_plan
 from .task_registry import TaskRegistry, load_task_registry
 
 
-TARGET_MANIFEST_VERSION = "perfseer_v3_v100_18k_target_manifest_v8"
-CANDIDATE_VERSION = "perfseer_v3_v100_candidate_v8"
-PLANNER_VERSION = "perfseer_v3_v100_constrained_sampler_v8"
-BATCH_PLAN_VERSION = "perfseer_v3_v100_batch_plan_v2"
+TARGET_MANIFEST_VERSION = PROFILE.target_manifest_version
+CANDIDATE_VERSION = PROFILE.candidate_version
+PLANNER_VERSION = PROFILE.planner_version
+BATCH_PLAN_VERSION = PROFILE.batch_plan_version
 REGIMES = ("task_realistic", "shape_extrapolation", "memory_frontier")
-PRECISION_PATTERN = (
-    *("fp32_ieee",) * 5,
-    *("fp16_grad_scaler",) * 11,
-    *("mixed_structured",) * 4,
-)
+PRECISION_PATTERN = PROFILE.precision_pattern
 GRADIENT_ACCUMULATION = (1, 2, 4, 8)
 SCHEDULE_PROGRESS = (0.0, 0.1, 0.5, 0.9, 1.0)
 OPTIMIZER_STEP_SCHEDULERS = frozenset(
@@ -310,8 +307,8 @@ class TargetCandidate:
             raise CandidatePlanningError("candidate executable task schema is invalid")
         if self.configuration_binding_state != "task_materialization_required":
             raise CandidatePlanningError("local targets must await task materialization")
-        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
-            raise CandidatePlanningError("candidate target hardware differs from NRP V100")
+        if self.target_hardware_id != PROFILE.target_hardware_id:
+            raise CandidatePlanningError("candidate target differs from the active profile")
         if self.training_approved is not False:
             raise CandidatePlanningError("unmeasured target candidates cannot approve training")
         self.batch_plan.validate()
@@ -383,7 +380,7 @@ class TargetCandidate:
         ):
             raise CandidatePlanningError("scheduler progress is invalid")
         policy_id = self.precision_policy.get("policy_id")
-        expected_autocast = policy_id != "fp32_ieee"
+        expected_autocast = policy_id not in {"fp32_ieee", "fp32_tf32"}
         expected_scaler = policy_id == "fp16_grad_scaler"
         if (
             set(self.precision_policy) != {"policy_id", "autocast", "gradient_scaler"}
@@ -441,12 +438,14 @@ class TargetCandidate:
         registered_operations = _registered_operation_ids()
         dtype = {
             "fp32_ieee": "float32",
+            "fp32_tf32": "float32",
+            "bf16": "bfloat16",
             "fp16_grad_scaler": "float16",
             "mixed_structured": "mixed_structured",
         }.get(policy_id)
         accumulation = (
             "float32"
-            if dtype in {"float16", "mixed_structured"}
+            if dtype in {"float16", "bfloat16", "mixed_structured"}
             else dtype
         )
         for specification in self.coverage_cell_specs:
@@ -976,7 +975,7 @@ def _batch_classification(
         reasons.append("top_quartile_quadratic_axis")
     if len(top_axes) >= 2:
         reasons.append("multiple_top_quartile_activation_axes")
-    if precision_id == "fp32_ieee" and top_shape_axis:
+    if precision_id in {"fp32_ieee", "fp32_tf32"} and top_shape_axis:
         reasons.append("fp32_with_top_quartile_shape")
     if not checkpoint_enabled and len(top_axes) >= 2:
         reasons.append("checkpoint_disabled_with_multiple_top_axes")
@@ -1057,10 +1056,12 @@ def _coverage_specs(
 ) -> tuple[Mapping[str, Any], ...]:
     dtype = {
         "fp32_ieee": "float32",
+        "fp32_tf32": "float32",
+        "bf16": "bfloat16",
         "fp16_grad_scaler": "float16",
         "mixed_structured": "mixed_structured",
     }[precision]
-    accumulation = "float32" if dtype in {"float16", "mixed_structured"} else dtype
+    accumulation = "float32" if dtype in {"float16", "bfloat16", "mixed_structured"} else dtype
     shape_regime = {
         "task_realistic": ("small", "medium")[ordinal % 2],
         "shape_extrapolation": "large",
@@ -1167,9 +1168,9 @@ def build_target_manifest() -> TargetManifest:
                 architecture = dict(architecture)
                 architecture["sparse_gradients"] = optimizer == "sparse_adam"
             if optimizer == "lbfgs":
-                precision = "fp32_ieee"
+                precision = "fp32_tf32" if PROFILE.is_a10 else "fp32_ieee"
             if cell.family_id == "switch_moe" and precision == "fp16_grad_scaler":
-                precision = "fp32_ieee"
+                precision = "bf16" if PROFILE.is_a10 else "fp32_ieee"
             checkpoint_enabled = global_ordinal % 5 == 0
             scheduler = DEPLOYMENT_SCHEDULERS[
                 global_ordinal % len(DEPLOYMENT_SCHEDULERS)
@@ -1292,7 +1293,7 @@ def build_target_manifest() -> TargetManifest:
                 ],
                 "precision_policy": {
                     "policy_id": precision,
-                    "autocast": precision != "fp32_ieee",
+                    "autocast": precision not in {"fp32_ieee", "fp32_tf32"},
                     "gradient_scaler": precision == "fp16_grad_scaler",
                 },
                 "optimizer": {

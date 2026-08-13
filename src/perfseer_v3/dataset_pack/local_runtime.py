@@ -20,6 +20,7 @@ from .local_provenance import (
     validation_environment_sha256,
     validation_harness_sha256,
 )
+from .labeler_profile import PROFILE
 from .models.base import FamilyModel, tensor_outputs
 from .sampler import TargetCandidate
 
@@ -595,12 +596,23 @@ def _nested_close(left: Any, right: Any, *, rtol: float, atol: float) -> bool:
 
 def _precision_context(candidate: TargetCandidate, device: torch.device) -> Any:
     policy = str(candidate.precision_policy["policy_id"])
-    if device.type != "cuda" or policy == "fp32_ieee":
+    if device.type != "cuda" or policy in {"fp32_ieee", "fp32_tf32"}:
         return nullcontext()
-    # Volta has no BF16 or TF32 execution mode.  Both the ordinary FP16 policy
-    # and structured mixed-precision fixtures therefore autocast to FP16 and
-    # accumulate in FP32.
-    return torch.autocast(device_type="cuda", dtype=torch.float16)
+    if PROFILE.is_a10:
+        dtype = torch.float16 if policy == "fp16_grad_scaler" else torch.bfloat16
+    else:
+        # Volta has no BF16 or TF32 execution mode.
+        dtype = torch.float16
+    return torch.autocast(device_type="cuda", dtype=dtype)
+
+
+def configure_precision_backends(candidate: TargetCandidate) -> Mapping[str, bool]:
+    """Set process-global TF32 flags from one candidate, never from hardware defaults."""
+
+    enabled = candidate.precision_policy["policy_id"] == "fp32_tf32"
+    torch.backends.cuda.matmul.allow_tf32 = enabled
+    torch.backends.cudnn.allow_tf32 = enabled
+    return {"matmul_allow_tf32": enabled, "cudnn_allow_tf32": enabled}
 
 
 def _build_model(candidate: TargetCandidate, adapter: TaskAdapter, device: torch.device) -> FamilyModel:
@@ -795,8 +807,7 @@ def validate_candidate_execution(
         raise LocalExecutionError("CUDA is unavailable for the RTX verification gate")
     if resolved_device.type == "cuda":
         observed_hardware = torch.cuda.get_device_name(resolved_device)
-        torch.backends.cuda.matmul.allow_tf32 = False
-        torch.backends.cudnn.allow_tf32 = False
+        configure_precision_backends(candidate)
     else:
         observed_hardware = f"local_{resolved_device.type}_test_fixture"
     adapter = adapter_for_task(candidate.task_id)
@@ -879,7 +890,7 @@ def validate_candidate_execution(
         2e-2
         if candidate.precision_policy["autocast"]
         else 1e-3
-        if candidate.precision_policy["policy_id"] == "fp32_ieee"
+        if candidate.precision_policy["policy_id"] in {"fp32_ieee", "fp32_tf32"}
         else 1e-5
     )
     equivalent = _nested_close(

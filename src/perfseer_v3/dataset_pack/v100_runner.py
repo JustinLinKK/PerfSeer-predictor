@@ -25,15 +25,21 @@ from .local_runtime import (
     _move,
     _precision_context,
     bind_candidate_batch_shape,
+    configure_precision_backends,
     five_epoch_optimizer_steps,
 )
 from .real_data import VerifiedPreparedDataset
 from .sampler import TargetCandidate
+from .labeler_profile import PROFILE
 from .task_registry import TaskRegistryEntry
 
 
 MIB = 1024**2
-V100_RUN_RESULT_VERSION = "perfseer_v3_v100_five_epoch_result_v1"
+V100_RUN_RESULT_VERSION = (
+    "perfseer_v3_nrp_a10_five_epoch_result_v1"
+    if PROFILE.name == "native_a10"
+    else "perfseer_v3_v100_five_epoch_result_v1"
+)
 
 
 class V100RunError(RuntimeError):
@@ -86,19 +92,24 @@ class NvmlTelemetryBackend:
                 normalized_name = "".join(
                     character for character in str(name).upper() if character.isalnum()
                 )
-                if (
-                    "TESLAV100SXM2" not in normalized_name
-                    or not 30 * 1024**3 <= memory.total <= 34 * 1024**3
-                ):
-                    raise V100RunError(
-                        "label worker is not bound to a 32 GiB Tesla V100 SXM2"
+                if PROFILE.name == "native_a10":
+                    qualified = (
+                        normalized_name == "NVIDIAA10"
+                        and 22 * 1024**3 <= memory.total <= 26 * 1024**3
+                        and (properties.major, properties.minor) == (8, 6)
                     )
-                if (properties.major, properties.minor) != (7, 0):
-                    raise V100RunError(
-                        "visible CUDA device does not have V100 compute capability 7.0"
+                    expected_description = "NVIDIA A10 24GB with compute capability 8.6"
+                else:
+                    qualified = (
+                        "TESLAV100SXM2" in normalized_name
+                        and 30 * 1024**3 <= memory.total <= 34 * 1024**3
+                        and (properties.major, properties.minor) == (7, 0)
                     )
+                    expected_description = "Tesla V100 SXM2 32GB with compute capability 7.0"
+                if not qualified:
+                    raise V100RunError(f"label worker is not bound to {expected_description}")
                 provenance = {
-                    "target_hardware_id": "nvidia_tesla_v100_sxm2_32gb_nrp",
+                    "target_hardware_id": PROFILE.target_hardware_id,
                     "name": str(name),
                     "uuid": self._uuid,
                     "total_memory_bytes": int(memory.total),
@@ -452,6 +463,7 @@ def run_five_epoch_training(
     torch.manual_seed(int(candidate.seed_policy["seed"]))
     if resolved_device.type == "cuda":
         torch.cuda.manual_seed_all(int(candidate.seed_policy["seed"]))
+        configure_precision_backends(candidate)
     adapter = adapter_for_task(candidate.task_id)
     dataset = VerifiedPreparedDataset(
         task_entry,

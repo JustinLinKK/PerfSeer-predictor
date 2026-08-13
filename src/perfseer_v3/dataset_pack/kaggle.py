@@ -18,6 +18,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import time
 from typing import Any, Mapping, Sequence
 import zipfile
 
@@ -186,14 +187,31 @@ class KaggleDownloadProbe:
 class KaggleCliClient:
     """Small secret-safe wrapper around the official `kaggle` executable."""
 
-    def __init__(self, *, executable: str = "kaggle", timeout_seconds: int = 3600) -> None:
+    def __init__(
+        self,
+        *,
+        executable: str = "kaggle",
+        timeout_seconds: int = 3600,
+        maximum_attempts: int = 4,
+        initial_backoff_seconds: float = 1.0,
+    ) -> None:
         resolved = shutil.which(executable)
         if resolved is None:
             raise KaggleMaterializationError("the official Kaggle CLI is not installed")
         if type(timeout_seconds) is not int or timeout_seconds < 1:
             raise KaggleMaterializationError("Kaggle CLI timeout must be positive")
+        if type(maximum_attempts) is not int or not 1 <= maximum_attempts <= 8:
+            raise KaggleMaterializationError("Kaggle retry count must be between one and eight")
+        if (
+            isinstance(initial_backoff_seconds, bool)
+            or not isinstance(initial_backoff_seconds, (int, float))
+            or not 0 <= float(initial_backoff_seconds) <= 10
+        ):
+            raise KaggleMaterializationError("Kaggle retry backoff must be between zero and ten seconds")
         self.executable = resolved
         self.timeout_seconds = timeout_seconds
+        self.maximum_attempts = maximum_attempts
+        self.initial_backoff_seconds = float(initial_backoff_seconds)
 
     @staticmethod
     def _failure_message(stderr: str, stdout: str) -> str:
@@ -206,25 +224,36 @@ class KaggleCliClient:
             return "Kaggle competition rules are not accepted for this account"
         if "404" in lowered or "not found" in lowered:
             return "the frozen Kaggle competition is unavailable"
+        if "429" in lowered or "too many requests" in lowered or "rate limit" in lowered:
+            return "Kaggle rate limit remained active after bounded retry/backoff"
         return "the Kaggle CLI request failed; verify CLI installation and network access"
 
     def _run(self, arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
-        try:
-            result = subprocess.run(
-                [self.executable, *arguments],
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
-                env=os.environ.copy(),
+        for attempt in range(self.maximum_attempts):
+            try:
+                result = subprocess.run(
+                    [self.executable, *arguments],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout_seconds,
+                    env=os.environ.copy(),
+                )
+            except subprocess.TimeoutExpired as error:
+                raise KaggleMaterializationError("the Kaggle CLI request timed out") from error
+            if result.returncode == 0:
+                return result
+            lowered = f"{result.stderr}\n{result.stdout}".lower()
+            retryable = any(
+                token in lowered
+                for token in ("429", "too many requests", "rate limit")
             )
-        except subprocess.TimeoutExpired as error:
-            raise KaggleMaterializationError("the Kaggle CLI request timed out") from error
-        if result.returncode != 0:
-            raise KaggleMaterializationError(
-                self._failure_message(result.stderr, result.stdout)
-            )
-        return result
+            if not retryable or attempt + 1 == self.maximum_attempts:
+                raise KaggleMaterializationError(
+                    self._failure_message(result.stderr, result.stdout)
+                )
+            time.sleep(min(10.0, self.initial_backoff_seconds * (2**attempt)))
+        raise AssertionError("bounded Kaggle retry loop did not terminate")
 
     def authenticate(self) -> None:
         self._run(["competitions", "list", "--page-size", "1", "--csv"])

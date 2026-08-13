@@ -28,6 +28,11 @@ from .contracts import (
 )
 from .fingerprints import canonical_sha256
 from .label_worker import WORKER_ENVELOPE_VERSION
+from .labeler_profile import PROFILE
+from .a10_crosswalk import (
+    REFERENCE_MANIFEST_SHA256,
+    semantic_distribution_signature,
+)
 from .operation_support import build_operation_support_contract
 from .prepared_view import PreparedViewManifest
 from .sampler import TargetCandidate
@@ -98,6 +103,25 @@ def validate_v100_gpu_identity(
         )
 
 
+def validate_a10_gpu_identity(
+    name: str,
+    compute_capability: Sequence[int],
+    total_memory_bytes: int,
+) -> None:
+    normalized_name = "".join(
+        character for character in str(name).upper() if character.isalnum()
+    )
+    if (
+        normalized_name != "NVIDIAA10"
+        or tuple(compute_capability) != (8, 6)
+        or type(total_memory_bytes) is not int
+        or not 22 * 1024**3 <= total_memory_bytes <= 26 * 1024**3
+    ):
+        raise SupervisorError(
+            "GPU must be exactly an NVIDIA A10 with compute capability 8.6 and 22--26 GiB"
+        )
+
+
 class GpuProbe(Protocol):
     physical_index: int
     gpu_uuid: str
@@ -130,13 +154,16 @@ class ParentNvmlProbe:
                 uuid = uuid.decode()
             memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
             capability = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
-            validate_v100_gpu_identity(str(name), capability, int(memory.total))
+            if PROFILE.name == "native_a10":
+                validate_a10_gpu_identity(str(name), capability, int(memory.total))
+            else:
+                validate_v100_gpu_identity(str(name), capability, int(memory.total))
             self._pynvml = pynvml
             self._handle = handle
             self.physical_index = physical_index
             self.gpu_uuid = str(uuid)
             self.hardware_provenance = {
-                "target_hardware_id": "nvidia_tesla_v100_sxm2_32gb_nrp",
+                "target_hardware_id": PROFILE.target_hardware_id,
                 "name": str(name),
                 "uuid": self.gpu_uuid,
                 "total_memory_bytes": int(memory.total),
@@ -191,6 +218,23 @@ def discover_v100_probes() -> tuple[ParentNvmlProbe, ...]:
     if len(hardware) != 1:
         raise SupervisorError("production labeling refuses mixed GPU hardware")
     return probes
+
+
+def discover_a10_probe() -> ParentNvmlProbe:
+    if PROFILE.name != "native_a10":
+        raise SupervisorError("A10 discovery requires the native_a10 process profile")
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        count = pynvml.nvmlDeviceGetCount()
+    except Exception as error:
+        raise SupervisorError("NVML cannot enumerate the A10 worker") from error
+    if count != 1:
+        raise SupervisorError(
+            f"production labeling requires exactly one visible A10; discovered {count}"
+        )
+    return ParentNvmlProbe(0)
 
 
 def environment_provenance() -> Mapping[str, Any]:
@@ -390,6 +434,55 @@ def build_failed_label_record(
     return record
 
 
+def _bind_native_a10_provenance(
+    record: LabelRunRecord,
+    candidate: TargetCandidate,
+    task_entry: TaskRegistryEntry,
+    workspace: Path,
+) -> LabelRunRecord:
+    if PROFILE.name != "native_a10":
+        return record
+    mapping_path = workspace / "state" / "a10_crosswalk.jsonl"
+    original_id = None
+    root_candidate_id = candidate.candidate_id
+    repair_history = candidate.mutation_specification.get("oom_repair_history", ())
+    replacement = candidate.mutation_specification.get("quota_replacement")
+    if repair_history:
+        root_candidate_id = str(repair_history[-1]["root_candidate_id"])
+    elif isinstance(replacement, Mapping):
+        root_candidate_id = str(replacement["target_candidate_id"])
+    if mapping_path.is_file():
+        for line in mapping_path.read_text(encoding="utf-8").splitlines():
+            row = json.loads(line)
+            if row.get("native_nrp_a10_candidate_id") == root_candidate_id:
+                original_id = row.get("original_a10g_candidate_id")
+                break
+    if original_id is None:
+        raise SupervisorError("native A10 record has no frozen reference crosswalk row")
+    environment = environment_provenance()
+    bound = replace(
+        record,
+        production_eligible=True,
+        reference_provenance={
+            "original_a10g_candidate_id": original_id,
+            "native_root_candidate_id": root_candidate_id,
+            "reference_manifest_sha256": REFERENCE_MANIFEST_SHA256,
+            "semantic_distribution_signature": semantic_distribution_signature(candidate),
+        },
+        build_identity={
+            key: str(environment[key])
+            for key in (
+                "source_revision",
+                "source_tree_sha256",
+                "dependency_lock_sha256",
+                "image_identity",
+            )
+        },
+    )
+    bound.validate_against_configuration(candidate, task_entry)
+    return bound
+
+
 def wait_for_gpu_cleanup(
     probe: GpuProbe,
     baseline: TelemetryReading,
@@ -482,7 +575,7 @@ class AttemptSupervisor:
     ) -> LabelRunRecord:
         baseline = probe.read()
         if baseline.compute_process_ids:
-            raise SupervisorError("assigned V100 is not idle before child launch")
+            raise SupervisorError("assigned GPU is not idle before child launch")
         dispatch = self.workspace / "state" / "dispatch" / f"{candidate.candidate_id}.json"
         output = self.workspace / "attempts" / "staging" / f"{candidate.candidate_id}.json"
         atomic_write_json(dispatch, candidate.to_dict())
@@ -582,6 +675,9 @@ class AttemptSupervisor:
             shutil.rmtree(credential_directory)
             shutil.rmtree(compiler_cache_directory)
         def publish_failure(record: LabelRunRecord) -> LabelRunRecord:
+            record = _bind_native_a10_provenance(
+                record, candidate, task_entry, self.workspace
+            )
             path = self.workspace / "attempts" / "failed" / f"{record.run_id}.json"
             output.unlink(missing_ok=True)
             dispatch.unlink(missing_ok=True)
@@ -634,7 +730,7 @@ class AttemptSupervisor:
             )
         run = FiveEpochRunResult.from_dict(envelope["payload"])
         if run.gpu_uuid != probe.gpu_uuid or run.hardware_sha256 != probe.hardware_fingerprint:
-            raise SupervisorError("child hardware differs from assigned physical V100")
+            raise SupervisorError("child hardware differs from assigned physical GPU")
         epoch_times = tuple(float(row.epoch_ms) for row in run.epoch_measurements)
         mean = sum(epoch_times) / len(epoch_times)
         if mean <= 0 or (max(epoch_times) - min(epoch_times)) / mean > 0.10:
@@ -659,6 +755,9 @@ class AttemptSupervisor:
             run,
             cleanup,
             attempt_index=attempt_index,
+        )
+        record = _bind_native_a10_provenance(
+            record, candidate, task_entry, self.workspace
         )
         current_environment_provenance = environment_provenance()
         hardware_provenance = getattr(probe, "hardware_provenance", None)
@@ -704,7 +803,10 @@ __all__ = [
     "build_accepted_label_record",
     "build_failed_label_record",
     "discover_v100_probes",
+    "discover_a10_probe",
     "environment_provenance",
     "lock_campaign_environment",
     "wait_for_gpu_cleanup",
+    "validate_a10_gpu_identity",
+    "validate_v100_gpu_identity",
 ]

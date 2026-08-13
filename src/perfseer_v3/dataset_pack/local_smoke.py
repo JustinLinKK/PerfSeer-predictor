@@ -10,6 +10,8 @@ from typing import Any, Mapping, Sequence
 import torch
 
 from .fingerprints import canonical_sha256, canonical_value, file_sha256
+from .labeler_profile import PROFILE
+from .quota import FROZEN_QUOTA_CELLS
 from .kaggle import KaggleCliClient
 from .materialization import TaskMaterializer
 from .mlebench_bridge import PinnedMleBenchPreparer
@@ -24,6 +26,7 @@ from .local_runtime import (
     _precision_context,
     _update,
     bind_candidate_batch_shape,
+    configure_precision_backends,
     five_epoch_optimizer_steps,
 )
 from .local_task_fixture import build_local_real_format_batch
@@ -37,9 +40,13 @@ from .v100_runner import (
 )
 
 
-LOCAL_SMOKE_VERSION = "perfseer_v3_rtx5090_real_label_smoke_v1"
+LOCAL_SMOKE_VERSION = (
+    "perfseer_v3_nrp_a10_rtx5090_real_label_smoke_v1"
+    if PROFILE.name == "native_a10"
+    else "perfseer_v3_rtx5090_real_label_smoke_v1"
+)
 LOCAL_SMOKE_MODELS = ("panns_cnn14", "cgcnn")
-CAMPAIGN_FAMILIES = (
+_V100_CAMPAIGN_FAMILIES = (
     "panns_cnn14",
     "temporal_convolutional_network",
     "m5_waveform_cnn",
@@ -51,9 +58,20 @@ CAMPAIGN_FAMILIES = (
     "graphsage",
     "cgcnn",
 )
+CAMPAIGN_FAMILIES = (
+    tuple(row[1] for row in FROZEN_QUOTA_CELLS)
+    if PROFILE.name == "native_a10"
+    else _V100_CAMPAIGN_FAMILIES
+)
 _MODEL_RULES = {
-    "panns_cnn14": ("mlsp-2013-birds", "fp32_ieee"),
-    "cgcnn": ("nomad2018", "fp16_grad_scaler"),
+    "panns_cnn14": (
+        "mlsp-2013-birds",
+        "fp32_tf32" if PROFILE.name == "native_a10" else "fp32_ieee",
+    ),
+    "cgcnn": (
+        "nomad2018",
+        "bf16" if PROFILE.name == "native_a10" else "fp16_grad_scaler",
+    ),
 }
 
 
@@ -152,15 +170,29 @@ def select_smoke_candidate(model: str) -> TargetCandidate:
 def select_family_matrix_candidate(family: str) -> TargetCandidate:
     if family not in CAMPAIGN_FAMILIES:
         raise LocalSmokeError(f"family {family!r} is outside the campaign")
+    precision_order = (
+        ("fp32_tf32", "bf16", "fp16_grad_scaler", "mixed_structured")
+        if PROFILE.name == "native_a10"
+        else ("fp32_ieee",)
+    )
+    desired = precision_order[CAMPAIGN_FAMILIES.index(family) % len(precision_order)]
     matches = tuple(
         row
         for row in build_target_manifest().candidates
         if row.family_id == family
-        and row.quota_modality in {"audio", "tabular", "graph"}
-        and row.precision_policy["policy_id"] == "fp32_ieee"
+        and (
+            PROFILE.name == "native_a10"
+            or row.quota_modality in {"audio", "tabular", "graph"}
+        )
+        and row.precision_policy["policy_id"] == desired
         and row.execution["mode"] == "eager"
-        and row.optimizer["name"] == "adamw"
     )
+    if not matches and PROFILE.name == "native_a10":
+        matches = tuple(
+            row
+            for row in build_target_manifest().candidates
+            if row.family_id == family and row.execution["mode"] == "eager"
+        )
     if not matches:
         raise LocalSmokeError(f"no deterministic one-batch candidate for {family}")
     return sorted(
@@ -178,11 +210,10 @@ def run_family_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
 
     backend = Rtx5090TelemetryBackend()
     device = torch.device("cuda")
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
     rows = []
     for family in CAMPAIGN_FAMILIES:
         candidate = select_family_matrix_candidate(family)
+        configure_precision_backends(candidate)
         adapter = adapter_for_task(candidate.task_id)
         fixture_sha256, raw = build_local_real_format_batch(adapter)
         batch = bind_candidate_batch_shape(
@@ -206,6 +237,11 @@ def run_family_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
             )
         if not bool(torch.isfinite(loss)):
             raise LocalSmokeError(f"{family} fixture forward loss is non-finite")
+        scaler = (
+            torch.amp.GradScaler("cuda", init_scale=1.0, growth_interval=1_000)
+            if candidate.precision_policy["gradient_scaler"]
+            else None
+        )
         _, updated_loss = _update(
             candidate=candidate,
             model=model,
@@ -219,7 +255,7 @@ def run_family_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
                 batch,
                 bool(candidate.activation_checkpointing["enabled"]),
             ),
-            scaler=None,
+            scaler=scaler,
         )
         if not bool(torch.isfinite(updated_loss)) or not _gradients_finite(model):
             raise LocalSmokeError(f"{family} fixture update is non-finite")
@@ -228,12 +264,17 @@ def run_family_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
                 "family_id": family,
                 "task_id": candidate.task_id,
                 "configuration_id": candidate.candidate_id,
+                "precision_policy": candidate.precision_policy["policy_id"],
                 "fixture_sha256": fixture_sha256,
                 "one_batch_update": "passed",
             }
         )
     result: dict[str, Any] = {
-        "version": "perfseer_v3_rtx5090_family_matrix_smoke_v1",
+        "version": (
+            "perfseer_v3_nrp_a10_rtx5090_family_matrix_smoke_v1"
+            if PROFILE.name == "native_a10"
+            else "perfseer_v3_rtx5090_family_matrix_smoke_v1"
+        ),
         "production_eligible": False,
         "hardware_provenance": backend.hardware_provenance,
         "family_count": len(rows),
@@ -300,7 +341,7 @@ def run_local_smoke(
         record: dict[str, Any] = {
             "version": LOCAL_SMOKE_VERSION,
             "production_eligible": False,
-            "exclusion_reason": "observed hardware is RTX 5090, not the V100 target",
+            "exclusion_reason": "observed hardware is RTX 5090, not the production target",
             "target_hardware_id": candidate.target_hardware_id,
             "hardware_provenance": backend.hardware_provenance,
             "hardware_sha256": backend.hardware_fingerprint,

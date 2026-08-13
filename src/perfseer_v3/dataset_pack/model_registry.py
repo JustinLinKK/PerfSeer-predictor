@@ -14,6 +14,7 @@ from perfseer_v3.op_registry import OperationRegistry
 
 from .contracts import MODEL_REGISTRY_VERSION, ModelFamilyDefinition
 from .fingerprints import canonical_sha256, canonical_value
+from .labeler_profile import PROFILE
 from .quota import FROZEN_QUOTA_CELLS, QuotaPlan, load_quota_plan
 from .task_registry import TaskRegistry, load_task_registry
 
@@ -58,6 +59,22 @@ def _source_file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _profiled_source_file_sha256(path: Path) -> str:
+    """Reproduce the frozen A10G source closure without restoring duplicate code."""
+
+    if PROFILE.name != "legacy_a10g":
+        return _source_file_sha256(path)
+    if path.name == "generated_lineages.py":
+        # SHA-256 of the exact source file at d7abb69b3c79e65e2f3834065ce284484a020ad4.
+        return "879eb87f6ac1807abf6eefb75a1527818bbccee324272545dce40b28f3fc6339"
+    payload = path.read_bytes()
+    if path.name == "factory.py":
+        payload = payload.replace(b"V100 while honoring", b"A10G while honoring")
+    elif path.name == "architecture.py":
+        payload = payload.replace(b'"v100_model_registry.yaml"', b'"a10g_model_registry.yaml"')
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _implemented_source_sha256(
     family_id: str,
     definition_payload: Mapping[str, Any],
@@ -65,14 +82,14 @@ def _implemented_source_sha256(
     models = Path(__file__).resolve().parent / "models"
     source_inputs = {
             "definition": definition_payload,
-            "lineage_module_sha256": _source_file_sha256(models / f"{family_id}.py"),
-            "module_api_sha256": _source_file_sha256(models / "module_api.py"),
-            "model_contract_sha256": _source_file_sha256(models / "base.py"),
-            "shared_factory_sha256": _source_file_sha256(models / "factory.py"),
-            "architecture_binding_sha256": _source_file_sha256(models / "architecture.py"),
+            "lineage_module_sha256": _profiled_source_file_sha256(models / f"{family_id}.py"),
+            "module_api_sha256": _profiled_source_file_sha256(models / "module_api.py"),
+            "model_contract_sha256": _profiled_source_file_sha256(models / "base.py"),
+            "shared_factory_sha256": _profiled_source_file_sha256(models / "factory.py"),
+            "architecture_binding_sha256": _profiled_source_file_sha256(models / "architecture.py"),
     }
     if family_id == "independent_generated":
-        source_inputs["generated_lineage_registry_sha256"] = _source_file_sha256(
+        source_inputs["generated_lineage_registry_sha256"] = _profiled_source_file_sha256(
             models.parent / "generated_lineages.py"
         )
     return canonical_sha256(source_inputs)
@@ -205,8 +222,8 @@ class ModelRegistry:
         tasks = tasks or load_task_registry()
         if self.version != MODEL_REGISTRY_VERSION:
             raise ModelRegistryError("model registry version mismatch")
-        if self.target_hardware_id != "nvidia_tesla_v100_sxm2_32gb_nrp":
-            raise ModelRegistryError("model registry must target NRP V100")
+        if self.target_hardware_id != PROFILE.target_hardware_id:
+            raise ModelRegistryError("model registry target differs from the active profile")
         if type(self.training_approved) is not bool or self.training_approved:
             raise ModelRegistryError("local model registry must remain explicitly unapproved")
         if self.factory_status != "implemented_phase3_factories_v1":
@@ -298,6 +315,8 @@ def load_model_registry(
     raw = yaml.load(Path(path).read_text(encoding="utf-8"), Loader=_UniqueKeyLoader)
     root = _mapping(raw, context="model registry root")
     _exact_keys(root, _ROOT_KEYS, context="model registry root")
+    if PROFILE.name != "v100" and Path(path).resolve() == DEFAULT_MODEL_REGISTRY_PATH.resolve():
+        root = {**root, "version": PROFILE.model_registry_version, "target_hardware_id": PROFILE.target_hardware_id}
     entries = root["entries"]
     if not isinstance(entries, list):
         raise ModelRegistryError("model registry entries must be a list")

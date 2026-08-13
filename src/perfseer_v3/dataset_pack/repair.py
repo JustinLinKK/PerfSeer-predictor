@@ -21,12 +21,14 @@ from .sampler import (
 )
 from .compatibility import CompatibilityRequest
 from .generated_lineages import build_generated_lineage_registry
+from .labeler_profile import PROFILE
 
 
-REPAIR_VERSION = "perfseer_v3_v100_oom_batch_repair_v2"
-QUARANTINE_VERSION = "perfseer_v3_v100_quarantine_v2"
-SUBSTITUTION_VERSION = "perfseer_v3_v100_quota_substitution_v2"
-QUOTA_FILL_VERSION = "perfseer_v3_v100_quota_fill_v2"
+_REPAIR_TOKEN = "nrp_a10" if PROFILE.name == "native_a10" else "v100"
+REPAIR_VERSION = f"perfseer_v3_{_REPAIR_TOKEN}_oom_batch_repair_v2"
+QUARANTINE_VERSION = f"perfseer_v3_{_REPAIR_TOKEN}_quarantine_v2"
+SUBSTITUTION_VERSION = f"perfseer_v3_{_REPAIR_TOKEN}_quota_substitution_v2"
+QUOTA_FILL_VERSION = f"perfseer_v3_{_REPAIR_TOKEN}_quota_fill_v2"
 OOM_REPAIR_ACTION = "next_lower_power_of_two"
 
 
