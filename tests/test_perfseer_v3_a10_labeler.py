@@ -238,3 +238,10 @@ def test_image_lock_contains_hashed_full_runtime() -> None:
         assert package in lock
     assert "--hash=sha256:" in lock
     assert "kaggle.json" not in lock and "git+" not in lock and "/home/" not in lock
+
+
+def test_offline_image_preflight_does_not_import_kaggle_cli() -> None:
+    script = (ROOT / "scripts" / "run_perfseer_v3_a10_labeling.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"kaggle": None' in script

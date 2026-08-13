@@ -44,7 +44,10 @@ from perfseer_v3.dataset_pack.task_registry import MLEBENCH_METADATA_REVISION, l
 
 PINNED_IMPORTS = {
     "appdirs": "appdirs",
-    "kaggle": "kaggle",
+    # Kaggle 2.x authenticates while importing its top-level CLI package.
+    # Verify the distribution here; exercise the CLI only in the explicit
+    # download gate so this image check remains genuinely offline.
+    "kaggle": None,
     "networkx": "networkx",
     "numpy": "numpy",
     "nvidia-ml-py": "pynvml",
@@ -110,7 +113,8 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
 
     versions = {"torch": importlib.metadata.version("torch")}
     for distribution, module in PINNED_IMPORTS.items():
-        importlib.import_module(module)
+        if module is not None:
+            importlib.import_module(module)
         versions[distribution] = importlib.metadata.version(distribution)
     mismatched = {
         name: {"actual": versions.get(name), "expected": expected}
