@@ -1,0 +1,54 @@
+{
+  "cleanup_performed": false,
+  "cleanup_status": "blocked_until_nomad_cgcnn_real_label_passes",
+  "contract": {
+    "campaign_candidate_count": 3550,
+    "campaign_contract_sha256": "e2ffa14bbc24d8caaa3276aaa6234ed41a65529c30a163bc7fc116f512989dce",
+    "campaign_measured_epoch_count": 10650,
+    "full_design_candidate_count": 18000,
+    "target_manifest_sha256": "9e82ae33b109acc45a3f386a1d883a5a685c194efa4e358730aca6aa6aa389cd"
+  },
+  "family_matrix": {
+    "family_count": 10,
+    "production_eligible": false,
+    "result_sha256": "124817b8d4e67bae442877d5e71f5b69d64bff75e5a04344c8c01ca54ac11bc9",
+    "status": "passed"
+  },
+  "final_local_image": {
+    "architecture": "amd64",
+    "local_digest": "sha256:f8b96fdb909dae764d5a6e1c93c80d5499689440a1f68356e707a5fda50490d4",
+    "manifest_sha256": "5203b1cae13788548a572e2714345ba36c8b92a71f8926990c586810def65262",
+    "sm_120": true,
+    "sm_70": true,
+    "status": "passed"
+  },
+  "kaggle_access": {
+    "blocked": [
+      "the-icml-2013-whale-challenge-right-whale-redux",
+      "new-york-city-taxi-fare-prediction",
+      "tabular-playground-series-dec-2021",
+      "tabular-playground-series-may-2022",
+      "nomad2018-predict-transparent-conductors"
+    ],
+    "passed": [
+      "mlsp-2013-birds"
+    ]
+  },
+  "panns_real_label": {
+    "dataset_fingerprint": "17dbf88ddbaab042a3b5e18abc506eb4b1970dd575949dc90ceee666357a1dd8",
+    "measured_epochs": [
+      3,
+      4,
+      5
+    ],
+    "production_eligible": false,
+    "record_sha256": "0c5a996b3a3f94186f2f334309703d69da198458d9bb46cfd070c5616bed105e",
+    "status": "passed",
+    "total_epochs": 5
+  },
+  "source_revision": "44a469f8783820f39fb6d0b1ef69c48cd43c9666",
+  "unit_contract_tests": {
+    "passed": 14,
+    "status": "passed"
+  }
+}
