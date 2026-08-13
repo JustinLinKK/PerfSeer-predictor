@@ -266,6 +266,7 @@ nrp_calibration_pack/workload_specs/
 /label_v3.jsonl
 /containers/a10-labeler/build-manifest.json
 /record/a10-local-smoke/materialized/
+/record/a10-labeler-local-smoke-*/materialized/
 
 # Generated workload specs and validation/profile records.
 nrp_calibration_pack/workload_specs*/

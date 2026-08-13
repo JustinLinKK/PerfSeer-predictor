@@ -16,6 +16,11 @@ accept or re-accept the rules, and then run `image-preflight
 --verify-kaggle-access`. The command performs a real smallest-file download with
 bounded retry/backoff; a file-list request alone does not pass.
 
+Run this credential-only gate locally without `--gpus` before reserving an A10.
+Competitions that expose each sample as a separate remote file can require many
+paginated inventory requests before the true smallest file is known, so allow
+the command to finish and retain its checksummed output as the access receipt.
+
 | Task | Rules |
 |---|---|
 | Histopathologic Cancer | <https://www.kaggle.com/competitions/histopathologic-cancer-detection/rules> |
@@ -101,10 +106,12 @@ python scripts/render_a10_nautilus_job.py \
   --image gitlab-registry.nrp-nautilus.io/GROUP/perfseer-a10-labeler@sha256:DIGEST \
   --source-revision SOURCE_SHA \
   --mode pilot
-kubectl apply --dry-run=client -f record/a10-pilot-job.yaml
+sed -n '1,240p' record/a10-pilot-job.yaml
 ```
 
-Inspect the rendered YAML. It must have one GPU, exact `NVIDIA-A10` affinity,
+The renderer performs the offline schema/contract verification before it writes
+the file; it makes no Kubernetes API call. Inspect the rendered YAML. It must
+have one GPU, exact `NVIDIA-A10` affinity,
 equal 8-CPU and 32-GiB requests/limits, 16-GiB shared memory, `backoffLimit: 0`,
 the read-only Secret, and the RWX PVC.
 

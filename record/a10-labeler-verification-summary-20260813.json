@@ -1,0 +1,110 @@
+{
+  "branch": "feature/perfseer-v3-nautilus-a10-18k-labeler",
+  "campaign": {
+    "candidate_count": 18000,
+    "crosswalk_sha256": "d66c4f098665f9bab003825abde591c6d142dd68d09178e93475bac2e3db9a69",
+    "family_count": 35,
+    "measured_epoch_count": 54000,
+    "native_manifest_sha256": "361f31ed6fe6b75c508c7e5405aad6c893cc69f5a3cfe33d71fcc823c88aaba5",
+    "pilot_size": 96,
+    "precision_counts": {
+      "bf16": 5232,
+      "fp16_grad_scaler": 4171,
+      "fp32_tf32": 5193,
+      "mixed_structured": 3404
+    },
+    "production_chunk_count": 70,
+    "remaining_after_pilot": 17904,
+    "task_count": 22,
+    "worker_count": 1
+  },
+  "cgcnn_nomad_smoke": {
+    "failure_class": "external_kaggle_agreement_required",
+    "precision_policy": "bf16",
+    "production_eligible": false,
+    "status": "blocked"
+  },
+  "family_matrix": {
+    "family_count": 35,
+    "precision_paths": [
+      "bf16",
+      "fp16_grad_scaler",
+      "fp32_tf32",
+      "mixed_structured"
+    ],
+    "production_eligible": false,
+    "result_sha256": "08468302799a0e6a5f1e1f23f658b38d51a7b5fb3281cfeb0688cea1f849abd7",
+    "status": "passed"
+  },
+  "image": {
+    "cuda_architectures_required": [
+      "sm_86",
+      "sm_120"
+    ],
+    "dependency_lock_sha256": "fd935f7fd2bc42e469d07eb061487f2fa07654335f45fd78750b9e407b538cac",
+    "identity": "perfseer-v3-nrp-a10-labeler:fa7ac0b3f",
+    "local_oci_image_id": "sha256:0ae6cfff472af18adfb30197115a4f83dfa155d7d86a4439cb448164838b7254",
+    "manifest_sha256": "24fafba778f37b3e76dba999ed13734abbdf30245a913c2a4693ad3e6112fdd0",
+    "platform": "linux/amd64",
+    "registry_pushed": false,
+    "source_revision": "fa7ac0b3f200cc36eaa395eb8fee91e1c8d964ee",
+    "source_tree_sha256": "e5c0dff203605c208831fd8d7c3109f67b3a17253988a5e2c620a5bea13fb327",
+    "status": "passed"
+  },
+  "kaggle_access": {
+    "all_22_smallest_file_downloads_passed": false,
+    "confirmed_authorized": [
+      "mlsp-2013-birds"
+    ],
+    "confirmed_blocked": [
+      "the-icml-2013-whale-challenge-right-whale-redux",
+      "new-york-city-taxi-fare-prediction",
+      "nomad2018-predict-transparent-conductors",
+      "tabular-playground-series-dec-2021",
+      "tabular-playground-series-may-2022"
+    ],
+    "full_matrix_status": "incomplete; a file-per-sample competition required prolonged pagination and the local probe was stopped without claiming success",
+    "pilot_gate": "blocked until all 22 real smallest-file downloads pass"
+  },
+  "kubernetes": {
+    "nautilus_job_submitted": false,
+    "offline_renderer_modes_verified": [
+      "pilot",
+      "chunk-0",
+      "chunk-69"
+    ],
+    "strict_contract_status": "passed",
+    "unintended_read_only_dry_run_result": "configured kubectl attempted GET requests, received Forbidden, and created no resources"
+  },
+  "panns_mlsp_smoke": {
+    "archive_sha256": "83c05aab4b21a2ec0e98856a32793c7b8a60c4a799d55cb7e44117966cfa2902",
+    "completed_epochs": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "dataset_fingerprint": "17dbf88ddbaab042a3b5e18abc506eb4b1970dd575949dc90ceee666357a1dd8",
+    "measured_epochs": [
+      3,
+      4,
+      5
+    ],
+    "precision_policy": "fp32_tf32",
+    "production_eligible": false,
+    "record_sha256": "0ad95e36499780ac0ffc61355e0a7e96ded0c870d82a327c7bbf31da123e107a",
+    "status": "passed"
+  },
+  "reference": {
+    "manifest_sha256": "bf805655d2a9fe978ce2ad4d8bb1f0c0efa400b013e2d1f1fa258ffc83cbeb8e",
+    "source_commit": "d7abb69b3c79e65e2f3834065ce284484a020ad4",
+    "task_registry_sha256": "781b93ddc020d7cbc77d816458fc213065088a27b9e72d42290ddd8e656de049"
+  },
+  "test_suite": {
+    "command": "python -m pytest -q tests/test_perfseer_v3_a10_labeler.py tests/test_perfseer_v3_v100_labeler.py",
+    "passed": 24,
+    "status": "passed"
+  },
+  "verification_date": "2026-08-13"
+}
