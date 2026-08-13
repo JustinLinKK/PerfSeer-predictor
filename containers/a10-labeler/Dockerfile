@@ -34,6 +34,7 @@ COPY containers/a10-labeler/requirements.lock /tmp/requirements.lock
 RUN python -m pip install --break-system-packages --no-cache-dir --require-hashes \
       --extra-index-url https://download.pytorch.org/whl/cu128 \
       -r /tmp/requirements.lock \
+    && python -m pip check \
     && rm /tmp/requirements.lock
 COPY --from=mlebench /opt/mle-bench /opt/mle-bench
 COPY pyproject.toml ./

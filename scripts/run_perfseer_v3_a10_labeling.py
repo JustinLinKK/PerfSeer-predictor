@@ -9,6 +9,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 from typing import Any, Mapping, Sequence
 
@@ -118,6 +119,15 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
     }
     if mismatched:
         raise RuntimeError(f"pinned dependency versions differ: {mismatched}")
+    dependency_check = subprocess.run(
+        [sys.executable, "-m", "pip", "check"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if dependency_check.returncode != 0:
+        raise RuntimeError("installed Python dependency graph fails pip check")
     architectures = tuple(torch.cuda.get_arch_list())
     if not architectures:
         architectures = tuple(str(torch._C._cuda_getArchFlags()).split())

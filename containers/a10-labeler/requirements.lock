@@ -636,10 +636,10 @@ charset-normalizer==3.5.0 \
     --hash=sha256:fec352b793cdc183cc9e7e0b6c10fd7bff38ec54ba44cc43599b9b56f7f3db2e \
     --hash=sha256:ffdd7ac514301d0a67f7c23b9f2b431ef909a3c3dd6c3766668d0a6f5900c94e
     # via requests
-click==8.4.2 \
-    --hash=sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6 \
-    --hash=sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76
-    # via huggingface-hub
+click==8.3.1 \
+    --hash=sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a \
+    --hash=sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6
+    # via -r containers/a10-labeler/requirements.in
 cuda-bindings==12.9.4 \
     --hash=sha256:1f53a7f453d4b2643d8663d036bafe29b5ba89eb904c133180f295df6dc151e5 \
     --hash=sha256:20f2699d61d724de3eb3f3369d57e2b245f93085cab44fd37c3bea036cea1a6f \
@@ -970,9 +970,9 @@ httpx==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via huggingface-hub
-huggingface-hub==1.27.0 \
-    --hash=sha256:7df6827c2f956c60fbaa64646e979e566db76f619dd0a9729dfb8c5a3eb4f68d \
-    --hash=sha256:c1fed40ea82a6b41b477f5243546549b792ae0a93abcea608cff66089bf8f8df
+huggingface-hub==1.16.1 \
+    --hash=sha256:64340de934b9ce37857ef85a82de72f5629e8a270f9119eabb12bf495eb53c22 \
+    --hash=sha256:7f1dc4c5ec21aed69be630ad0c3378616be16f3de1a47b141c0e812965d9c832
     # via
     #   tokenizers
     #   transformers
@@ -2635,6 +2635,7 @@ setuptools==84.0.0 \
     #   outdated
     #   tensorboard
     #   tensorflow-cpu
+    #   torch
 shellingham==1.5.4 \
     --hash=sha256:7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686 \
     --hash=sha256:8dbca0739d487e5bd35ab3ca4b36e11c4078f3a234bfce294b0a0291363404de
@@ -2840,7 +2841,9 @@ triton==3.6.0 \
 typer==0.27.1 \
     --hash=sha256:53150287edd11baeb4e4722c8e394fcdf8181c0ae89485cba8d25c778d5edd56 \
     --hash=sha256:a79bef8469a79c45498e7b814ecf8d603cc7644e9acbd9e19cac0334240b18df
-    # via transformers
+    # via
+    #   huggingface-hub
+    #   transformers
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5

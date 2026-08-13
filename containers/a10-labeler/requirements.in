@@ -18,6 +18,7 @@ pillow==12.1.0
 nvidia-ml-py==13.590.48
 kaggle==2.2.2
 appdirs==1.4.4
+click==8.3.1
 py7zr==1.0.0
 pyyaml==6.0.3
 tqdm==4.67.1
