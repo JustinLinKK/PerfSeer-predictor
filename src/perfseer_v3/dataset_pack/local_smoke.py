@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import gc
+import importlib
 import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -399,6 +401,71 @@ def run_nonvision_fixture_matrix_smoke(workspace: str | Path) -> Mapping[str, An
     return canonical_value(result)
 
 
+def run_manifest_construction_audit(workspace: str | Path) -> Mapping[str, Any]:
+    """Instantiate every active configuration on the meta device without weights."""
+
+    if not PROFILE.is_nonvision_4gpu:
+        raise LocalSmokeError("construction audit requires the non-vision profile")
+    from .models.base import FamilyModel
+
+    task_kinds = {
+        row.task_id: str(row.target_schema["kind"])
+        for row in load_task_registry().entries
+    }
+    rows = []
+    for candidate in build_target_manifest().candidates:
+        module = importlib.import_module(candidate.factory_id)
+        with torch.device("meta"):
+            model = module.build_model(
+                output_width=candidate.target_width,
+                task_kind=task_kinds[candidate.task_id],
+                seed=int(candidate.seed_policy["seed"]),
+                architecture_parameters=candidate.architecture_parameters,
+            )
+        if not isinstance(model, FamilyModel) or model.family_id != candidate.family_id:
+            raise LocalSmokeError("construction audit factory returned another family")
+        parameters = tuple(model.named_parameters())
+        parameter_count = sum(row.numel() for _, row in parameters)
+        if parameter_count < 1 or any(row.device.type != "meta" for _, row in parameters):
+            raise LocalSmokeError("construction audit allocated weights or made an empty model")
+        rows.append(
+            {
+                "candidate_id": candidate.candidate_id,
+                "family_id": candidate.family_id,
+                "factory_entrypoint": f"{candidate.factory_id}:build_model",
+                "parameter_count": parameter_count,
+                "state_schema_sha256": canonical_sha256(
+                    tuple((name, list(value.shape), str(value.dtype)) for name, value in parameters)
+                ),
+            }
+        )
+        del model, parameters
+        if len(rows) % 100 == 0:
+            gc.collect()
+    if (
+        len(rows) != 11_200
+        or len({row["candidate_id"] for row in rows}) != 11_200
+        or len({row["family_id"] for row in rows}) != 22
+    ):
+        raise LocalSmokeError("construction audit totals differ from the active corpus")
+    result: dict[str, Any] = {
+        "version": "perfseer_v3_nrp_a10_nonvision_manifest_construction_audit_v1",
+        "candidate_count": len(rows),
+        "family_count": len({row["family_id"] for row in rows}),
+        "production_eligible": False,
+        "rows": rows,
+    }
+    result["result_sha256"] = canonical_sha256(result)
+    atomic_write_json(
+        Path(workspace).resolve() / "manifest-construction-audit.json", result
+    )
+    return canonical_value(
+        {
+            key: value for key, value in result.items() if key != "rows"
+        }
+    )
+
+
 def run_speech_precision_matrix_smoke(
     workspace: str | Path,
     *,
@@ -697,6 +764,7 @@ __all__ = [
     "run_local_smoke",
     "run_family_matrix_smoke",
     "run_nonvision_fixture_matrix_smoke",
+    "run_manifest_construction_audit",
     "run_speech_precision_matrix_smoke",
     "select_smoke_candidate",
     "select_nonvision_fixture_matrix",

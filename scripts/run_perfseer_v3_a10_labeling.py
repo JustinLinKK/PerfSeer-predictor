@@ -44,6 +44,7 @@ from perfseer_v3.dataset_pack.local_smoke import (
     LOCAL_SMOKE_MODELS,
     run_family_matrix_smoke,
     run_local_smoke,
+    run_manifest_construction_audit,
     run_nonvision_fixture_matrix_smoke,
     run_speech_precision_matrix_smoke,
     verify_local_smoke,
@@ -168,6 +169,29 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
     )
     if forbidden:
         raise RuntimeError("credential-like files are present in the image source")
+    corpus_probe = None
+    if EXPECTED_PROFILE == "native_a10_nonvision_4gpu_v1":
+        from perfseer_v3.dataset_pack.model_registry import load_model_registry
+        from perfseer_v3.dataset_pack.sampler import build_target_manifest
+
+        active = build_target_manifest()
+        models = load_model_registry()
+        tasks = load_task_registry()
+        if (
+            len(active.candidates) != 11_200
+            or len(tasks.entries) != 12
+            or len(models.entries) != 22
+            or any(row.source_modality == "vision" for row in active.candidates)
+            or any(row.modality == "vision" for row in tasks.entries)
+            or any(row.modality == "vision" for row in models.entries)
+        ):
+            raise RuntimeError("active image registry still contains vision work")
+        corpus_probe = {
+            "candidate_count": 11_200,
+            "task_count": 12,
+            "family_count": 22,
+            "active_vision_count": 0,
+        }
     cuda_probe = None
     if arguments.hardware_mode is not None:
         from perfseer_v3.dataset_pack.supervisor import (
@@ -212,6 +236,7 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
         "cuda_architectures": architectures,
         "cuda_probe": cuda_probe,
         "credential_files_found": 0,
+        "corpus_probe": corpus_probe,
     }
 
 
@@ -299,6 +324,7 @@ def _parser() -> argparse.ArgumentParser:
     smoke.add_argument("--model", action="append", choices=LOCAL_SMOKE_MODELS)
     smoke.add_argument("--all-families", action="store_true")
     smoke.add_argument("--fixture-matrix", action="store_true")
+    smoke.add_argument("--construction-audit", action="store_true")
     smoke.add_argument("--speech-precision-matrix", action="store_true")
     smoke.add_argument("--kaggle-executable", default="kaggle")
 
@@ -352,10 +378,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if arguments.command == "smoke-local":
         if sum(
-            (arguments.all_families, arguments.fixture_matrix, arguments.speech_precision_matrix)
+            (
+                arguments.all_families,
+                arguments.fixture_matrix,
+                arguments.construction_audit,
+                arguments.speech_precision_matrix,
+            )
         ) > 1:
             raise ValueError("select only one fixture matrix")
-        if arguments.fixture_matrix:
+        if arguments.construction_audit:
+            if arguments.model:
+                raise ValueError("--construction-audit cannot be combined with --model")
+            result = run_manifest_construction_audit(arguments.workspace)
+        elif arguments.fixture_matrix:
             if arguments.model:
                 raise ValueError("--fixture-matrix cannot be combined with --model")
             result = run_nonvision_fixture_matrix_smoke(arguments.workspace)

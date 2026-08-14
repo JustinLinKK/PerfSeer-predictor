@@ -67,6 +67,10 @@ docker buildx build --platform linux/amd64 --load \
   -t "perfseer-v3-a10-nonvision:${PERFSEER_SOURCE_REVISION}" .
 export PERFSEER_LOCAL_IMAGE="perfseer-v3-a10-nonvision:${PERFSEER_SOURCE_REVISION}"
 docker run --rm "$PERFSEER_LOCAL_IMAGE" analyze
+docker run --rm --read-only --tmpfs /tmp:rw,size=8g \
+  -v "$PWD/.local/nonvision-construction:/workspace:rw" \
+  "$PERFSEER_LOCAL_IMAGE" smoke-local \
+  --workspace /workspace --construction-audit
 ```
 
 Verify imports, hashes, CUDA kernels, the read-only runtime, and the actual local RTX
