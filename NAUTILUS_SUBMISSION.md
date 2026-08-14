@@ -1,30 +1,37 @@
-# Submit the PerfSeer Disaster V2 Labeler to NRP Nautilus
+# Submit the PerfSeer Continuous A10 Campaign to NRP Nautilus
 
-This is the only active operator guide in this repository. Follow it from top to
-bottom to publish the immutable image and run the 11,200-label non-vision campaign.
-The Job uses one Pod, four independent workers, and four NVIDIA A10 GPUs. Each
-worker owns one GPU; this is not DDP or NCCL training.
+This is the only active operator guide. One Kubernetes Job runs the complete
+workflow in order:
 
-Commands in sections 6 through 10 modify Nautilus and must be run by the operator.
-No cluster or registry command was executed while preparing this repository.
+`32-label pilot -> pilot verification -> chunks 0-43 -> complete verification -> verified export`
 
-## 1. Understand the two dataset replacements
+The Pod has four independent workers and four NVIDIA A10 GPUs. Each worker owns
+one GPU; this is not DDP or NCCL. The Job resumes verified receipts from the PVC
+if Kubernetes starts its one replacement Pod.
 
-Two unavailable Kaggle competitions are no longer part of the active campaign:
+Only the operator should run the Kubernetes mutation commands below. Building and
+publishing this repository did not create, change, submit, execute into, or copy
+from any Nautilus resource.
 
-| Unavailable historical task | Active replacement | Active prepared view |
+## 1. Understand the active datasets
+
+The active non-vision corpus has 11,200 labels, 12 Kaggle tasks, 22 model families,
+and 33,600 retained measured epochs. Vision work is excluded because it belongs to
+a teammate's separate corpus.
+
+Two deprecated competitions were replaced:
+
+| Historical task | Active replacement | Prepared view |
 | --- | --- | --- |
-| ICML 2013 Whale Challenge | [TensorFlow Speech Recognition](https://www.kaggle.com/competitions/tensorflow-speech-recognition-challenge/rules) | Binary `no -> 0`, `yes -> 1`; 2,048 valid 16 kHz WAV files per class |
+| ICML 2013 Whale Challenge | [TensorFlow Speech Recognition](https://www.kaggle.com/competitions/tensorflow-speech-recognition-challenge/rules) | Binary `no -> 0`, `yes -> 1`; exactly 2,048 valid 16 kHz WAVs per class |
 | Detecting Insults in Social Commentary | [NLP with Disaster Tweets](https://www.kaggle.com/competitions/nlp-getting-started/rules) | Binary target; deterministic 4,096-row view of `keyword`, `location`, and `text` |
 
-The active corpus is 11,200 candidates over 12 tasks and 22 model families. It
-retains three measured epochs per label. Historical task IDs and hashes remain only
-as immutable lineage metadata, so old and replacement measurements cannot be
-silently merged.
+Historical IDs and hashes remain only as lineage. Measurements from old and
+replacement datasets must not be silently merged.
 
-## 2. Accept and prove all 12 Kaggle sources
+## 2. Accept and probe all 12 Kaggle competitions
 
-Accept the rules with the same Kaggle account that issued your API token:
+Accept every rules page using the account that issued your Kaggle token:
 
 1. [Disaster Tweets](https://www.kaggle.com/competitions/nlp-getting-started/rules)
 2. [TensorFlow Speech Recognition](https://www.kaggle.com/competitions/tensorflow-speech-recognition-challenge/rules)
@@ -39,25 +46,48 @@ Accept the rules with the same Kaggle account that issued your API token:
 11. [Tabular Playground December 2021](https://www.kaggle.com/competitions/tabular-playground-series-dec-2021/rules)
 12. [Tabular Playground May 2022](https://www.kaggle.com/competitions/tabular-playground-series-may-2022/rules)
 
-Keep the token outside this checkout and restrict it:
+Keep the credential outside this repository:
 
 ```bash
 chmod 0600 "$HOME/.kaggle/kaggle.json"
+kaggle competitions download -c nlp-getting-started \
+  -f sample_submission.csv -p /tmp/perfseer-kaggle-probe
+kaggle competitions download -c tensorflow-speech-recognition-challenge \
+  -f link_to_gcp_credits_form.txt -p /tmp/perfseer-kaggle-probe
 ```
 
-The image preflight downloads a real smallest file from every source. A listing is
-not accepted as proof. Disaster must yield the 22,746-byte
-`sample_submission.csv`; Speech must yield the 50-byte
-`link_to_gcp_credits_form.txt`. Stop on a 403 and accept the rules; never use an
-uncontracted mirror.
+The Pod repeats a real smallest-file download for all 12 sources once before its
+pilot. Merely listing files is not sufficient. Disaster must yield the advertised
+22,746-byte `sample_submission.csv`; Speech must yield the advertised 50-byte
+`link_to_gcp_credits_form.txt`. A 403 is a rules/account blocker—do not substitute
+an uncontracted mirror.
 
-## 3. Commit, build, and verify locally
+## 3. Use the immutable continuous image
 
-Start from a clean commit on
-`feature/perfseer-v3-nautilus-a10-nonvision-4gpu-disaster-v2`:
+The current continuous image is published under a full source-revision tag. The
+exact source revision and digest are recorded here after publication:
 
 ```bash
-git status --short
+export PERFSEER_SOURCE_REVISION=REPLACE_CONTINUOUS_SOURCE_REVISION
+export PERFSEER_REGISTRY=gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling
+export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:REPLACE_CONTINUOUS_DIGEST"
+docker buildx imagetools inspect "$PERFSEER_IMAGE_DIGEST"
+```
+
+The GitLab project must remain public for anonymous Nautilus pulls without an
+image-pull Secret. Never replace this with a tag-only reference and never use
+`latest`.
+
+The previous non-continuous image remains a rollback artifact only:
+
+- Source: `f97f9158abbf530ffe7a714bede3702384aef46d`
+- Digest: `sha256:a8b89892fb98c11e68963c1c7be41dc814ec7fad973d0454a1e8ed7a96a13522`
+
+### Rebuild and publish a future source revision
+
+Run this only for a clean, reviewed commit:
+
+```bash
 export PERFSEER_SOURCE_REVISION=$(git rev-parse HEAD)
 export PERFSEER_LOCAL_IMAGE="perfseer-v3-a10-nonvision-disaster-v2:${PERFSEER_SOURCE_REVISION}"
 python scripts/create_a10_disaster_v2_build_manifest.py \
@@ -66,145 +96,111 @@ docker buildx build --platform linux/amd64 --provenance=false --load \
   -f containers/a10-nonvision-disaster-v2-labeler/Dockerfile \
   -t "$PERFSEER_LOCAL_IMAGE" .
 docker run --rm "$PERFSEER_LOCAL_IMAGE" analyze
-```
-
-Keep `--provenance=false`. NRP's GitLab registry UI can display Buildx
-attestation indexes as `Invalid tag: missing manifest digest` with a false `0 B`
-size. A conventional single-platform manifest avoids that UI incompatibility.
-
-Run the immutable-image and Kaggle gates:
-
-```bash
-docker run --rm --gpus '"device=0"' --read-only --shm-size=32g \
-  --tmpfs /tmp:rw,size=32g \
-  "$PERFSEER_LOCAL_IMAGE" image-preflight \
-  --hardware-mode local-rtx5090 --require-cuda
-docker run --rm --read-only --tmpfs /tmp:rw,size=8g \
-  -v "$HOME/.kaggle:/run/secrets/kaggle:ro" \
-  "$PERFSEER_LOCAL_IMAGE" image-preflight --verify-kaggle-access
-```
-
-The checked-in RTX 5090 verification covers all 32 pilot candidates, all 22
-families, all 12 tasks, five epochs per label, and 96 retained measured epochs. The
-records are explicitly non-production. Repeat it before publishing if source code
-has changed beyond documentation/build metadata:
-
-```bash
-mkdir -p .local/rtx5090
-docker run --rm --gpus '"device=0"' --read-only --shm-size=32g \
-  --tmpfs /tmp:rw,size=32g \
-  -v "$HOME/.kaggle:/run/secrets/kaggle:ro" \
-  -v "$PWD/.local/rtx5090:/workspace:rw" \
-  "$PERFSEER_LOCAL_IMAGE" run-campaign \
-  --workspace /workspace/perfseer-v3-native-a10-nonvision-disaster-local-rtx5090-v2 \
-  --repository-revision "$PERFSEER_SOURCE_REVISION" \
-  --image-digest "local@$(docker image inspect "$PERFSEER_LOCAL_IMAGE" --format '{{.Id}}')" \
-  --local-validation
-docker run --rm --read-only --tmpfs /tmp:rw,size=8g \
-  -v "$PWD/.local/rtx5090:/workspace:ro" \
-  "$PERFSEER_LOCAL_IMAGE" verify \
-  --workspace /workspace/perfseer-v3-native-a10-nonvision-disaster-local-rtx5090-v2 \
-  --local-validation
-```
-
-Local RTX results must contain `production_eligible: false`. Only the four-A10 pilot
-can validate A10 memory fit and real four-worker scheduling.
-
-## 4. Create an NRP GitLab project and publish the image
-
-Create a project at [NRP GitLab](https://gitlab.nrp-nautilus.io), then find its
-registry path under **Deploy -> Container Registry**. NRP documents this workflow in
-[Building in GitLab](https://nrp.ai/documentation/userdocs/development/gitlab/).
-
-```bash
-export PERFSEER_REGISTRY=gitlab-registry.nrp-nautilus.io/REPLACE_GROUP/REPLACE_PROJECT
+docker run --rm "$PERFSEER_LOCAL_IMAGE" run-continuous --help
 docker login gitlab-registry.nrp-nautilus.io
 docker tag "$PERFSEER_LOCAL_IMAGE" "$PERFSEER_REGISTRY:$PERFSEER_SOURCE_REVISION"
 docker push "$PERFSEER_REGISTRY:$PERFSEER_SOURCE_REVISION"
 docker buildx imagetools inspect "$PERFSEER_REGISTRY:$PERFSEER_SOURCE_REVISION"
 ```
 
-Copy the registry's resolved 64-character SHA-256, then set and inspect a digest-only
-reference:
+Keep `--provenance=false`; it produces a conventional single-platform Docker V2
+manifest that the NRP GitLab registry UI handles correctly. Do not include Kaggle
+or registry credentials in Git, build arguments, layers, or YAML.
+
+## 4. Set the verified namespace, PVC, and Secret names
+
+The namespace is `ecepxie`:
 
 ```bash
-export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:REPLACE_RESOLVED_DIGEST"
-case "$PERFSEER_IMAGE_DIGEST" in
-  gitlab-registry.nrp-nautilus.io/*@sha256:????????????????????????????????????????????????????????????????) ;;
-  *) echo "invalid digest-only image" >&2; exit 1 ;;
-esac
+export PERFSEER_NAMESPACE=ecepxie
+export PERFSEER_PVC=perfseer-panns-jingbin-260808-a0af09
+export PERFSEER_KAGGLE_SECRET=perfseer-kaggle-disaster-v2
 ```
 
-Never submit a tag-only image. Do not place Kaggle or registry credentials in Git,
-build arguments, image layers, or Job YAML.
-
-## 5. Set your namespace and render the PVC
-
-NRP currently requires resource limits to remain within 20% of requests; these Jobs
-use equal requests and limits for Guaranteed QoS. Review the current
-[cluster policy](https://nrp.ai/documentation/userdocs/start/policies/) before
-submission.
+The existing PVC was read-only queried on August 14, 2026. It was `Bound`, 700 GiB,
+`ReadWriteMany`, backed by `rook-cephfs`, and not mounted by a current Pod. Its
+metadata owner is Jingbin, which the operator confirmed is them. Recheck it before
+submission:
 
 ```bash
-export PERFSEER_NAMESPACE=REPLACE_NAMESPACE
-mkdir -p .local
-sed "s/REPLACE_NAMESPACE/$PERFSEER_NAMESPACE/" \
-  k8s/a10-nonvision-disaster-v2-labeler-pvc.yaml \
-  > .local/disaster-v2-pvc.yaml
+kubectl get pvc "$PERFSEER_PVC" --namespace "$PERFSEER_NAMESPACE" -o wide
+kubectl describe pvc "$PERFSEER_PVC" --namespace "$PERFSEER_NAMESPACE"
 ```
 
-Inspect `.local/disaster-v2-pvc.yaml`. It requests a 700 GiB `ReadWriteMany`
-`rook-cephfs` volume. The workflow writes unique atomic candidate files and uses an
-exclusive campaign lock; it never installs pip or conda packages on CephFS, matching
-[NRP CephFS guidance](https://nrp.ai/documentation/userdocs/storage/ceph/).
+The campaign writes only below
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2` and uses both a
+continuous-controller lock and atomic phase state. Do not run another campaign
+against that workspace concurrently.
 
-## 6. Create the Kaggle Secret and PVC — operator actions
+## 5. Create the dedicated Kaggle Secret once — operator action
 
-The following commands modify your namespace:
+Query first:
 
 ```bash
-kubectl create secret generic perfseer-kaggle-disaster-v2 \
-  --namespace "$PERFSEER_NAMESPACE" \
-  --from-file=kaggle.json="$HOME/.kaggle/kaggle.json"
-kubectl apply -f .local/disaster-v2-pvc.yaml
-kubectl get secret perfseer-kaggle-disaster-v2 --namespace "$PERFSEER_NAMESPACE"
-kubectl get pvc perfseer-v3-a10-nonvision-disaster-v2 \
+kubectl get secret "$PERFSEER_KAGGLE_SECRET" \
   --namespace "$PERFSEER_NAMESPACE"
 ```
 
-## 7. Render and inspect the pilot locally
-
-Rendering is local and does not contact Kubernetes:
+If it is absent, create it. This is a namespace mutation and must be run by you:
 
 ```bash
+kubectl create secret generic "$PERFSEER_KAGGLE_SECRET" \
+  --namespace "$PERFSEER_NAMESPACE" \
+  --from-file=kaggle.json="$HOME/.kaggle/kaggle.json"
+kubectl get secret "$PERFSEER_KAGGLE_SECRET" \
+  --namespace "$PERFSEER_NAMESPACE"
+```
+
+The Job mounts this Secret read-only with file mode `0400`. Do not apply a new PVC;
+the renderer below uses the existing approved claim.
+
+## 6. Render and inspect the single continuous Job locally
+
+Rendering only parses and verifies YAML locally; it does not contact the cluster:
+
+```bash
+mkdir -p .local
 python scripts/render_a10_disaster_v2_nautilus_job.py \
-  --output .local/disaster-v2-pilot.yaml \
+  --output .local/disaster-v2-continuous-ecepxie.yaml \
   --namespace "$PERFSEER_NAMESPACE" \
   --image "$PERFSEER_IMAGE_DIGEST" \
   --source-revision "$PERFSEER_SOURCE_REVISION" \
-  --pvc perfseer-v3-a10-nonvision-disaster-v2 \
-  --secret perfseer-kaggle-disaster-v2 \
-  --mode pilot
-sed -n '1,260p' .local/disaster-v2-pilot.yaml
+  --pvc "$PERFSEER_PVC" \
+  --secret "$PERFSEER_KAGGLE_SECRET" \
+  --mode continuous
+sed -n '1,260p' .local/disaster-v2-continuous-ecepxie.yaml
 ```
 
-Confirm the digest-only image, four `nvidia.com/gpu` requests and limits, required
-`NVIDIA-A10` affinity, 32 CPU, 128 GiB memory, 32 GiB ephemeral storage, 32 GiB
-`/dev/shm`, read-only Secret, correct PVC/workspace, `backoffLimit: 0`, and 48-hour
-deadline. NRP's [GPU guidance](https://nrp.ai/documentation/userdocs/running/gpu-pods/)
-states that the controller automatically adds the reserved-node toleration for a
-four-GPU Job.
+The renderer fails unless the Job has all of these properties:
 
-## 8. Submit the pilot and collect feedback immediately — operator actions
+- digest-only public NRP GitLab image;
+- command `run-continuous` and the exact Disaster V2 workspace;
+- one Pod/controller with four independent workers;
+- four `nvidia.com/gpu` requests and limits;
+- required `nvidia.com/gpu.product: NVIDIA-A10` affinity;
+- equal requests/limits of 32 CPU, 128 GiB RAM, and 32 GiB ephemeral storage;
+- 32 GiB `/dev/shm`;
+- read-only root filesystem and Kaggle Secret;
+- the existing 700 GiB RWX PVC;
+- `backoffLimit: 1`, seven-day deadline, and 120-second termination grace.
+
+Equal requests and limits satisfy the current [NRP resource policy](https://nrp.ai/documentation/userdocs/start/policies/).
+NRP's [GPU guidance](https://nrp.ai/documentation/userdocs/running/gpu-pods/)
+documents product affinity and the reserved-node behavior for multi-GPU requests.
+
+## 7. Submit once and inspect immediately — operator action
+
+This is the only normal campaign submission:
 
 ```bash
-kubectl apply -f .local/disaster-v2-pilot.yaml
-export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-pilot
+kubectl apply -f .local/disaster-v2-continuous-ecepxie.yaml
+export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-continuous
 kubectl get job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE" -o wide
 kubectl get pod --namespace "$PERFSEER_NAMESPACE" \
   -l "job-name=$PERFSEER_JOB" -o wide
 export PERFSEER_POD=$(kubectl get pod --namespace "$PERFSEER_NAMESPACE" \
-  -l "job-name=$PERFSEER_JOB" -o jsonpath='{.items[0].metadata.name}')
+  -l "job-name=$PERFSEER_JOB" \
+  -o jsonpath='{.items[0].metadata.name}')
 kubectl describe pod "$PERFSEER_POD" --namespace "$PERFSEER_NAMESPACE"
 kubectl logs "$PERFSEER_POD" --namespace "$PERFSEER_NAMESPACE" \
   --all-containers=true
@@ -212,8 +208,12 @@ kubectl get events --namespace "$PERFSEER_NAMESPACE" \
   --sort-by=.lastTimestamp | tail -100
 ```
 
-Start the required durable monitor. It samples every 60 seconds through the first
-five minutes and every 20 minutes afterward:
+Do not submit separate pilot/chunk/export Jobs while the continuous Job exists. It
+will stop immediately if the pilot fails, and it will never start a later chunk
+after a failed chunk or global-integrity failure. Candidate-local failures use the
+existing bounded retry/quarantine/replacement rules before a phase can succeed.
+
+## 8. Start the durable replacement-Pod-aware monitor
 
 ```bash
 mkdir -p record
@@ -224,72 +224,93 @@ nohup scripts/monitor_a10_nonvision_job.sh \
 echo $! >"record/${PERFSEER_JOB}-monitor.pid"
 ```
 
-The pilot passes only when its receipt verifies 32 accepted labels and four unique,
-homogeneous NVIDIA A10 UUIDs. If it fails, report the failed Pod, exit code, relevant
-log tail, and corrective action before submitting anything else.
+The monitor follows every Pod carrying the Job label, including the replacement
+Pod, polls every 60 seconds for the first five minutes and every 20 minutes
+afterward, and stops only after recording a `Complete` or `Failed` Job condition.
+The container also writes structured progress to stdout and atomically updates:
 
-## 9. Run the 44 production chunks sequentially — operator actions
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/state/continuous_campaign_progress.json`
 
-The pilot labels remain canonical. Chunks 0–42 add 256 accepted labels each; chunk
-43 adds the final 160. Never run overlapping chunks.
+Progress records identify the phase, completed chunks, accepted-label count,
+failure details, and final archive hash. The terminal receipt is:
 
-```bash
-export PERFSEER_CHUNK_INDEX=0
-python scripts/render_a10_disaster_v2_nautilus_job.py \
-  --output ".local/disaster-v2-chunk-${PERFSEER_CHUNK_INDEX}.yaml" \
-  --namespace "$PERFSEER_NAMESPACE" \
-  --image "$PERFSEER_IMAGE_DIGEST" \
-  --source-revision "$PERFSEER_SOURCE_REVISION" \
-  --pvc perfseer-v3-a10-nonvision-disaster-v2 \
-  --secret perfseer-kaggle-disaster-v2 \
-  --mode chunk --chunk-index "$PERFSEER_CHUNK_INDEX"
-kubectl apply -f ".local/disaster-v2-chunk-${PERFSEER_CHUNK_INDEX}.yaml"
-```
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/state/continuous_campaign_receipt.json`
 
-Immediately repeat the diagnostics and monitor setup from section 8 using Job name
-`perfseer-v3-a10-nonvision-disaster-v2-chunk-NN`. Wait for verified completion before
-incrementing the index. Resume a failed chunk with the same index and PVC after the
-cause is fixed. Candidate-local OOM, compile, model, timeout, or child-process errors
-are isolated; hardware, credentials, archive drift, workspace corruption, or failed
-GPU cleanup stop the Job globally.
+If the Job fails, immediately collect the failed Pod name, exit code, relevant log
+tail, and recent events before deciding on a correction.
 
-## 10. Export and download the completed release — operator actions
+## 9. Verify and download the final release
 
-```bash
-python scripts/render_a10_disaster_v2_nautilus_job.py \
-  --output .local/disaster-v2-export.yaml \
-  --namespace "$PERFSEER_NAMESPACE" \
-  --image "$PERFSEER_IMAGE_DIGEST" \
-  --source-revision "$PERFSEER_SOURCE_REVISION" \
-  --pvc perfseer-v3-a10-nonvision-disaster-v2 \
-  --secret perfseer-kaggle-disaster-v2 \
-  --mode export
-kubectl apply -f .local/disaster-v2-export.yaml
-```
+Successful Job logs end with a `campaign_complete` event containing the archive
+path and SHA-256. The archive is under:
 
-The verified `.tar.zst` contains `labels.jsonl`, exact training configurations,
-requested/final microbatch and accumulation, OOM repair histories, content-addressed
-model/runtime source bundles, factory entrypoints, the candidate index, receipts,
-failure/quarantine ledgers, manifests, and `SHA256SUMS`. It contains no trained
-weights or checkpoints.
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/releases/`
 
-Move the large archive through NRP S3/rclone, following
-[NRP's data-movement guide](https://nrp.ai/documentation/userdocs/storage/move-data/).
-Do not use `kubectl cp` for it. Verify the SHA-256 on the PVC, after transfer, and
-again after local download, then reconstruct all models offline:
+It contains:
+
+- `labels.jsonl` with measurements and provenance;
+- one canonical training configuration per candidate, including requested batch,
+  final microbatch, gradient accumulation, precision, optimizer, scheduler, seeds,
+  execution mode, checkpointing, and repair history;
+- content-addressed model/runtime source bundles and factory entrypoints;
+- the candidate join index, receipts, manifests, failure/quarantine ledgers, and
+  `SHA256SUMS`;
+- no trained weights or checkpoints.
+
+Move the large archive using NRP S3/rclone as described in the
+[NRP data-movement guide](https://nrp.ai/documentation/userdocs/storage/move-data/).
+Do not use `kubectl cp` for a large release. Verify the reported SHA-256 after each
+transfer and again locally:
 
 ```bash
-sha256sum perfseer-v3-a10-nonvision-disaster-v2-complete-*.tar.zst
+sha256sum downloads/perfseer-v3-a10-nonvision-disaster-v2-complete-*.tar.zst
 docker run --rm --read-only --tmpfs /tmp:rw,size=16g \
   -v "$PWD/downloads:/release:ro" "$PERFSEER_LOCAL_IMAGE" verify-export \
   --archive /release/REPLACE_ARCHIVE.tar.zst
 ```
 
-## Recovery boundary
+## 10. Recovery tools
 
-The active production workspace is exactly:
+Kubernetes may create one replacement Pod automatically. It reruns the 12 access
+gates, then resumes the pilot/chunk receipts on the PVC. A verified terminal
+receipt causes an immediate verification-only exit instead of repeating work.
 
-`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2`
+If both Pods fail or the seven-day Job deadline expires, preserve the PVC. After
+fixing the cause, delete only the failed Job object and submit the same verified
+manifest again; do not delete the PVC or workspace:
 
-Do not reuse an older V1, Speech-only, V100, AWS A10G, or pre-Disaster workspace.
-The workflow deliberately rejects old manifests, receipts, and locks.
+```bash
+kubectl delete job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE"
+kubectl apply -f .local/disaster-v2-continuous-ecepxie.yaml
+```
+
+The older single-phase renderer modes remain emergency tools. Use them only after
+the continuous Job is terminal/deleted and only for the phase named by the failure
+receipt:
+
+```bash
+# Pilot recovery
+python scripts/render_a10_disaster_v2_nautilus_job.py \
+  --output .local/disaster-v2-pilot.yaml \
+  --namespace "$PERFSEER_NAMESPACE" --image "$PERFSEER_IMAGE_DIGEST" \
+  --source-revision "$PERFSEER_SOURCE_REVISION" --pvc "$PERFSEER_PVC" \
+  --secret "$PERFSEER_KAGGLE_SECRET" --mode pilot
+
+# One failed chunk; replace N with 0-43
+python scripts/render_a10_disaster_v2_nautilus_job.py \
+  --output .local/disaster-v2-chunk-N.yaml \
+  --namespace "$PERFSEER_NAMESPACE" --image "$PERFSEER_IMAGE_DIGEST" \
+  --source-revision "$PERFSEER_SOURCE_REVISION" --pvc "$PERFSEER_PVC" \
+  --secret "$PERFSEER_KAGGLE_SECRET" --mode chunk --chunk-index N
+
+# Export recovery after complete verification
+python scripts/render_a10_disaster_v2_nautilus_job.py \
+  --output .local/disaster-v2-export.yaml \
+  --namespace "$PERFSEER_NAMESPACE" --image "$PERFSEER_IMAGE_DIGEST" \
+  --source-revision "$PERFSEER_SOURCE_REVISION" --pvc "$PERFSEER_PVC" \
+  --secret "$PERFSEER_KAGGLE_SECRET" --mode export
+```
+
+The active workspace is exactly
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2`. Never migrate a
+V1, Speech-only, V100, AWS A10G, or pre-Disaster receipt into it.

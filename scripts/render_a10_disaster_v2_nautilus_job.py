@@ -22,6 +22,7 @@ PROFILE = "native_a10_nonvision_disaster_v2"
 CHUNK_COUNT = 44
 EXPORT_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-export-job.yaml")
 CAMPAIGN_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-labeler-job.yaml")
+CONTINUOUS_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-continuous-job.yaml")
 JOB_PREFIX = "perfseer-v3-a10-nonvision-disaster-v2"
 CAMPAIGN_LABEL = "native-a10-nonvision-disaster-11200-v2"
 
@@ -51,10 +52,14 @@ def verify_job(
         return
     job_spec = value["spec"]
     pod_spec = job_spec["template"]["spec"]
+    expected_backoff = 1 if mode == "continuous" else 0
+    expected_deadline = 604800 if mode == "continuous" else 172800
+    expected_grace = 120 if mode == "continuous" else None
     if (
-        job_spec.get("backoffLimit") != 0
-        or job_spec.get("activeDeadlineSeconds") != 172800
+        job_spec.get("backoffLimit") != expected_backoff
+        or job_spec.get("activeDeadlineSeconds") != expected_deadline
         or pod_spec.get("restartPolicy") != "Never"
+        or pod_spec.get("terminationGracePeriodSeconds") != expected_grace
     ):
         raise ValueError("Job retry/deadline policy differs from the contract")
     containers = pod_spec.get("containers", [])
@@ -65,11 +70,25 @@ def verify_job(
     if not IMAGE_RE.fullmatch(image) or ZERO_DIGEST in image:
         raise ValueError("image must be a non-placeholder NRP registry digest")
     arguments = container.get("args", [])
-    if arguments[:1] != ["run-campaign"]:
+    expected_command = "run-continuous" if mode == "continuous" else "run-campaign"
+    if arguments[:1] != [expected_command]:
         raise ValueError("Job must execute the unified campaign command")
     if arguments[arguments.index("--workspace") + 1] != WORKSPACE:
         raise ValueError("Job uses another workspace generation")
-    if mode == "pilot":
+    if mode == "continuous":
+        if arguments != [
+            "run-continuous",
+            "--workspace",
+            WORKSPACE,
+            "--repository-revision",
+            arguments[arguments.index("--repository-revision") + 1],
+            "--image-digest",
+            image,
+            "--output-directory",
+            f"{WORKSPACE}/releases",
+        ]:
+            raise ValueError("continuous Job arguments differ")
+    elif mode == "pilot":
         if "--pilot" not in arguments or "--chunk-index" in arguments:
             raise ValueError("pilot Job mode differs")
     else:
@@ -202,17 +221,21 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
         or not 0 <= arguments.chunk_index < CHUNK_COUNT
     ):
         raise ValueError("chunk mode requires --chunk-index in [0, 43]")
-    if arguments.mode in {"pilot", "export"} and arguments.chunk_index is not None:
+    if arguments.mode in {"pilot", "continuous", "export"} and arguments.chunk_index is not None:
         raise ValueError(f"{arguments.mode} mode does not accept --chunk-index")
     template = arguments.template or (
         EXPORT_TEMPLATE
         if arguments.mode == "export"
+        else CONTINUOUS_TEMPLATE
+        if arguments.mode == "continuous"
         else CAMPAIGN_TEMPLATE
     )
     result = _load(template)
     suffix = (
         "pilot"
         if arguments.mode == "pilot"
+        else "continuous"
+        if arguments.mode == "continuous"
         else "export"
         if arguments.mode == "export"
         else f"chunk-{arguments.chunk_index:02d}"
@@ -270,11 +293,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--namespace", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--source-revision", required=True)
-    parser.add_argument(
-        "--pvc", default="perfseer-v3-a10-nonvision-disaster-v2"
-    )
+    parser.add_argument("--pvc", default="perfseer-panns-jingbin-260808-a0af09")
     parser.add_argument("--secret", default="perfseer-kaggle-disaster-v2")
-    parser.add_argument("--mode", choices=("pilot", "chunk", "export"), required=True)
+    parser.add_argument(
+        "--mode", choices=("pilot", "continuous", "chunk", "export"), required=True
+    )
     parser.add_argument("--chunk-index", type=int)
     return parser
 

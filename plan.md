@@ -1,69 +1,57 @@
-# PerfSeer V3 Disaster V2 Single-Workflow Cleanup
+# PerfSeer V3 Continuous A10 Campaign Image
 
 ## Objective
 
-Make the repository operationally single-purpose: build, publish, submit, monitor,
-verify, and export the 11,200-label non-vision four-A10 Disaster V2 campaign. Update
-the operator instructions for both required dataset substitutions and remove old
-datasets, labels, runs, environments, images, Kubernetes templates, documentation,
-and executable workflows. Run no cluster or registry command.
+Modify the current Disaster V2 branch and publish a new immutable image that needs
+one campaign Job submission. The image must run the canonical 32-label pilot,
+verify it, run production chunks 0 through 43 sequentially, verify all 11,200
+labels, create the final release archive, and verify that archive.
 
-## Safety and retained lineage
+## Continuous workflow
 
-- Preserve the current tracked state with local branch
-  `backup/pre-disaster-v2-cleanup-20260814` before deletion.
-- Keep immutable predecessor hashes and the minimum code/registry metadata required
-  to reproduce the active candidate IDs and prove the two substitutions. These are
-  active lineage dependencies, not runnable legacy campaigns.
-- Keep the current Disaster V2 image, 11,200-row contract, focused verification,
-  completed 32-label RTX 5090 verification, active PVC template, renderer, monitor,
-  unified CLI, and focused tests.
-- Remove ignored bulky data rather than archiving it. It will require regeneration
-  or re-download. Tracked material remains recoverable from Git and the backup
-  branch.
+- Add a `run-continuous` CLI command that validates the embedded image identity and
+  runs the Kaggle gates once per Pod.
+- Require the verified pilot receipt before production begins.
+- Verify every chunk receipt before advancing and stop on the first failed phase.
+- Resume from atomic pilot/chunk/export receipts after the Job's one replacement
+  Pod without repeating completed work.
+- Emit structured progress to stdout and an atomic PVC progress record.
+- Write an immutable terminal receipt only after complete corpus verification and
+  successful release reconstruction.
 
-## Documentation and image organization
+## Nautilus contract
 
-- Create one root operator entry point, `NAUTILUS_SUBMISSION.md`, containing the
-  complete image-build, GitLab push, digest resolution, Secret/PVC, pilot, immediate
-  diagnostics, monitoring, sequential chunk, export, and download workflow.
-- Explicitly document both substitutions:
-  - ICML Whale -> TensorFlow Speech Recognition (`yes`/`no`).
-  - Detecting Insults -> Natural Language Processing with Disaster Tweets.
-- Replace the root README with a concise repository map that points to the single
-  operator guide and distinguishes future operator commands from actions performed
-  during implementation.
-- Move the pinned dependency inputs and lock into the active Disaster image
-  directory so no active build depends on an old generic A10 container directory.
-- Regenerate the build manifest and image after the cleanup because the immutable
-  source-tree hash changes.
+- Render one continuous Job in namespace `ecepxie` using PVC
+  `perfseer-panns-jingbin-260808-a0af09` and Secret
+  `perfseer-kaggle-disaster-v2`.
+- Request four `NVIDIA-A10` GPUs for four independent workers, 32 CPU, 128 GiB RAM,
+  32 GiB ephemeral storage, and 32 GiB `/dev/shm`, with equal requests and limits.
+- Use a seven-day whole-Job deadline, `backoffLimit: 1`, `restartPolicy: Never`, a
+  120-second termination grace period, read-only credentials, and a digest-only
+  image.
+- Update the durable monitor for replacement Pods and terminal-state exit.
+- Run no Kubernetes mutation during implementation; Nautilus access is query-only.
 
-## Legacy removal
+## Verification and publication
 
-- Remove old V100, AWS A10G, native-A10 V1, Speech-only, and pre-Disaster container,
-  Kubernetes, renderer, build-manifest, monitor, runbook, and evidence files.
-- Remove old top-level PerfSeer v1/v2/student/source-converter packages, configs,
-  evaluation/training scripts, old tests, reports, calibration packs, submission
-  helpers, and historical planning documents not needed by the active labeler.
-- Remove inactive vision model entrypoint files and the vision adapter entrypoint;
-  retain only shared internals required by active non-vision factories and lineage
-  verification.
-- Remove build outputs, caches, the obsolete CUDA 13 virtual environment, local
-  datasets, labels, checkpoints/models, runs, logs, reports, and calibration output.
-- Keep `record/` only for current Disaster V2 verification and future Nautilus
-  monitor logs.
+- Test phase ordering, pilot gating, failure isolation, resume, terminal fast-exit,
+  export ordering, corrupt-state rejection, and the offline Job contract with fake
+  phase runners.
+- Run only short checks: focused unit tests, `pip check`, `analyze`, RTX 5090 CUDA
+  preflight without labeling, CLI startup, and credential/vision/source checks.
+- Do not run real five-epoch labels, the real 32-label pilot, production chunks, or
+  the 11,200-label campaign.
+- Commit the executable source on the current branch, regenerate its build manifest,
+  build `linux/amd64` with `--provenance=false`, and push a new full-revision tag to
+  `gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling`.
+- Preserve the previous tag and digest, never publish `latest`, anonymously verify
+  the new Docker V2 digest, and render the final continuous YAML locally.
 
-## Verification
+## Acceptance boundary
 
-- Verify the active manifest remains exactly 11,200 candidates, 12 tasks, 22
-  families, and 33,600 measured epochs with the same manifest hash.
-- Verify the substitution crosswalk remains 9,050 unchanged, 1,075 registry rebound,
-  and 1,075 dataset substitution rows.
-- Run the focused Disaster test suite and offline renderer tests; execute no
-  `kubectl`, registry, or Nautilus command.
-- Build the cleaned immutable image locally, run `analyze` and RTX 5090 image
-  preflight, and verify `sm_86`, `sm_120`, dependency/source hashes, and absence of
-  credentials and inactive vision families.
-- Validate the canonical guide's referenced local files and commands, scan for
-  deprecated competitions outside the explicit lineage section, and leave a clean
-  Git worktree.
+- One operator Job submission includes pilot, production, complete verification,
+  and export.
+- The seven-day deadline includes the initial Pod and its single retry. If both Pods
+  fail or the deadline expires, durable PVC progress remains but the same manifest
+  must be submitted again.
+- Actual four-A10 behavior remains the operator-run production acceptance test.

@@ -33,6 +33,7 @@ from perfseer_v3.dataset_pack.a10_campaign import (
     verify_campaign,
     verify_local_validation,
 )
+from perfseer_v3.dataset_pack.a10_continuous import run_continuous_campaign
 from perfseer_v3.dataset_pack.a10_export import export_release, verify_release
 from perfseer_v3.dataset_pack.fingerprints import canonical_sha256, file_sha256
 from perfseer_v3.dataset_pack.kaggle import KaggleCliClient, validate_external_credentials
@@ -93,6 +94,26 @@ def _load_json(path: Path) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise RuntimeError(f"{path} must contain one JSON object")
     return value
+
+
+def _prepare_production_identity(arguments: argparse.Namespace) -> Mapping[str, Any]:
+    manifest = _load_json(arguments.build_manifest)
+    if manifest.get("source_revision") != arguments.repository_revision:
+        raise RuntimeError("Job revision differs from the embedded build manifest")
+    lock_path = (
+        REPOSITORY_ROOT
+        / "containers/a10-nonvision-disaster-v2-labeler/requirements.lock"
+    )
+    if file_sha256(lock_path) != manifest.get("dependency_lock_sha256"):
+        raise RuntimeError("Job dependency lock differs from its build manifest")
+    os.environ["PERFSEER_CONTAINER_DIGEST"] = arguments.image_digest
+    os.environ["PERFSEER_BUILD_SOURCE_REVISION"] = str(manifest["source_revision"])
+    os.environ["PERFSEER_BUILD_SOURCE_TREE_SHA256"] = str(manifest["source_tree_sha256"])
+    os.environ["PERFSEER_BUILD_DEPENDENCY_LOCK_SHA256"] = str(
+        manifest["dependency_lock_sha256"]
+    )
+    os.environ["PERFSEER_BUILD_IMAGE_IDENTITY"] = str(manifest["image_identity"])
+    return manifest
 
 
 def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
@@ -365,6 +386,21 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument("--chunk-index", type=int)
     run.add_argument("--max-new-accepted", type=int, default=256)
 
+    continuous = commands.add_parser("run-continuous")
+    continuous.add_argument("--workspace", type=Path, required=True)
+    continuous.add_argument(
+        "--mlebench-checkout", type=Path, default=Path("/opt/mle-bench")
+    )
+    continuous.add_argument("--repository-revision", required=True)
+    continuous.add_argument("--image-digest", required=True)
+    continuous.add_argument("--output-directory", type=Path, required=True)
+    continuous.add_argument("--kaggle-executable", default="kaggle")
+    continuous.add_argument(
+        "--build-manifest",
+        type=Path,
+        default=Path("/opt/perfseer/build-manifest.json"),
+    )
+
     verify = commands.add_parser("verify")
     verify.add_argument("--workspace", type=Path, required=True)
     completeness = verify.add_mutually_exclusive_group(required=True)
@@ -460,22 +496,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if arguments.command == "run-campaign":
-        manifest = _load_json(arguments.build_manifest)
-        if manifest.get("source_revision") != arguments.repository_revision:
-            raise RuntimeError("Job revision differs from the embedded build manifest")
-        lock_path = (
-            REPOSITORY_ROOT
-            / "containers/a10-nonvision-disaster-v2-labeler/requirements.lock"
-        )
-        if file_sha256(lock_path) != manifest.get("dependency_lock_sha256"):
-            raise RuntimeError("Job dependency lock differs from its build manifest")
+        _prepare_production_identity(arguments)
         if not arguments.skip_kaggle_preflight:
             _preflight_kaggle()
-        os.environ["PERFSEER_CONTAINER_DIGEST"] = arguments.image_digest
-        os.environ["PERFSEER_BUILD_SOURCE_REVISION"] = str(manifest["source_revision"])
-        os.environ["PERFSEER_BUILD_SOURCE_TREE_SHA256"] = str(manifest["source_tree_sha256"])
-        os.environ["PERFSEER_BUILD_DEPENDENCY_LOCK_SHA256"] = str(manifest["dependency_lock_sha256"])
-        os.environ["PERFSEER_BUILD_IMAGE_IDENTITY"] = str(manifest["image_identity"])
         receipt = run_campaign(
             workspace=arguments.workspace,
             repository_root=REPOSITORY_ROOT,
@@ -487,6 +510,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             local_validation=arguments.local_validation,
             chunk_index=arguments.chunk_index,
             max_new_accepted=arguments.max_new_accepted,
+        )
+        print(json.dumps(receipt, indent=2, sort_keys=True))
+        return 0
+    if arguments.command == "run-continuous":
+        _prepare_production_identity(arguments)
+        receipt = run_continuous_campaign(
+            workspace=arguments.workspace,
+            repository_root=REPOSITORY_ROOT,
+            mlebench_checkout=arguments.mlebench_checkout,
+            repository_revision=arguments.repository_revision,
+            image_digest=arguments.image_digest,
+            output_directory=arguments.output_directory,
+            kaggle_executable=arguments.kaggle_executable,
+            preflight=_preflight_kaggle,
         )
         print(json.dumps(receipt, indent=2, sort_keys=True))
         return 0
