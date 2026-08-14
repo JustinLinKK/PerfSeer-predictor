@@ -6,7 +6,9 @@ from dataclasses import asdict
 import gc
 import importlib
 import json
+import os
 from pathlib import Path
+import tempfile
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -421,9 +423,40 @@ def run_nonvision_fixture_matrix_smoke(workspace: str | Path) -> Mapping[str, An
     backend = Rtx5090TelemetryBackend()
     device = torch.device("cuda")
     candidates = select_nonvision_fixture_matrix()
-    rows = [
-        _run_fixture_one_batch_update(candidate, device) for candidate in candidates
-    ]
+    root = Path(workspace).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    cache_environment = (
+        "TORCHINDUCTOR_CACHE_DIR",
+        "TRITON_CACHE_DIR",
+        "PYTORCH_KERNEL_CACHE_PATH",
+    )
+    previous_cache_environment = {
+        name: os.environ.get(name) for name in cache_environment
+    }
+    with tempfile.TemporaryDirectory(
+        prefix=".fixture-compiler-cache-",
+        dir=root,
+    ) as cache_directory:
+        cache_root = Path(cache_directory)
+        for name, child in zip(
+            cache_environment,
+            ("inductor", "triton", "torch-kernels"),
+            strict=True,
+        ):
+            path = cache_root / child
+            path.mkdir()
+            os.environ[name] = str(path)
+        try:
+            rows = [
+                _run_fixture_one_batch_update(candidate, device)
+                for candidate in candidates
+            ]
+        finally:
+            for name, previous in previous_cache_environment.items():
+                if previous is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = previous
     covered = set().union(*(_fixture_coverage_tokens(row) for row in candidates))
     result: dict[str, Any] = {
         "version": (
@@ -439,7 +472,7 @@ def run_nonvision_fixture_matrix_smoke(workspace: str | Path) -> Mapping[str, An
         "updates": rows,
     }
     result["result_sha256"] = canonical_sha256(result)
-    atomic_write_json(Path(workspace).resolve() / "nonvision-fixture-matrix.json", result)
+    atomic_write_json(root / "nonvision-fixture-matrix.json", result)
     return canonical_value(result)
 
 

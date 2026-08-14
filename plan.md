@@ -60,9 +60,12 @@ Build and test locally only; execute no cluster or registry command.
   inventory, archive, count, and class failure.
 - Exercise all five affected families and four precision paths with real
   Disaster data when Kaggle access permits.
-- Re-run the 11,200-construction audit, 123-route fixture matrix, concurrency and
+- Re-run the 11,200-construction audit, 177-route fixture matrix, concurrency and
   injected-failure tests, export reconstruction, dependency/image preflight,
-  secret scan, and local YAML verifier.
+  secret scan, and local YAML verifier. The fixture matrix must execute the
+  declared eager or Inductor path and cover every retained generated lineage in
+  both execution modes, every realized lineage/precision pair, and every
+  generated optimizer/modality pair.
 - Rebuild after executable-source changes and run the 32-label, five-epoch RTX
   5090 workflow only when all twelve real Kaggle download gates pass. If the
   Disaster or Speech agreement remains blocked, record the external blocker and

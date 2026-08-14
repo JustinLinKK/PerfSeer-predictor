@@ -213,6 +213,60 @@ def test_fixture_matrix_covers_generated_runtime_interactions() -> None:
         }
 
 
+def test_fixture_matrix_uses_an_isolated_writable_compiler_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack import local_smoke
+    from perfseer_v3.dataset_pack.sampler import build_target_manifest
+
+    candidate = next(
+        row
+        for row in build_target_manifest().candidates
+        if row.family_id == "independent_generated"
+        and row.execution["mode"] == "compiled"
+    )
+    previous = {
+        "TORCHINDUCTOR_CACHE_DIR": "/read-only/inductor",
+        "TRITON_CACHE_DIR": "/read-only/triton",
+        "PYTORCH_KERNEL_CACHE_PATH": "/read-only/torch-kernels",
+    }
+    for name, value in previous.items():
+        monkeypatch.setenv(name, value)
+    observed: dict[str, str] = {}
+
+    def execute(_candidate: object, _device: object) -> dict[str, object]:
+        for name in previous:
+            value = os.environ[name]
+            observed[name] = value
+            assert Path(value).is_dir()
+            assert Path(value).is_relative_to(tmp_path)
+        return {
+            "configuration_id": candidate.candidate_id,
+            "family_id": candidate.family_id,
+            "task_id": candidate.task_id,
+            "one_batch_update": "passed",
+        }
+
+    monkeypatch.setattr(
+        local_smoke,
+        "Rtx5090TelemetryBackend",
+        lambda: SimpleNamespace(hardware_provenance={"scope": "fixture"}),
+    )
+    monkeypatch.setattr(
+        local_smoke,
+        "select_nonvision_fixture_matrix",
+        lambda: (candidate,),
+    )
+    monkeypatch.setattr(local_smoke, "_run_fixture_one_batch_update", execute)
+
+    local_smoke.run_nonvision_fixture_matrix_smoke(tmp_path)
+
+    assert set(observed) == set(previous)
+    assert all(os.environ[name] == value for name, value in previous.items())
+    assert all(not Path(value).exists() for value in observed.values())
+
+
 def test_local_validation_preserves_unstable_generated_measurements() -> None:
     from dataclasses import replace
     import math

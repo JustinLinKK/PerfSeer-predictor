@@ -64,7 +64,11 @@ export PERFSEER_LOCAL_IMAGE="perfseer-v3-a10-nonvision-disaster-v2:${PERFSEER_SO
 docker run --rm "$PERFSEER_LOCAL_IMAGE" analyze
 ```
 
-Run the offline construction, 123-route fixture, import/hash, and source checks:
+Run the offline construction, 177-route fixture, import/hash, and source checks.
+The fixture matrix performs a real backward/optimizer update on each route,
+invokes Inductor for compiled candidates, resets compiler state between routes to
+match the production fresh-process contract, and covers all retained generated
+lineages in both execution modes:
 
 ```bash
 docker run --rm --read-only --tmpfs /tmp:rw,size=8g \
