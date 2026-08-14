@@ -1,0 +1,41 @@
+{
+  "anonymous_pull_verified": true,
+  "architecture": "linux/amd64",
+  "build_manifest_sha256": "c099fdc5ac1452460237227ceb6de49877761db239595c5a96a3f4d44632aac8",
+  "build_provenance": false,
+  "config_digest": "sha256:74569a461b6910aefc451c8a3305fe1b83585d36b03b50f6f9ec0ee4dd3fdca0",
+  "dependency_lock_sha256": "e8211e60e566285c0d37d9125fe94a9fbb9c1704892157ac6ab570cb4742bc39",
+  "final_job_yaml": ".local/disaster-v2-continuous-ecepxie.yaml",
+  "final_job_yaml_sha256": "2f43a6e393eb23c184f5bf4cec04db71a1e9b1e6f0cd2206b94edc781b3bf5ff",
+  "image_digest": "sha256:7551c71cd10a7f089357797b469db5dae4eccac9bf31f736b573bb20d5424ad9",
+  "layer_count": 19,
+  "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+  "previous_image_digest": "sha256:9049486024b6ef8025b93262dcc4fa084c8b2e4308afda2c2fabffe72692428c",
+  "previous_source_revision": "278787447cd5469251ba3838aed9d49d97d27a89",
+  "published_at": "2026-08-14",
+  "registry": "gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling",
+  "source_revision": "81a24dc920d3bf02762da3de2e2bddcaba0e7dd4",
+  "source_tree_sha256": "efa412228a2f345513b97324e7842a15f8089f2cc729cf8dadb2f6b7d5328434",
+  "tag": "81a24dc920d3bf02762da3de2e2bddcaba0e7dd4",
+  "verification": {
+    "analyze_candidate_count": 11200,
+    "analyze_family_count": 22,
+    "analyze_task_count": 12,
+    "cli_run_continuous_help": "passed",
+    "credential_files_found": 0,
+    "cuda_architectures_required": [
+      "sm_86",
+      "sm_120"
+    ],
+    "embedded_build_manifest": "matched_checkout",
+    "embedded_exporter_sha256": "1541535b2ce351f049f4be813eea1f9883ae73ae0afbe8abf6dc171d83f0513b",
+    "exporter_integration_tests": "12 passed",
+    "focused_disaster_v2_tests": "42 passed",
+    "inactive_vision_count": 0,
+    "local_cuda_device": "NVIDIA GeForce RTX 5090",
+    "local_cuda_preflight": "passed_non_production",
+    "pip_check": "passed",
+    "python_syntax": "passed",
+    "source_and_build_hashes": "matched_checkout"
+  }
+}

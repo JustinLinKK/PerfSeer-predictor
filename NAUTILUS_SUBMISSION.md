@@ -68,9 +68,9 @@ The current continuous image is published under a full source-revision tag. The
 exact source revision and digest are recorded here after publication:
 
 ```bash
-export PERFSEER_SOURCE_REVISION=278787447cd5469251ba3838aed9d49d97d27a89
+export PERFSEER_SOURCE_REVISION=81a24dc920d3bf02762da3de2e2bddcaba0e7dd4
 export PERFSEER_REGISTRY=gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling
-export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:9049486024b6ef8025b93262dcc4fa084c8b2e4308afda2c2fabffe72692428c"
+export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:7551c71cd10a7f089357797b469db5dae4eccac9bf31f736b573bb20d5424ad9"
 docker buildx imagetools inspect "$PERFSEER_IMAGE_DIGEST"
 ```
 
@@ -78,10 +78,10 @@ The GitLab project must remain public for anonymous Nautilus pulls without an
 image-pull Secret. Never replace this with a tag-only reference and never use
 `latest`.
 
-The previous non-continuous image remains a rollback artifact only:
+The previous continuous image remains a rollback artifact only:
 
-- Source: `f97f9158abbf530ffe7a714bede3702384aef46d`
-- Digest: `sha256:a8b89892fb98c11e68963c1c7be41dc814ec7fad973d0454a1e8ed7a96a13522`
+- Source: `278787447cd5469251ba3838aed9d49d97d27a89`
+- Digest: `sha256:9049486024b6ef8025b93262dcc4fa084c8b2e4308afda2c2fabffe72692428c`
 
 ### Rebuild and publish a future source revision
 
