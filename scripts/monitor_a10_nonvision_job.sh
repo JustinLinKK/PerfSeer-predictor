@@ -40,7 +40,7 @@ while true; do
   } >>"$monitor_log" 2>&1
 
   monitor_iteration=$((monitor_iteration + 1))
-  if (( monitor_iteration < 5 )); then
+  if (( monitor_iteration <= 5 )); then
     sleep 60
   else
     sleep 1200

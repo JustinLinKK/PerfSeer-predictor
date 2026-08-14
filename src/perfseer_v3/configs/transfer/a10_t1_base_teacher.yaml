@@ -1,7 +1,0 @@
-extends: ../train_hardware_teacher/v3_teacher.yaml
-run:
-  run_id: perfseer_v3_a10_t1_base_teacher
-model:
-  capacity_candidate: T1
-  adapter_rank: 32
-  adapter_policy: base

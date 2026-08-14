@@ -1,0 +1,58 @@
+{
+  "backup_branch": "backup/pre-disaster-v2-cleanup-20260814",
+  "ignored_or_untracked_material": {
+    "recoverable_from_git": false,
+    "moved_to_desktop_trash": true,
+    "recoverable_until_trash_is_emptied": true,
+    "requires_regeneration_or_redownload": true,
+    "targets": [
+      ".graphcode",
+      ".pytest_cache",
+      ".venv",
+      "build",
+      "by_profile_point",
+      "dataset",
+      "datasets",
+      "dist",
+      "label",
+      "logs",
+      "nrp_calibration_pack",
+      "nrp_results_rtx5090_balanced_local",
+      "perfseer.egg-info",
+      "reports",
+      "runs",
+      "legacy entries under record",
+      "root generated logs and indexes",
+      "Python bytecode caches"
+    ],
+    "total_size_before_cleanup_approx_gib": 50.7
+  },
+  "repository_size_after_cleanup_excluding_git_mib": 3.5,
+  "retained_operational_scope": {
+    "candidate_count": 11200,
+    "family_count": 22,
+    "profile": "native_a10_nonvision_disaster_v2",
+    "task_count": 12,
+    "worker_count": 4
+  },
+  "tracked_legacy_files_removed": 372,
+  "tracked_material_recoverable_from_git": true,
+  "verification": {
+    "analyze_candidate_count": 11200,
+    "analyze_family_count": 22,
+    "analyze_measured_epoch_count": 33600,
+    "analyze_task_count": 12,
+    "focused_tests_passed": 22,
+    "lineage_classification_counts": {
+      "dataset_substitution": 1075,
+      "nlp_registry_rebound": 1075,
+      "unchanged": 9050
+    },
+    "offline_render_modes": [
+      "pilot",
+      "chunk-43",
+      "export"
+    ]
+  },
+  "version": "perfseer_v3_disaster_v2_repository_cleanup_v1"
+}

@@ -1,0 +1,60 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: perfseer-v3-a10-nonvision-disaster-v2-export
+  namespace: REPLACE_NAMESPACE
+  labels:
+    app.kubernetes.io/name: perfseer-v3-a10-nonvision-disaster-v2-exporter
+    perfseer.ai/campaign: native-a10-nonvision-disaster-11200-v2
+  annotations:
+    perfseer.ai/source-revision: "0000000000000000000000000000000000000000"
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 21600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: perfseer-v3-a10-nonvision-disaster-v2-exporter
+        perfseer.ai/campaign: native-a10-nonvision-disaster-11200-v2
+    spec:
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: exporter
+          image: gitlab-registry.nrp-nautilus.io/REPLACE_GROUP/perfseer-a10-nonvision-disaster-v2@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          args:
+            - export
+            - --workspace
+            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2
+            - --output-directory
+            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/releases
+            - --complete
+            - --verify-archive
+          env:
+            - name: PERFSEER_A10_IMAGE_PROFILE
+              value: native_a10_nonvision_disaster_v2
+            - name: PERFSEER_LABELER_PROFILE
+              value: native_a10_nonvision_disaster_v2
+          resources:
+            requests: &resources
+              cpu: "4"
+              memory: 16Gi
+              ephemeral-storage: 16Gi
+            limits: *resources
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: temporary-files
+              mountPath: /tmp
+      volumes:
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: perfseer-v3-a10-nonvision-disaster-v2
+        - name: temporary-files
+          emptyDir:
+            sizeLimit: 16Gi

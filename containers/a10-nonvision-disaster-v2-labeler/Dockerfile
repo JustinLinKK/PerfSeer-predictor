@@ -31,7 +31,7 @@ RUN apt-get update \
        tini=0.19.0-1 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/perfseer/repository
-COPY containers/a10-labeler/requirements.lock /tmp/requirements.lock
+COPY containers/a10-nonvision-disaster-v2-labeler/requirements.lock /tmp/requirements.lock
 RUN python -m pip install --break-system-packages --no-cache-dir --require-hashes \
       --extra-index-url https://download.pytorch.org/whl/cu128 \
       -r /tmp/requirements.lock \
@@ -41,8 +41,8 @@ COPY --from=mlebench /opt/mle-bench /opt/mle-bench
 COPY pyproject.toml ./
 COPY src ./src
 COPY scripts/run_perfseer_v3_a10_labeling.py ./scripts/run_perfseer_v3_a10_labeling.py
-COPY containers/a10-labeler/requirements.in ./containers/a10-labeler/requirements.in
-COPY containers/a10-labeler/requirements.lock ./containers/a10-labeler/requirements.lock
+COPY containers/a10-nonvision-disaster-v2-labeler/requirements.in ./containers/a10-nonvision-disaster-v2-labeler/requirements.in
+COPY containers/a10-nonvision-disaster-v2-labeler/requirements.lock ./containers/a10-nonvision-disaster-v2-labeler/requirements.lock
 COPY containers/a10-nonvision-disaster-v2-labeler/Dockerfile ./containers/a10-nonvision-disaster-v2-labeler/Dockerfile
 COPY containers/a10-nonvision-disaster-v2-labeler/build-manifest.json /opt/perfseer/build-manifest.json
 RUN python -m pip install --break-system-packages --no-cache-dir --no-deps . \

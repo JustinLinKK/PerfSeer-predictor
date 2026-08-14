@@ -775,13 +775,16 @@ def test_pilot_lineage_workspace_and_offline_job_contract(tmp_path: Path) -> Non
 def test_image_gate_order_and_active_runbook() -> None:
     dockerfile = (ROOT / "containers/a10-nonvision-disaster-v2-labeler/Dockerfile").read_text()
     cli = (ROOT / "scripts/run_perfseer_v3_a10_labeling.py").read_text()
-    runbook = (ROOT / "docs/PerfSeer_V3_Native_Nautilus_A10_NonVision_Disaster_V2_Runbook.md").read_text()
+    runbook = (ROOT / "NAUTILUS_SUBMISSION.md").read_text()
     assert "native_a10_nonvision_disaster_v2" in dockerfile
     assert "COPY kaggle.json" not in dockerfile
     assert '("disaster-tweets", "tensorflow-speech-yes-no")' in cli
     assert 'disaster.get("downloaded_bytes") != 22_746' in cli
-    assert "Detecting Insults" in runbook and "Historical lineage only" in runbook
-    active = runbook.split("## Historical lineage only", 1)[0]
-    assert "detecting-insults-in-social-commentary/rules" not in active
+    assert "ICML 2013 Whale Challenge" in runbook
+    assert "Detecting Insults in Social Commentary" in runbook
+    assert "tensorflow-speech-recognition-challenge/rules" in runbook
+    assert "nlp-getting-started/rules" in runbook
+    assert "detecting-insults-in-social-commentary/rules" not in runbook
+    assert "the-icml-2013-whale-challenge-right-whale-redux/rules" not in runbook
     assert "scripts/render_a10_disaster_v2_nautilus_job.py" in runbook
     assert "docker push" in runbook and "kubectl apply" in runbook and "nohup" in runbook

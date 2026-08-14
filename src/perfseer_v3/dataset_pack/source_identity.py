@@ -8,57 +8,17 @@ from .fingerprints import canonical_sha256, file_sha256
 from .labeler_profile import PROFILE
 
 
-V100_SOURCE_ROOTS = (
-    "pyproject.toml",
-    "scripts/run_perfseer_v3_v100_labeling.py",
-    "src/perfseer_v3",
-    "containers/v100-labeler/Dockerfile",
-    "containers/v100-labeler/requirements.in",
-    "containers/v100-labeler/requirements.lock",
-)
-A10_SOURCE_ROOTS = (
-    "pyproject.toml",
-    "scripts/run_perfseer_v3_a10_labeling.py",
-    "src/perfseer_v3",
-    "containers/a10-labeler/Dockerfile",
-    "containers/a10-labeler/requirements.in",
-    "containers/a10-labeler/requirements.lock",
-)
-A10_SPEECH_V2_SOURCE_ROOTS = (
-    "pyproject.toml",
-    "scripts/run_perfseer_v3_a10_labeling.py",
-    "src/perfseer_v3",
-    "containers/a10-speech-v2-labeler/Dockerfile",
-    "containers/a10-labeler/requirements.in",
-    "containers/a10-labeler/requirements.lock",
-)
-A10_NONVISION_SOURCE_ROOTS = (
-    "pyproject.toml",
-    "scripts/run_perfseer_v3_a10_labeling.py",
-    "src/perfseer_v3",
-    "containers/a10-nonvision-4gpu-labeler/Dockerfile",
-    "containers/a10-labeler/requirements.in",
-    "containers/a10-labeler/requirements.lock",
-)
 A10_NONVISION_DISASTER_V2_SOURCE_ROOTS = (
     "pyproject.toml",
     "scripts/run_perfseer_v3_a10_labeling.py",
     "src/perfseer_v3",
     "containers/a10-nonvision-disaster-v2-labeler/Dockerfile",
-    "containers/a10-labeler/requirements.in",
-    "containers/a10-labeler/requirements.lock",
+    "containers/a10-nonvision-disaster-v2-labeler/requirements.in",
+    "containers/a10-nonvision-disaster-v2-labeler/requirements.lock",
 )
-SOURCE_ROOTS = (
-    A10_NONVISION_DISASTER_V2_SOURCE_ROOTS
-    if PROFILE.uses_disaster_v2
-    else A10_NONVISION_SOURCE_ROOTS
-    if PROFILE.is_nonvision_4gpu
-    else A10_SPEECH_V2_SOURCE_ROOTS
-    if PROFILE.uses_speech_v2
-    else A10_SOURCE_ROOTS
-    if PROFILE.name == "native_a10"
-    else V100_SOURCE_ROOTS
-)
+if not PROFILE.uses_disaster_v2:
+    raise RuntimeError("this repository only builds the Disaster V2 labeler profile")
+SOURCE_ROOTS = A10_NONVISION_DISASTER_V2_SOURCE_ROOTS
 
 
 def _is_source_file(path: Path) -> bool:
@@ -88,11 +48,7 @@ def source_tree_sha256(repository_root: str | Path) -> str:
 
 
 __all__ = [
-    "A10_SOURCE_ROOTS",
-    "A10_SPEECH_V2_SOURCE_ROOTS",
-    "A10_NONVISION_SOURCE_ROOTS",
     "A10_NONVISION_DISASTER_V2_SOURCE_ROOTS",
     "SOURCE_ROOTS",
-    "V100_SOURCE_ROOTS",
     "source_tree_sha256",
 ]

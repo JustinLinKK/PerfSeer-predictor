@@ -1,0 +1,48 @@
+{
+  "accepted_labels": 32,
+  "aggregate_verification": "passed",
+  "all_compiled_completed_before_epoch_1": true,
+  "all_five_epochs_completed": true,
+  "all_gradients_finite": true,
+  "all_losses_finite": true,
+  "all_targets_valid": true,
+  "diagnostic_records": 0,
+  "execution_modes": {
+    "compiled": 10,
+    "eager": 22
+  },
+  "failed_labels": 0,
+  "family_count": 22,
+  "generated_accepted_labels": 6,
+  "generated_retained_epoch_relative_spread_max": 0.10488276161719921,
+  "gpu_uuid": "GPU-b57f6a60-11ac-2436-63dd-48232ed0f103",
+  "image_digest": "sha256:4d22df3598ccd2689fb6c5b67d8bc3f0dacc2256d9c7e48f293bae2a7e643e7e",
+  "image_identity": "perfseer-v3-a10-nonvision-disaster-v2:eb972cd41",
+  "measured_epoch_backends": {
+    "cuda_eager": 66,
+    "inductor_cuda": 30
+  },
+  "measured_epoch_records": 96,
+  "precision_policies": {
+    "bf16": 7,
+    "fp16_grad_scaler": 8,
+    "fp32_tf32": 13,
+    "mixed_structured": 4
+  },
+  "production_eligible": false,
+  "receipt_record_hash_set_match": true,
+  "receipt_sha256": "b747e2fbb3337be01ec541faec03b860823f44eb16aa386f5c1ba6dcb421e887",
+  "retained_epoch_relative_spread_max": 0.42360081140450706,
+  "row_classifications": {
+    "dataset_substitution": 1,
+    "nlp_registry_rebound": 4,
+    "unchanged": 27
+  },
+  "scope": "five_epoch_real_kaggle_local_rtx5090_validation",
+  "source_revision": "eb972cd415bd9d293e5633503cf2e89a35264e81",
+  "source_tree_sha256": "6d04ef43c9d5e2a76ad86f2a54ae34982de5bcc30fa4f5cfe39578a3fadbd930",
+  "source_workspace_receipt": "/tmp/perfseer-disaster-final-exact/full32-final/perfseer-v3-native-a10-nonvision-disaster-local-rtx5090-v2-eb972cd41/state/local_validation_receipt.json",
+  "status": "passed",
+  "task_count": 12,
+  "version": "perfseer_v3_model_failure_review_full32_verification_v1"
+}

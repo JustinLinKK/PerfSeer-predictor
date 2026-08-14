@@ -1,80 +1,69 @@
-# PerfSeer V3 Disaster-Tweets Substitution
+# PerfSeer V3 Disaster V2 Single-Workflow Cleanup
 
 ## Objective
 
-Create `feature/perfseer-v3-nautilus-a10-nonvision-4gpu-disaster-v2`
-from the clean non-vision four-A10 branch. Preserve the existing V1 corpus,
-manifest, image, and hashes as historical references. Replace the deprecated
-Detecting Insults competition with Kaggle Natural Language Processing with
-Disaster Tweets while keeping all compute and distribution quotas unchanged.
-Build and test locally only; execute no cluster or registry command.
+Make the repository operationally single-purpose: build, publish, submit, monitor,
+verify, and export the 11,200-label non-vision four-A10 Disaster V2 campaign. Update
+the operator instructions for both required dataset substitutions and remove old
+datasets, labels, runs, environments, images, Kubernetes templates, documentation,
+and executable workflows. Run no cluster or registry command.
 
-## Contract and lineage
+## Safety and retained lineage
 
-- Add profile `native_a10_nonvision_disaster_v2` and an isolated workspace at
-  `/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2`.
-- Replace `detecting-insults` at its historical ordinal with task
-  `disaster-tweets`, Kaggle slug `nlp-getting-started`, modality `nlp`, and a
-  binary categorical target. Inputs are ordered keyword, location, and text
-  strings; source IDs are unique Kaggle `id` values.
-- Freeze the advertised three-file inventory and its SHA-256. Fail closed on
-  inventory/archive drift, schema drift, duplicate IDs, empty text, invalid or
-  missing target classes, or fewer than 4,096 valid rows.
-- Select exactly 4,096 training rows with the existing deterministic SHA-256
-  ordering and no replacement.
-- Preserve 11,200 candidates, 12 tasks, 22 families, 33,600 measured epochs,
-  all modality/precision/execution/regime/checkpoint distributions, and exactly
-  2,240 candidates at each effective batch size 32, 64, 128, 256, and 512.
-- Preserve the former 1,075-row insults allocation exactly across BERT, MLA,
-  BiLSTM-CRF, FastText, and DistilBERT and across every compute dimension.
-- Generate a V1-to-V2 crosswalk with 9,050 unchanged rows, 1,075 NLP registry
-  rebounds, and 1,075 dataset substitutions. Preserve task-independent compute
-  signatures and prohibit silent merging of insults and disaster measurements.
-- Bind predecessor IDs/hashes, substitution contract, source locks, and the
-  dataset-substitution flag into results and exports.
+- Preserve the current tracked state with local branch
+  `backup/pre-disaster-v2-cleanup-20260814` before deletion.
+- Keep immutable predecessor hashes and the minimum code/registry metadata required
+  to reproduce the active candidate IDs and prove the two substitutions. These are
+  active lineage dependencies, not runnable legacy campaigns.
+- Keep the current Disaster V2 image, 11,200-row contract, focused verification,
+  completed 32-label RTX 5090 verification, active PVC template, renderer, monitor,
+  unified CLI, and focused tests.
+- Remove ignored bulky data rather than archiving it. It will require regeneration
+  or re-download. Tracked material remains recoverable from Git and the backup
+  branch.
 
-## Image and workflow
+## Documentation and image organization
 
-- Add a sibling immutable Disaster V2 image using the existing pinned PyTorch
-  2.10/CUDA 12.8 base and dependency lock; keep V1 reproducible.
-- Continue using pinned MLE-bench for the other eleven tasks. Use a narrowly
-  scoped, hash-verified CSV preparer for Disaster Tweets, copying only the three
-  contracted files into the prepared source.
-- Lock remote inventory, downloaded archive, and extracted inventory on the
-  workspace. Reject V1 state rather than migrating it.
-- Keep the unified CLI, four independent production A10 workers, one-worker
-  RTX 5090 validation, OOM repair, failure isolation, export, and verification
-  behavior.
-- Preserve the 32 pilot ordinals; regenerate only its five affected IDs. Render
-  V2-specific digest-only pilot, chunk, and export Jobs with the unchanged A10
-  resource contract.
-- Replace the active Detecting Insults gate with Disaster Tweets. Probe Disaster
-  first, TensorFlow Speech Recognition second, and the other ten afterward.
-  Require an actual smallest-file download for every competition.
+- Create one root operator entry point, `NAUTILUS_SUBMISSION.md`, containing the
+  complete image-build, GitLab push, digest resolution, Secret/PVC, pilot, immediate
+  diagnostics, monitoring, sequential chunk, export, and download workflow.
+- Explicitly document both substitutions:
+  - ICML Whale -> TensorFlow Speech Recognition (`yes`/`no`).
+  - Detecting Insults -> Natural Language Processing with Disaster Tweets.
+- Replace the root README with a concise repository map that points to the single
+  operator guide and distinguishes future operator commands from actions performed
+  during implementation.
+- Move the pinned dependency inputs and lock into the active Disaster image
+  directory so no active build depends on an old generic A10 container directory.
+- Regenerate the build manifest and image after the cleanup because the immutable
+  source-tree hash changes.
 
-## Focused acceptance for this implementation
+## Legacy removal
 
-- Verify exact corpus totals, affected allocations, batch totals, unique IDs,
-  historical V1 hashes, and the 9,050/1,075/1,075 crosswalk.
-- Test the custom preparer against valid data and every specified schema,
-  inventory, archive, count, and class failure.
-- Exercise all five affected families and four precision paths with real
-  Disaster data when Kaggle access permits.
-- Rebuild after executable-source changes and run image preflight, a focused
-  Disaster regression suite, and the 20 real one-batch updates formed by five
-  affected families times four precision policies.
-- Preserve earlier broad construction/fixture evidence, but do not require a new
-  11,200-construction audit, 177-route fixture rerun, export reconstruction, or
-  complete 32-label campaign for this dataset-only replacement acceptance.
-- Keep the complete 32-label, five-epoch RTX 5090 workflow in the operator
-  runbook as the later full-release gate. A partially executed broad workflow is
-  not substitution acceptance evidence and must not be described as complete.
-- Run no `kubectl`, Nautilus, image-push, or other cluster command.
+- Remove old V100, AWS A10G, native-A10 V1, Speech-only, and pre-Disaster container,
+  Kubernetes, renderer, build-manifest, monitor, runbook, and evidence files.
+- Remove old top-level PerfSeer v1/v2/student/source-converter packages, configs,
+  evaluation/training scripts, old tests, reports, calibration packs, submission
+  helpers, and historical planning documents not needed by the active labeler.
+- Remove inactive vision model entrypoint files and the vision adapter entrypoint;
+  retain only shared internals required by active non-vision factories and lineage
+  verification.
+- Remove build outputs, caches, the obsolete CUDA 13 virtual environment, local
+  datasets, labels, checkpoints/models, runs, logs, reports, and calibration output.
+- Keep `record/` only for current Disaster V2 verification and future Nautilus
+  monitor logs.
 
-## Assumptions
+## Verification
 
-- Availability and operational stability take priority over preserving the old
-  insults-domain semantics.
-- Existing V1 labels remain a separate corpus; no workspace migration occurs.
-- The operator must accept both Disaster Tweets and TensorFlow Speech
-  Recognition rules before full real-data validation can complete.
+- Verify the active manifest remains exactly 11,200 candidates, 12 tasks, 22
+  families, and 33,600 measured epochs with the same manifest hash.
+- Verify the substitution crosswalk remains 9,050 unchanged, 1,075 registry rebound,
+  and 1,075 dataset substitution rows.
+- Run the focused Disaster test suite and offline renderer tests; execute no
+  `kubectl`, registry, or Nautilus command.
+- Build the cleaned immutable image locally, run `analyze` and RTX 5090 image
+  preflight, and verify `sm_86`, `sm_120`, dependency/source hashes, and absence of
+  credentials and inactive vision families.
+- Validate the canonical guide's referenced local files and commands, scan for
+  deprecated competitions outside the explicit lineage section, and leave a clean
+  Git worktree.

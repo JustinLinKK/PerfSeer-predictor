@@ -46,7 +46,7 @@ def main() -> int:
         text=True,
         timeout=30,
     ).stdout.strip()
-    lock = ROOT / "containers/a10-labeler/requirements.lock"
+    lock = ROOT / "containers/a10-nonvision-disaster-v2-labeler/requirements.lock"
     payload = {
         "version": "perfseer_v3_nrp_a10_nonvision_disaster_image_build_manifest_v2",
         "base_image": BASE_IMAGE,

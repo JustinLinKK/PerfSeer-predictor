@@ -14,14 +14,10 @@ import sys
 from typing import Any, Mapping, Sequence
 
 
-EXPECTED_PROFILE = os.environ.get("PERFSEER_A10_IMAGE_PROFILE", "native_a10")
-if EXPECTED_PROFILE not in {
-    "native_a10",
-    "native_a10_speech_v2",
-    "native_a10_nonvision_4gpu_v1",
-    "native_a10_nonvision_disaster_v2",
-}:
-    raise RuntimeError("A10 image declares an unsupported baked profile")
+ACTIVE_PROFILE = "native_a10_nonvision_disaster_v2"
+EXPECTED_PROFILE = os.environ.get("PERFSEER_A10_IMAGE_PROFILE", ACTIVE_PROFILE)
+if EXPECTED_PROFILE != ACTIVE_PROFILE:
+    raise RuntimeError("this image only supports the Disaster V2 labeler profile")
 os.environ.setdefault("PERFSEER_LABELER_PROFILE", EXPECTED_PROFILE)
 if os.environ["PERFSEER_LABELER_PROFILE"] != EXPECTED_PROFILE:
     raise RuntimeError("A10 image refuses a labeler profile other than its baked identity")
@@ -323,7 +319,8 @@ def _parser() -> argparse.ArgumentParser:
         "--dependency-lock",
         type=Path,
         default=Path(
-            "/opt/perfseer/repository/containers/a10-labeler/requirements.lock"
+            "/opt/perfseer/repository/containers/"
+            "a10-nonvision-disaster-v2-labeler/requirements.lock"
         ),
     )
     preflight.add_argument("--mlebench-checkout", type=Path, default=Path("/opt/mle-bench"))
@@ -340,7 +337,10 @@ def _parser() -> argparse.ArgumentParser:
     smoke.add_argument(
         "--dependency-lock",
         type=Path,
-        default=REPOSITORY_ROOT / "containers/a10-labeler/requirements.lock",
+        default=(
+            REPOSITORY_ROOT
+            / "containers/a10-nonvision-disaster-v2-labeler/requirements.lock"
+        ),
     )
     smoke.add_argument("--build-manifest", type=Path, default=Path("/opt/perfseer/build-manifest.json"))
     smoke.add_argument("--model", action="append", choices=LOCAL_SMOKE_MODELS)
@@ -463,7 +463,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         manifest = _load_json(arguments.build_manifest)
         if manifest.get("source_revision") != arguments.repository_revision:
             raise RuntimeError("Job revision differs from the embedded build manifest")
-        lock_path = REPOSITORY_ROOT / "containers/a10-labeler/requirements.lock"
+        lock_path = (
+            REPOSITORY_ROOT
+            / "containers/a10-nonvision-disaster-v2-labeler/requirements.lock"
+        )
         if file_sha256(lock_path) != manifest.get("dependency_lock_sha256"):
             raise RuntimeError("Job dependency lock differs from its build manifest")
         if not arguments.skip_kaggle_preflight:
