@@ -8,6 +8,7 @@ import math
 import os
 from dataclasses import asdict
 from pathlib import Path
+import threading
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -30,6 +31,38 @@ WORKER_ENVELOPE_VERSION = "perfseer_v3_v100_label_worker_envelope_v1"
 
 class LabelWorkerError(RuntimeError):
     pass
+
+
+def _failure_stage(error: BaseException) -> str:
+    value = f"{error.__class__.__name__} {error}".lower()
+    for stage, tokens in (
+        ("compile", ("compile", "inductor", "triton")),
+        ("loss", ("loss",)),
+        ("backward", ("backward", "gradient", "grad")),
+        ("optimizer", ("optimizer", "scheduler", "parameter update")),
+        ("telemetry", ("telemetry", "nvml")),
+        ("stability", ("non-finite", "nonfinite", "nan", "inf")),
+    ):
+        if any(token in value for token in tokens):
+            return stage
+    return "forward"
+
+
+def _global_integrity_failure(error: BaseException) -> bool:
+    value = f"{error.__class__.__name__} {error}".lower()
+    return any(
+        token in value
+        for token in (
+            "foreign gpu",
+            "foreign process",
+            "nvml",
+            "hardware differs",
+            "hardware identity",
+            "not bound to",
+            "archive drift",
+            "dataset fingerprint",
+        )
+    )
 
 
 def _load_mapping(path: Path) -> Mapping[str, Any]:
@@ -104,11 +137,22 @@ def resolve_transfer_inputs(
 
 def _physical_index() -> int:
     visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-    if not visible.isdigit():
+    if not visible or "," in visible:
         raise LabelWorkerError(
-            "label worker requires CUDA_VISIBLE_DEVICES to contain one physical GPU index"
+            "label worker requires exactly one CUDA_VISIBLE_DEVICES token"
         )
-    return int(visible)
+    # CUDA remaps a single visible physical device to logical device zero.
+    return 0
+
+
+def _start_heartbeat(path: Path | None) -> tuple[threading.Event, threading.Thread | None]:
+    stop = threading.Event()
+    if path is None:
+        return stop, None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.touch(exist_ok=True)
+
+    return stop, None
 
 
 def _envelope(candidate_id: str, *, status: str, payload: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -129,6 +173,7 @@ def run_worker(arguments: argparse.Namespace) -> int:
     )
     if entry is None:
         raise LabelWorkerError("candidate task is absent from the frozen registry")
+    heartbeat_stop, heartbeat_thread = _start_heartbeat(arguments.heartbeat)
     try:
         expected_profile = None
         if arguments.target_hardware_profile is not None:
@@ -211,6 +256,11 @@ def run_worker(arguments: argparse.Namespace) -> int:
             prepared_directory=arguments.prepared,
             archive_sha256=arguments.archive_sha256,
             telemetry_backend=backend,
+            progress_callback=(
+                (lambda: arguments.heartbeat.touch(exist_ok=True))
+                if arguments.heartbeat is not None
+                else None
+            ),
         )
         atomic_write_json(
             arguments.output,
@@ -234,13 +284,17 @@ def run_worker(arguments: argparse.Namespace) -> int:
                 candidate.candidate_id,
                 status="failed",
                 payload={
-                    "failure_stage": "forward",
+                    "failure_stage": _failure_stage(error),
                     "reason_code": f"{error.__class__.__module__}.{error.__class__.__name__}",
+                    "global_integrity_failure": _global_integrity_failure(error),
                 },
             ),
         )
         return 21
     finally:
+        heartbeat_stop.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=2.0)
         if torch.cuda.is_available():
             try:
                 torch.cuda.empty_cache()
@@ -255,6 +309,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prepared", type=Path, required=True)
     parser.add_argument("--archive-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--heartbeat", type=Path)
     parser.add_argument("--target-hardware-profile", type=Path)
     parser.add_argument("--transfer-subset", type=Path)
     parser.add_argument("--base-labels", type=Path)

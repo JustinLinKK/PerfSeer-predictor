@@ -179,7 +179,6 @@ class OomRepairAttempt:
             "dataset_revision",
             "input_signature",
             "training_step_id",
-            "gradient_accumulation_steps",
             "precision_policy",
             "optimizer",
             "scheduler",
@@ -190,11 +189,22 @@ class OomRepairAttempt:
             "observation_protocol_sha256",
             "target_hardware_id",
         )
+        if not PROFILE.is_nonvision_4gpu:
+            preserved = (*preserved, "gradient_accumulation_steps")
         if any(
             getattr(self.parent_candidate, name) != getattr(self.candidate, name)
             for name in preserved
         ):
             raise RepairError("OOM repair changed a non-batch execution or quota field")
+        if PROFILE.is_nonvision_4gpu and (
+            self.parent_candidate.microbatch_size
+            * self.parent_candidate.gradient_accumulation_steps
+            != self.candidate.microbatch_size
+            * self.candidate.gradient_accumulation_steps
+            or self.candidate.gradient_accumulation_steps
+            != self.parent_candidate.gradient_accumulation_steps * 2
+        ):
+            raise RepairError("OOM repair changed requested effective batch")
         history = self.candidate.mutation_specification.get("oom_repair_history", ())
         if not history or history[-1].get("parent_candidate_id") != self.parent_candidate.candidate_id:
             raise RepairError("OOM repair history does not bind its parent")
@@ -255,6 +265,15 @@ def next_oom_repair(
             "repair_index": repair_index,
             "before_batch": parent.microbatch_size,
             "after_batch": next_batch,
+            "before_gradient_accumulation": parent.gradient_accumulation_steps,
+            "after_gradient_accumulation": (
+                parent.gradient_accumulation_steps * 2
+                if PROFILE.is_nonvision_4gpu
+                else parent.gradient_accumulation_steps
+            ),
+            "requested_effective_batch": (
+                parent.microbatch_size * parent.gradient_accumulation_steps
+            ),
             "reason_code": reason_code,
         }
     )
@@ -265,6 +284,11 @@ def next_oom_repair(
             parent,
             batch_plan=_repaired_batch_plan(parent.batch_plan, next_batch),
             microbatch_size=next_batch,
+            gradient_accumulation_steps=(
+                parent.gradient_accumulation_steps * 2
+                if PROFILE.is_nonvision_4gpu
+                else parent.gradient_accumulation_steps
+            ),
             mutation_specification=canonical_value(mutation),
         )
     )
@@ -444,7 +468,6 @@ class QuotaSubstitution:
             "dataset_revision",
             "regime",
             "training_step_id",
-            "gradient_accumulation_steps",
             "precision_policy",
             "optimizer",
             "scheduler",
@@ -454,8 +477,16 @@ class QuotaSubstitution:
             "observation_protocol_sha256",
             "target_hardware_id",
         )
+        if not PROFILE.is_nonvision_4gpu:
+            preserved = (*preserved, "gradient_accumulation_steps")
         if any(getattr(self.candidate, name) != getattr(target, name) for name in preserved):
             raise RepairError("replacement changed family, task, regime, or quota cell")
+        if PROFILE.is_nonvision_4gpu and (
+            self.candidate.microbatch_size
+            * self.candidate.gradient_accumulation_steps
+            != target.microbatch_size * target.gradient_accumulation_steps
+        ):
+            raise RepairError("replacement changed requested effective batch")
         if self.substitution_id != canonical_sha256(self.unhashed_payload()):
             raise RepairError("quota substitution identity drifted")
 
@@ -541,6 +572,11 @@ def make_quota_replacement(
         target.regime,
         target_width=target.target_width,
     )
+    requested_effective_batch = (
+        target.microbatch_size * target.gradient_accumulation_steps
+        if PROFILE.is_nonvision_4gpu
+        else None
+    )
     batch_plan = _batch_plan(
         target.family_id,
         architecture,
@@ -550,6 +586,7 @@ def make_quota_replacement(
         bool(target.activation_checkpointing["enabled"]),
         str(target.optimizer["name"]),
         target.batch_plan.expected_train_examples,
+        requested_effective_batch=requested_effective_batch,
     )
     request = CompatibilityRequest(
         family_id=target.family_id,
@@ -570,6 +607,11 @@ def make_quota_replacement(
             input_signature=input_signature,
             batch_plan=batch_plan,
             microbatch_size=batch_plan.selected_microbatch,
+            gradient_accumulation_steps=(
+                int(requested_effective_batch) // batch_plan.selected_microbatch
+                if requested_effective_batch is not None
+                else target.gradient_accumulation_steps
+            ),
             compatibility_request_sha256=request.sha256,
             seed_policy=canonical_value(seed_policy),
             mutation_specification=canonical_value(mutation),
@@ -607,9 +649,12 @@ class QuotaFillResult:
         _sha256(self.target_manifest_sha256, context="target manifest SHA")
         if manifest is not None and self.target_manifest_sha256 != canonical_sha256(asdict(manifest)):
             raise RepairError("quota-fill result targets another manifest")
-        if len(self.accepted_candidates) != 18_000:
-            raise RepairError("quota fill must contain exactly 18,000 accepted candidates")
-        if len({row.candidate_id for row in self.accepted_candidates}) != 18_000:
+        expected_candidates = 11_200 if PROFILE.is_nonvision_4gpu else 18_000
+        if len(self.accepted_candidates) != expected_candidates:
+            raise RepairError(
+                f"quota fill must contain exactly {expected_candidates:,} accepted candidates"
+            )
+        if len({row.candidate_id for row in self.accepted_candidates}) != expected_candidates:
             raise RepairError("quota-fill candidate IDs must be unique")
         if any(row.training_approved for row in self.accepted_candidates):
             raise RepairError("quota planning cannot approve training")

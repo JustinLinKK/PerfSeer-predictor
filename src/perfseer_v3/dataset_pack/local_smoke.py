@@ -11,7 +11,7 @@ import torch
 
 from .fingerprints import canonical_sha256, canonical_value, file_sha256
 from .labeler_profile import PROFILE
-from .quota import FROZEN_QUOTA_CELLS
+from .quota import FROZEN_QUOTA_CELLS, NONVISION_QUOTA_CELLS
 from .kaggle import KaggleCliClient
 from .materialization import TaskMaterializer
 from .mlebench_bridge import PinnedMleBenchPreparer
@@ -42,14 +42,16 @@ from .v100_runner import (
 
 LOCAL_SMOKE_VERSION = (
     "perfseer_v3_nrp_a10_speech_rtx5090_real_label_smoke_v2"
-    if PROFILE.name == "native_a10_speech_v2"
+    if PROFILE.uses_speech_v2
     else "perfseer_v3_nrp_a10_rtx5090_real_label_smoke_v1"
     if PROFILE.is_native_a10
     else "perfseer_v3_rtx5090_real_label_smoke_v1"
 )
 LOCAL_SMOKE_MODELS = (
-    ("panns_cnn14",)
-    if PROFILE.name == "native_a10_speech_v2"
+    tuple(row[1] for row in NONVISION_QUOTA_CELLS)
+    if PROFILE.is_nonvision_4gpu
+    else ("panns_cnn14",)
+    if PROFILE.uses_speech_v2
     else ("panns_cnn14", "cgcnn")
 )
 _V100_CAMPAIGN_FAMILIES = (
@@ -65,14 +67,21 @@ _V100_CAMPAIGN_FAMILIES = (
     "cgcnn",
 )
 CAMPAIGN_FAMILIES = (
-    tuple(row[1] for row in FROZEN_QUOTA_CELLS)
+    tuple(
+        row[1]
+        for row in (
+            NONVISION_QUOTA_CELLS
+            if PROFILE.is_nonvision_4gpu
+            else FROZEN_QUOTA_CELLS
+        )
+    )
     if PROFILE.is_native_a10
     else _V100_CAMPAIGN_FAMILIES
 )
 _MODEL_RULES = {
     "panns_cnn14": (
         "tensorflow-speech-yes-no"
-        if PROFILE.name == "native_a10_speech_v2"
+        if PROFILE.uses_speech_v2
         else "mlsp-2013-birds",
         "fp32_tf32" if PROFILE.is_native_a10 else "fp32_ieee",
     ),
@@ -285,7 +294,7 @@ def _run_fixture_one_batch_update(
         ),
         "fixture_sha256": fixture_sha256,
     }
-    if PROFILE.name == "native_a10_speech_v2":
+    if PROFILE.uses_speech_v2:
         result["input_kind"] = "local_real_format_fixture_only"
     return result
 
@@ -302,7 +311,7 @@ def run_family_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
     result: dict[str, Any] = {
         "version": (
             "perfseer_v3_nrp_a10_speech_rtx5090_family_matrix_smoke_v2"
-            if PROFILE.name == "native_a10_speech_v2"
+            if PROFILE.uses_speech_v2
             else "perfseer_v3_nrp_a10_rtx5090_family_matrix_smoke_v1"
             if PROFILE.is_native_a10
             else "perfseer_v3_rtx5090_family_matrix_smoke_v1"
@@ -317,6 +326,79 @@ def run_family_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
     return canonical_value(result)
 
 
+def _fixture_coverage_tokens(candidate: TargetCandidate) -> set[tuple[str, str]]:
+    tokens = {
+        ("family_precision", f"{candidate.family_id}:{candidate.precision_policy['policy_id']}"),
+        ("execution", str(candidate.execution["mode"])),
+        (
+            "requested_effective_batch",
+            str(candidate.microbatch_size * candidate.gradient_accumulation_steps),
+        ),
+    }
+    if candidate.family_id == "independent_generated":
+        tokens.add(("generated_lineage", candidate.source_lineage))
+        tokens.add(
+            (
+                "generated_structure",
+                str(candidate.architecture_parameters["architecture_specification"]),
+            )
+        )
+    return tokens
+
+
+def select_nonvision_fixture_matrix() -> tuple[TargetCandidate, ...]:
+    """Greedily cover every executable family/precision and generated structure."""
+
+    if not PROFILE.is_nonvision_4gpu:
+        raise LocalSmokeError("non-vision fixture matrix requires its baked profile")
+    manifest = build_target_manifest()
+    required = set().union(
+        *(_fixture_coverage_tokens(row) for row in manifest.candidates)
+    )
+    uncovered = set(required)
+    remaining = list(manifest.candidates)
+    selected: list[TargetCandidate] = []
+    while uncovered:
+        scored = [
+            (
+                len(_fixture_coverage_tokens(row) & uncovered),
+                -row.microbatch_size,
+                row.candidate_id,
+                row,
+            )
+            for row in remaining
+        ]
+        score, _, _, chosen = max(scored, key=lambda value: value[:3])
+        if score == 0:
+            raise LocalSmokeError("fixture matrix cannot cover its required routes")
+        selected.append(chosen)
+        uncovered -= _fixture_coverage_tokens(chosen)
+        remaining.remove(chosen)
+    return tuple(selected)
+
+
+def run_nonvision_fixture_matrix_smoke(workspace: str | Path) -> Mapping[str, Any]:
+    backend = Rtx5090TelemetryBackend()
+    device = torch.device("cuda")
+    candidates = select_nonvision_fixture_matrix()
+    rows = [
+        _run_fixture_one_batch_update(candidate, device) for candidate in candidates
+    ]
+    covered = set().union(*(_fixture_coverage_tokens(row) for row in candidates))
+    result: dict[str, Any] = {
+        "version": "perfseer_v3_nrp_a10_nonvision_rtx5090_fixture_matrix_v1",
+        "production_eligible": False,
+        "hardware_provenance": backend.hardware_provenance,
+        "candidate_count": len(candidates),
+        "family_count": len({row.family_id for row in candidates}),
+        "coverage_tokens": sorted([list(row) for row in covered]),
+        "updates": rows,
+    }
+    result["result_sha256"] = canonical_sha256(result)
+    atomic_write_json(Path(workspace).resolve() / "nonvision-fixture-matrix.json", result)
+    return canonical_value(result)
+
+
 def run_speech_precision_matrix_smoke(
     workspace: str | Path,
     *,
@@ -326,7 +408,7 @@ def run_speech_precision_matrix_smoke(
 ) -> Mapping[str, Any]:
     """Exercise all rebound audio/precision paths on one verified real speech view."""
 
-    if PROFILE.name != "native_a10_speech_v2":
+    if not PROFILE.uses_speech_v2:
         raise LocalSmokeError("speech precision matrix requires the speech V2 profile")
     backend = Rtx5090TelemetryBackend()
     device = torch.device("cuda")
@@ -459,7 +541,7 @@ def run_local_smoke(
     preparer = PinnedMleBenchPreparer(Path(mlebench_checkout))
     records: list[Mapping[str, Any]] = []
     speech_lineage: Mapping[str, Mapping[str, Any]] = {}
-    if PROFILE.name == "native_a10_speech_v2":
+    if PROFILE.uses_speech_v2:
         from .a10_speech_crosswalk import build_crosswalk
 
         speech_lineage = {
@@ -509,7 +591,7 @@ def run_local_smoke(
             "measured_epochs": [3, 4, 5],
             "run": result.to_dict(),
         }
-        if PROFILE.name == "native_a10_speech_v2":
+        if PROFILE.uses_speech_v2:
             from .a10_crosswalk import REFERENCE_MANIFEST_SHA256
             from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
             from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
@@ -575,7 +657,7 @@ def verify_local_smoke(
             or tuple(row.epoch for row in run.epoch_measurements) != (3, 4, 5)
         ):
             raise LocalSmokeError(f"smoke record for {model} violates the contract")
-        if PROFILE.name == "native_a10_speech_v2":
+        if PROFILE.uses_speech_v2:
             provenance = value.get("reference_provenance")
             if (
                 not isinstance(provenance, Mapping)
@@ -614,7 +696,9 @@ __all__ = [
     "Rtx5090TelemetryBackend",
     "run_local_smoke",
     "run_family_matrix_smoke",
+    "run_nonvision_fixture_matrix_smoke",
     "run_speech_precision_matrix_smoke",
     "select_smoke_candidate",
+    "select_nonvision_fixture_matrix",
     "verify_local_smoke",
 ]

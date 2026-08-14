@@ -25,7 +25,7 @@ from .task_registry import MLEBENCH_METADATA_REVISION, TaskRegistryEntry
 
 PREPARED_VIEW_VERSION = (
     "perfseer_v3_nrp_a10_speech_prepared_view_v2"
-    if PROFILE.name == "native_a10_speech_v2"
+    if PROFILE.uses_speech_v2
     else "perfseer_v3_v100_prepared_view_v2"
 )
 PREPARED_EXAMPLE_COUNT = 4_096

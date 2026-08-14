@@ -31,6 +31,7 @@ from .repair import (
     quarantine_candidate,
 )
 from .sampler import TargetCandidate, target_candidate_from_dict
+from .labeler_profile import PROFILE
 from .storage import atomic_write_json
 from .supervisor import (
     AttemptSupervisor,
@@ -41,11 +42,19 @@ from .supervisor import (
 from .task_registry import load_task_registry
 
 
-WORKFLOW_VERSION = "perfseer_v3_v100_18k_workflow_v2"
+WORKFLOW_VERSION = (
+    "perfseer_v3_nrp_a10_nonvision_11200_workflow_v1"
+    if PROFILE.is_nonvision_4gpu
+    else "perfseer_v3_v100_18k_workflow_v2"
+)
 
 
 class WorkflowError(RuntimeError):
     pass
+
+
+class SlotExhaustedError(WorkflowError):
+    """Raised after a quota slot consumes its bounded replacement budget."""
 
 
 @dataclass(frozen=True)
@@ -288,6 +297,11 @@ def _advance_failed_slot(
         failure_stage=failure.failure_stage,
         reason_code=f"{failure.status.value}:{failure.failure_stage.value}",
     )
+    maximum_replacements = 3 if PROFILE.is_nonvision_4gpu else 100
+    if slot.replacement_index >= maximum_replacements:
+        raise SlotExhaustedError(
+            f"quota slot exceeded {maximum_replacements} deterministic replacements"
+        )
     replacement = make_quota_replacement(
         root,
         quarantine,
@@ -301,8 +315,6 @@ def _advance_failed_slot(
         artifact_root / "substitution" / f"{replacement.substitution_id}.json",
         asdict(replacement),
     )
-    if slot.replacement_index >= 99:
-        raise WorkflowError("quota slot exceeded 100 deterministic replacements")
     return SlotState(
         version=WORKFLOW_VERSION,
         root_candidate_id=slot.root_candidate_id,
@@ -553,6 +565,7 @@ def run_task_workflow(
 
 __all__ = [
     "SlotState",
+    "SlotExhaustedError",
     "WORKFLOW_VERSION",
     "WorkflowError",
     "run_task_workflow",

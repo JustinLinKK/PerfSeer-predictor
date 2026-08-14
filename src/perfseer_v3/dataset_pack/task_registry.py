@@ -72,6 +72,7 @@ SPEECH_V2_TASKS = tuple(
     else (task_id, slug, modality)
     for task_id, slug, modality in FROZEN_TASKS
 )
+NONVISION_TASKS = tuple(row for row in SPEECH_V2_TASKS if row[2] != "vision")
 FROZEN_COMPRESSED_SIZE_HINTS = (
     7_760_000_000,
     850_000_000,
@@ -99,6 +100,13 @@ FROZEN_COMPRESSED_SIZE_HINTS = (
 SPEECH_V2_COMPRESSED_SIZE_HINTS = tuple(
     3_762_295_706 if index == 17 else value
     for index, value in enumerate(FROZEN_COMPRESSED_SIZE_HINTS)
+)
+NONVISION_COMPRESSED_SIZE_HINTS = tuple(
+    size
+    for (_, _, modality), size in zip(
+        SPEECH_V2_TASKS, SPEECH_V2_COMPRESSED_SIZE_HINTS, strict=True
+    )
+    if modality != "vision"
 )
 MLEBENCH_METADATA_REVISION = "507f92e1138bb6e40dac5c6ee7a6758e6424bf97"
 TASK_SCHEMA_VERSION = "perfseer_v3_task_schema_v1"
@@ -137,6 +145,10 @@ SPEECH_V2_TASK_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
         "target_width": 2,
         "target_encoding": "categorical_index",
     },
+}
+NONVISION_TASK_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
+    task_id: SPEECH_V2_TASK_SCHEMAS[task_id]
+    for task_id, _, _ in NONVISION_TASKS
 }
 MLEBENCH_SIZE_HINT_SOURCE_URL = (
     "https://github.com/openai/mle-bench/blob/"
@@ -329,14 +341,28 @@ class TaskRegistry:
             raise TaskRegistryError("size-hint source URL must be the pinned MLE-bench Lite table")
         if self.archive_checksum_state != "materialization_required":
             raise TaskRegistryError("archive checksums must be resolved during materialization")
-        speech_v2 = PROFILE.name == "native_a10_speech_v2"
-        expected_tasks = SPEECH_V2_TASKS if speech_v2 else FROZEN_TASKS
+        speech_v2 = PROFILE.uses_speech_v2
+        expected_tasks = (
+            NONVISION_TASKS
+            if PROFILE.is_nonvision_4gpu
+            else SPEECH_V2_TASKS
+            if speech_v2
+            else FROZEN_TASKS
+        )
         expected_sizes = (
-            SPEECH_V2_COMPRESSED_SIZE_HINTS
+            NONVISION_COMPRESSED_SIZE_HINTS
+            if PROFILE.is_nonvision_4gpu
+            else SPEECH_V2_COMPRESSED_SIZE_HINTS
             if speech_v2
             else FROZEN_COMPRESSED_SIZE_HINTS
         )
-        expected_schemas = SPEECH_V2_TASK_SCHEMAS if speech_v2 else FROZEN_TASK_SCHEMAS
+        expected_schemas = (
+            NONVISION_TASK_SCHEMAS
+            if PROFILE.is_nonvision_4gpu
+            else SPEECH_V2_TASK_SCHEMAS
+            if speech_v2
+            else FROZEN_TASK_SCHEMAS
+        )
         substitution = load_speech_substitution_contract() if speech_v2 else None
         identities = tuple((entry.task_id, entry.kaggle_slug, entry.modality) for entry in self.entries)
         if identities != expected_tasks:
@@ -418,7 +444,7 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
     default_source = Path(path).resolve() == DEFAULT_TASK_REGISTRY_PATH.resolve()
     if PROFILE.name != "v100" and default_source:
         root = {**root, "version": PROFILE.task_registry_version, "target_hardware_id": PROFILE.target_hardware_id}
-    if PROFILE.name == "native_a10_speech_v2" and default_source:
+    if PROFILE.uses_speech_v2 and default_source:
         substitution = load_speech_substitution_contract()
         source_entries = list(root["entries"])
         ordinal = int(substitution.payload["new_task"]["ordinal"])
@@ -433,6 +459,13 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
             for key in _SOURCE_ENTRY_KEYS
         }
         root = {**root, "entries": source_entries}
+    if PROFILE.is_nonvision_4gpu and default_source:
+        root = {
+            **root,
+            "entries": [
+                entry for entry in root["entries"] if entry.get("modality") != "vision"
+            ],
+        }
     if root["version"] != TASK_REGISTRY_VERSION:
         raise TaskRegistryError("task registry source version mismatch")
     entries = root["entries"]
@@ -445,7 +478,7 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
     expanded = []
     substitution = (
         load_speech_substitution_contract()
-        if PROFILE.name == "native_a10_speech_v2"
+        if PROFILE.uses_speech_v2
         else None
     )
     for index, value in enumerate(entries):
@@ -472,7 +505,7 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
             "expected_train_examples": expected_train_examples,
             "require_exact_prepared_count": True,
         }
-        if PROFILE.name == "native_a10_speech_v2" and task_id == SPEECH_TASK_ID:
+        if PROFILE.uses_speech_v2 and task_id == SPEECH_TASK_ID:
             assert substitution is not None
             dataset_revision += (
                 "@prepared_view:binary_yes_no_v2"
@@ -498,8 +531,10 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
                 "substitution_contract_sha256": substitution.sha256,
             }
         schemas = (
-            SPEECH_V2_TASK_SCHEMAS
-            if PROFILE.name == "native_a10_speech_v2"
+            NONVISION_TASK_SCHEMAS
+            if PROFILE.is_nonvision_4gpu
+            else SPEECH_V2_TASK_SCHEMAS
+            if PROFILE.uses_speech_v2
             else FROZEN_TASK_SCHEMAS
         )
         expanded.append(
@@ -563,6 +598,9 @@ __all__ = [
     "SPEECH_V2_COMPRESSED_SIZE_HINTS",
     "SPEECH_V2_TASK_SCHEMAS",
     "SPEECH_V2_TASKS",
+    "NONVISION_COMPRESSED_SIZE_HINTS",
+    "NONVISION_TASK_SCHEMAS",
+    "NONVISION_TASKS",
     "TaskRegistry",
     "TaskRegistryError",
     "load_task_registry",

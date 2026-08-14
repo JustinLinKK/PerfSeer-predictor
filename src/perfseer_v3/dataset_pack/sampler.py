@@ -28,7 +28,7 @@ from .generated_lineages import (
 from .labeler_profile import PROFILE
 from .model_registry import ModelRegistry, load_model_registry
 from .models.architecture import resolve_architecture_parameters
-from .quota import QuotaPlan, load_quota_plan
+from .quota import FROZEN_QUOTA_CELLS, QuotaPlan, load_quota_plan
 from .task_registry import TaskRegistry, load_task_registry
 
 
@@ -163,9 +163,23 @@ _FIELD_DOMAINS: Mapping[str, tuple[Any, ...]] = {
 }
 
 
-LIGHT_BATCH_LADDER = (16, 32, 64, 128, 256, 512)
-STANDARD_BATCH_LADDER = (8, 16, 32, 64, 128, 256)
-HEAVY_BATCH_LADDER = (1, 2, 4, 8, 16, 32, 64)
+EFFECTIVE_BATCH_SIZES = (32, 64, 128, 256, 512)
+_OOM_MICROBATCH_LADDER = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+LIGHT_BATCH_LADDER = (
+    _OOM_MICROBATCH_LADDER
+    if PROFILE.is_nonvision_4gpu
+    else (16, 32, 64, 128, 256, 512)
+)
+STANDARD_BATCH_LADDER = (
+    _OOM_MICROBATCH_LADDER[:-1]
+    if PROFILE.is_nonvision_4gpu
+    else (8, 16, 32, 64, 128, 256)
+)
+HEAVY_BATCH_LADDER = (
+    _OOM_MICROBATCH_LADDER[:7]
+    if PROFILE.is_nonvision_4gpu
+    else (1, 2, 4, 8, 16, 32, 64)
+)
 BATCH_LADDERS = {
     "light": LIGHT_BATCH_LADDER,
     "standard": STANDARD_BATCH_LADDER,
@@ -345,6 +359,12 @@ class TargetCandidate:
             or self.gradient_accumulation_steps < 1
         ):
             raise CandidatePlanningError("gradient accumulation must be a positive integer")
+        if PROFILE.is_nonvision_4gpu:
+            effective_batch = self.microbatch_size * self.gradient_accumulation_steps
+            if effective_batch not in EFFECTIVE_BATCH_SIZES:
+                raise CandidatePlanningError(
+                    "non-vision effective batch must be 32--512 by powers of two"
+                )
         learning_rate = self.optimizer.get("learning_rate")
         weight_decay = self.optimizer.get("weight_decay")
         if (
@@ -639,11 +659,16 @@ class TargetManifest:
             raise CandidatePlanningError("target manifest must await task materialization")
         if self.training_approved is not False:
             raise CandidatePlanningError("target manifest cannot approve training")
-        if len(self.candidates) != 18_000:
-            raise CandidatePlanningError("target manifest must contain exactly 18,000 candidates")
+        expected_candidates = 11_200 if PROFILE.is_nonvision_4gpu else 18_000
+        if len(self.candidates) != expected_candidates:
+            raise CandidatePlanningError(
+                f"target manifest must contain exactly {expected_candidates:,} candidates"
+            )
         if len({row.candidate_id for row in self.candidates}) != len(self.candidates):
             raise CandidatePlanningError("target manifest candidate IDs are not unique")
-        if tuple(row.ordinal for row in self.candidates) != tuple(range(18_000)):
+        if tuple(row.ordinal for row in self.candidates) != tuple(
+            range(expected_candidates)
+        ):
             raise CandidatePlanningError("target manifest ordinals are not contiguous")
         models_by_family = {row.family_id: row for row in models.entries}
         tasks_by_id = {row.task_id: row for row in tasks.entries}
@@ -1002,6 +1027,7 @@ def _batch_plan(
     checkpoint_enabled: bool,
     optimizer_id: str,
     expected_train_examples: int,
+    requested_effective_batch: int | None = None,
 ) -> BatchPlan:
     base_tier, effective_tier, reasons = _batch_classification(
         family_id,
@@ -1016,6 +1042,14 @@ def _batch_plan(
     eligible = tuple(value for value in ladder if value <= cap)
     if not eligible:
         raise CandidatePlanningError("prepared epoch view cannot supply eight batches")
+    if PROFILE.is_nonvision_4gpu:
+        if requested_effective_batch not in EFFECTIVE_BATCH_SIZES:
+            raise CandidatePlanningError("non-vision effective batch request is invalid")
+        selected_microbatch = min(int(requested_effective_batch), max(eligible))
+        if selected_microbatch not in eligible:
+            raise CandidatePlanningError("tier cap cannot represent effective batch")
+    else:
+        selected_microbatch = eligible[selection_ordinal % len(eligible)]
     result = BatchPlan(
         version=BATCH_PLAN_VERSION,
         base_tier=base_tier,
@@ -1025,7 +1059,7 @@ def _batch_plan(
         expected_train_examples=expected_train_examples,
         maximum_batch_for_eight_batches=cap,
         promotion_reasons=reasons,
-        selected_microbatch=eligible[selection_ordinal % len(eligible)],
+        selected_microbatch=selected_microbatch,
     )
     result.validate()
     return result
@@ -1102,13 +1136,44 @@ def build_target_manifest() -> TargetManifest:
     }
     candidates: list[TargetCandidate] = []
     batch_selection_counters: Counter[tuple[str, str]] = Counter()
+    historical_offsets: dict[str, int] = {}
+    historical_counts: dict[str, int] = {}
+    historical_offset = 0
+    for _, family_id, _, accepted in FROZEN_QUOTA_CELLS:
+        historical_offsets[family_id] = historical_offset
+        historical_counts[family_id] = accepted
+        historical_offset += accepted
     global_ordinal = 0
     for cell in quota.cells:
         model = model_by_family[cell.family_id]
-        for local_ordinal in range(cell.accepted_configurations):
-            regime = _regime(local_ordinal, cell.accepted_configurations)
+        source_local_ordinals = tuple(range(cell.accepted_configurations))
+        if PROFILE.is_nonvision_4gpu and cell.family_id == "independent_generated":
+            source_local_ordinals = tuple(
+                local_ordinal
+                for local_ordinal in range(historical_counts[cell.family_id])
+                if generated_registry.lineages[
+                    local_ordinal % len(generated_registry.lineages)
+                ].modality
+                != "vision"
+            )
+            if len(source_local_ordinals) != cell.accepted_configurations:
+                raise CandidatePlanningError(
+                    "generated non-vision projection does not contain exactly 2,600 rows"
+                )
+        for local_ordinal in source_local_ordinals:
+            planning_ordinal = (
+                historical_offsets[cell.family_id] + local_ordinal
+                if PROFILE.is_nonvision_4gpu
+                else global_ordinal
+            )
+            regime = _regime(
+                local_ordinal,
+                historical_counts[cell.family_id]
+                if PROFILE.is_nonvision_4gpu
+                else cell.accepted_configurations,
+            )
             lineage_index = (
-                local_ordinal % quota.generated_lineage_minimum
+                local_ordinal % len(generated_registry.lineages)
                 if cell.family_id == "independent_generated"
                 else None
             )
@@ -1145,9 +1210,9 @@ def build_target_manifest() -> TargetManifest:
                 regime,
                 target_width=int(task.target_schema["target_width"]),
             )
-            precision = PRECISION_PATTERN[global_ordinal % len(PRECISION_PATTERN)]
+            precision = PRECISION_PATTERN[planning_ordinal % len(PRECISION_PATTERN)]
             optimizer = DEPLOYMENT_OPTIMIZERS[
-                global_ordinal % len(DEPLOYMENT_OPTIMIZERS)
+                planning_ordinal % len(DEPLOYMENT_OPTIMIZERS)
             ]
             if cell.family_id == "fasttext_embeddingbag" and local_ordinal == 0:
                 optimizer = "sparse_adam"
@@ -1171,13 +1236,13 @@ def build_target_manifest() -> TargetManifest:
                 precision = "fp32_tf32" if PROFILE.is_a10 else "fp32_ieee"
             if cell.family_id == "switch_moe" and precision == "fp16_grad_scaler":
                 precision = "bf16" if PROFILE.is_a10 else "fp32_ieee"
-            checkpoint_enabled = global_ordinal % 5 == 0
+            checkpoint_enabled = planning_ordinal % 5 == 0
             scheduler = DEPLOYMENT_SCHEDULERS[
-                global_ordinal % len(DEPLOYMENT_SCHEDULERS)
+                planning_ordinal % len(DEPLOYMENT_SCHEDULERS)
             ]
             execution_mode = (
                 "compiled"
-                if global_ordinal % 3 == 0
+                if planning_ordinal % 3 == 0
                 and cell.family_id
                 not in {"pix2pix", "bilstm_crf", "gru_rnn_seq2seq", "cgcnn"}
                 else "eager"
@@ -1220,31 +1285,53 @@ def build_target_manifest() -> TargetManifest:
                 "regime": regime,
                 "architecture_parameters": architecture,
             }
-            provisional_batch_plan = _batch_plan(
-                cell.family_id,
-                architecture,
-                signature,
-                local_ordinal,
-                precision,
-                checkpoint_enabled,
-                optimizer,
-                task.expected_train_examples,
-            )
-            batch_counter_key = (
-                cell.family_id,
-                provisional_batch_plan.effective_tier,
-            )
-            batch_plan = _batch_plan(
-                cell.family_id,
-                architecture,
-                signature,
-                batch_selection_counters[batch_counter_key],
-                precision,
-                checkpoint_enabled,
-                optimizer,
-                task.expected_train_examples,
-            )
-            batch_selection_counters[batch_counter_key] += 1
+            if PROFILE.is_nonvision_4gpu:
+                requested_effective_batch = EFFECTIVE_BATCH_SIZES[
+                    global_ordinal % len(EFFECTIVE_BATCH_SIZES)
+                ]
+                batch_plan = _batch_plan(
+                    cell.family_id,
+                    architecture,
+                    signature,
+                    planning_ordinal,
+                    precision,
+                    checkpoint_enabled,
+                    optimizer,
+                    task.expected_train_examples,
+                    requested_effective_batch=requested_effective_batch,
+                )
+                accumulation_steps = (
+                    requested_effective_batch // batch_plan.selected_microbatch
+                )
+            else:
+                provisional_batch_plan = _batch_plan(
+                    cell.family_id,
+                    architecture,
+                    signature,
+                    local_ordinal,
+                    precision,
+                    checkpoint_enabled,
+                    optimizer,
+                    task.expected_train_examples,
+                )
+                batch_counter_key = (
+                    cell.family_id,
+                    provisional_batch_plan.effective_tier,
+                )
+                batch_plan = _batch_plan(
+                    cell.family_id,
+                    architecture,
+                    signature,
+                    batch_selection_counters[batch_counter_key],
+                    precision,
+                    checkpoint_enabled,
+                    optimizer,
+                    task.expected_train_examples,
+                )
+                batch_selection_counters[batch_counter_key] += 1
+                accumulation_steps = GRADIENT_ACCUMULATION[
+                    global_ordinal % len(GRADIENT_ACCUMULATION)
+                ]
             architecture_context = (
                 {
                     "sequential": "sequential",
@@ -1262,7 +1349,7 @@ def build_target_manifest() -> TargetManifest:
                 backend,
                 optimizer,
                 architecture_context,
-                global_ordinal,
+                planning_ordinal,
             )
             payload = {
                 "version": CANDIDATE_VERSION,
@@ -1288,9 +1375,7 @@ def build_target_manifest() -> TargetManifest:
                 ),
                 "batch_plan": batch_plan,
                 "microbatch_size": batch_plan.selected_microbatch,
-                "gradient_accumulation_steps": GRADIENT_ACCUMULATION[
-                    global_ordinal % len(GRADIENT_ACCUMULATION)
-                ],
+                "gradient_accumulation_steps": accumulation_steps,
                 "precision_policy": {
                     "policy_id": precision,
                     "autocast": precision not in {"fp32_ieee", "fp32_tf32"},
@@ -1298,15 +1383,15 @@ def build_target_manifest() -> TargetManifest:
                 },
                 "optimizer": {
                     "name": optimizer,
-                    "learning_rate": (1e-4, 3e-4, 1e-3)[global_ordinal % 3],
-                    "weight_decay": (0.0, 0.01)[global_ordinal % 2],
+                    "learning_rate": (1e-4, 3e-4, 1e-3)[planning_ordinal % 3],
+                    "weight_decay": (0.0, 0.01)[planning_ordinal % 2],
                 },
                 "scheduler": {
                     "name": scheduler,
                     "step_unit": scheduler_step_unit(scheduler),
                     "minimum_lr_ratio": scheduler_minimum_lr_ratio(scheduler),
                     "progress": SCHEDULE_PROGRESS[
-                        global_ordinal % len(SCHEDULE_PROGRESS)
+                        planning_ordinal % len(SCHEDULE_PROGRESS)
                     ],
                 },
                 "activation_checkpointing": {
@@ -1314,7 +1399,7 @@ def build_target_manifest() -> TargetManifest:
                 },
                 "execution": {"mode": execution_mode, "backend_id": backend},
                 "seed_policy": {
-                    "seed": int(canonical_sha256({"ordinal": global_ordinal})[:8], 16)
+                    "seed": int(canonical_sha256({"ordinal": planning_ordinal})[:8], 16)
                 },
                 "coverage_cell_specs": coverage_specs,
                 "coverage_cell_ids": tuple(
@@ -1408,6 +1493,7 @@ def select_generated_gap_wave(
 __all__ = [
     "BATCH_PLAN_VERSION",
     "BATCH_LADDERS",
+    "EFFECTIVE_BATCH_SIZES",
     "BatchPlan",
     "CANDIDATE_VERSION",
     "CandidatePlanningError",

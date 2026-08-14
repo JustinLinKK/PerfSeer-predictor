@@ -15,7 +15,12 @@ from perfseer_v3.op_registry import OperationRegistry
 from .contracts import MODEL_REGISTRY_VERSION, ModelFamilyDefinition
 from .fingerprints import canonical_sha256, canonical_value
 from .labeler_profile import PROFILE
-from .quota import FROZEN_QUOTA_CELLS, QuotaPlan, load_quota_plan
+from .quota import (
+    FROZEN_QUOTA_CELLS,
+    NONVISION_QUOTA_CELLS,
+    QuotaPlan,
+    load_quota_plan,
+)
 from .task_registry import TaskRegistry, load_task_registry
 from .speech_substitution import (
     HISTORICAL_WHALE_TASK_ID,
@@ -235,10 +240,19 @@ class ModelRegistry:
             raise ModelRegistryError("model factory implementation status is not the frozen Phase 3 version")
         if self.quota_plan_sha256 != quota.sha256 or self.task_registry_sha256 != tasks.sha256:
             raise ModelRegistryError("model registry quota/task identity mismatch")
-        frozen = tuple((modality, family_id) for modality, family_id, _, _ in FROZEN_QUOTA_CELLS)
+        quota_cells = (
+            NONVISION_QUOTA_CELLS
+            if PROFILE.is_nonvision_4gpu
+            else FROZEN_QUOTA_CELLS
+        )
+        frozen = tuple(
+            (modality, family_id) for modality, family_id, _, _ in quota_cells
+        )
         actual = tuple((entry.modality, entry.family_id) for entry in self.entries)
         if actual != frozen:
-            raise ModelRegistryError("model registry must exactly follow the ordered 35-cell quota")
+            raise ModelRegistryError(
+                "model registry must exactly follow the active ordered quota"
+            )
         if len({entry.family_id for entry in self.entries}) != len(self.entries):
             raise ModelRegistryError("model family IDs must be unique")
         task_by_id = {entry.task_id: entry for entry in tasks.entries}
@@ -323,7 +337,7 @@ def load_model_registry(
     default_source = Path(path).resolve() == DEFAULT_MODEL_REGISTRY_PATH.resolve()
     if PROFILE.name != "v100" and default_source:
         root = {**root, "version": PROFILE.model_registry_version, "target_hardware_id": PROFILE.target_hardware_id}
-    if PROFILE.name == "native_a10_speech_v2" and default_source:
+    if PROFILE.uses_speech_v2 and default_source:
         contract = load_speech_substitution_contract()
         expected_families = set(contract.payload["affected_families"])
         rebound_entries = []
@@ -346,6 +360,24 @@ def load_model_registry(
         if rebound_families != expected_families:
             raise ModelRegistryError("V2 audio-family registry rebound is incomplete")
         root = {**root, "entries": rebound_entries}
+    if PROFILE.is_nonvision_4gpu and default_source:
+        task_ids = {entry.task_id for entry in tasks.entries}
+        filtered_entries = []
+        for raw_entry in root["entries"]:
+            if raw_entry.get("modality") == "vision":
+                continue
+            entry = dict(raw_entry)
+            entry["adapter_ids"] = [
+                task_id
+                for task_id in entry.get("adapter_ids", ())
+                if task_id in task_ids
+            ]
+            if not entry["adapter_ids"]:
+                raise ModelRegistryError(
+                    f"non-vision family {entry.get('family_id')!r} has no active task"
+                )
+            filtered_entries.append(entry)
+        root = {**root, "entries": filtered_entries}
     entries = root["entries"]
     if not isinstance(entries, list):
         raise ModelRegistryError("model registry entries must be a list")

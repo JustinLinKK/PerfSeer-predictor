@@ -74,6 +74,10 @@ class SupervisorError(RuntimeError):
     pass
 
 
+class TransientAttemptError(SupervisorError):
+    """A candidate-local timeout/crash that may be retried after cleanup."""
+
+
 def await_worker_futures(futures: Sequence[Any]) -> tuple[Any, ...]:
     """Observe every worker result before propagating the first batch failure."""
 
@@ -127,6 +131,26 @@ def validate_a10_gpu_identity(
         )
 
 
+def validate_rtx5090_gpu_identity(
+    name: str,
+    compute_capability: Sequence[int],
+    total_memory_bytes: int,
+) -> None:
+    normalized_name = "".join(
+        character for character in str(name).upper() if character.isalnum()
+    )
+    if (
+        normalized_name != "NVIDIAGEFORCERTX5090"
+        or tuple(compute_capability) != (12, 0)
+        or type(total_memory_bytes) is not int
+        or not 30 * 1024**3 <= total_memory_bytes <= 34 * 1024**3
+    ):
+        raise SupervisorError(
+            "local validation requires exactly one GeForce RTX 5090 with "
+            "compute capability 12.0 and 30--34 GiB"
+        )
+
+
 class GpuProbe(Protocol):
     physical_index: int
     gpu_uuid: str
@@ -145,7 +169,7 @@ class PhysicalGpuSlot:
 
 
 class ParentNvmlProbe:
-    def __init__(self, physical_index: int) -> None:
+    def __init__(self, physical_index: int, *, hardware_mode: str = "production-a10") -> None:
         try:
             import pynvml
 
@@ -159,7 +183,9 @@ class ParentNvmlProbe:
                 uuid = uuid.decode()
             memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
             capability = pynvml.nvmlDeviceGetCudaComputeCapability(handle)
-            if PROFILE.is_native_a10:
+            if hardware_mode == "local-rtx5090":
+                validate_rtx5090_gpu_identity(str(name), capability, int(memory.total))
+            elif PROFILE.is_native_a10:
                 validate_a10_gpu_identity(str(name), capability, int(memory.total))
             else:
                 validate_v100_gpu_identity(str(name), capability, int(memory.total))
@@ -173,6 +199,7 @@ class ParentNvmlProbe:
                 "uuid": self.gpu_uuid,
                 "total_memory_bytes": int(memory.total),
                 "compute_capability": list(capability),
+                "hardware_mode": hardware_mode,
             }
             self.hardware_fingerprint = canonical_sha256(self.hardware_provenance)
         except SupervisorError:
@@ -240,6 +267,60 @@ def discover_a10_probe() -> ParentNvmlProbe:
             f"production labeling requires exactly one visible A10; discovered {count}"
         )
     return ParentNvmlProbe(0)
+
+
+def discover_a10_probes() -> tuple[ParentNvmlProbe, ...]:
+    """Qualify exactly four homogeneous A10s for the non-vision controller."""
+
+    if not PROFILE.is_nonvision_4gpu:
+        raise SupervisorError("four-A10 discovery requires the non-vision profile")
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        count = pynvml.nvmlDeviceGetCount()
+    except Exception as error:
+        raise SupervisorError("NVML cannot enumerate four A10 workers") from error
+    probes = tuple(
+        ParentNvmlProbe(index, hardware_mode="production-a10")
+        for index in range(count)
+    )
+    if len(probes) != 4:
+        raise SupervisorError(
+            f"production labeling requires exactly four visible A10s; discovered {len(probes)}"
+        )
+    if len({row.gpu_uuid for row in probes}) != 4:
+        raise SupervisorError("A10 worker UUIDs are duplicated")
+    identities = {
+        (
+            row.hardware_provenance["name"],
+            tuple(row.hardware_provenance["compute_capability"]),
+            row.hardware_provenance["total_memory_bytes"],
+        )
+        for row in probes
+    }
+    if len(identities) != 1:
+        raise SupervisorError("production labeling refuses mixed A10 hardware")
+    return probes
+
+
+def discover_local_rtx5090_probe() -> ParentNvmlProbe:
+    """Qualify the one-GPU, non-production validation environment."""
+
+    if not PROFILE.is_nonvision_4gpu:
+        raise SupervisorError("RTX 5090 validation requires the non-vision profile")
+    try:
+        import pynvml
+
+        pynvml.nvmlInit()
+        count = pynvml.nvmlDeviceGetCount()
+    except Exception as error:
+        raise SupervisorError("NVML cannot enumerate the RTX 5090 worker") from error
+    if count != 1:
+        raise SupervisorError(
+            f"local validation requires exactly one visible RTX 5090; discovered {count}"
+        )
+    return ParentNvmlProbe(0, hardware_mode="local-rtx5090")
 
 
 def environment_provenance() -> Mapping[str, Any]:
@@ -444,12 +525,19 @@ def _bind_native_a10_provenance(
     candidate: TargetCandidate,
     task_entry: TaskRegistryEntry,
     workspace: Path,
+    *,
+    production_eligible: bool = True,
 ) -> LabelRunRecord:
     if not PROFILE.is_native_a10:
         return record
-    speech_v2 = PROFILE.name == "native_a10_speech_v2"
+    nonvision = PROFILE.is_nonvision_4gpu
+    speech_v2 = PROFILE.uses_speech_v2
     mapping_path = workspace / "state" / (
-        "a10_speech_v2_crosswalk.jsonl" if speech_v2 else "a10_crosswalk.jsonl"
+        "a10_nonvision_crosswalk.jsonl"
+        if nonvision
+        else "a10_speech_v2_crosswalk.jsonl"
+        if speech_v2
+        else "a10_crosswalk.jsonl"
     )
     original_id = None
     v1_id = None
@@ -457,15 +545,17 @@ def _bind_native_a10_provenance(
     root_candidate_id = candidate.candidate_id
     repair_history = candidate.mutation_specification.get("oom_repair_history", ())
     replacement = candidate.mutation_specification.get("quota_replacement")
-    if repair_history:
-        root_candidate_id = str(repair_history[-1]["root_candidate_id"])
-    elif isinstance(replacement, Mapping):
+    if isinstance(replacement, Mapping):
         root_candidate_id = str(replacement["target_candidate_id"])
+    elif repair_history:
+        root_candidate_id = str(repair_history[-1]["root_candidate_id"])
     if mapping_path.is_file():
         for line in mapping_path.read_text(encoding="utf-8").splitlines():
             row = json.loads(line)
             native_key = (
-                "native_v2_candidate_id"
+                "nonvision_candidate_id"
+                if nonvision
+                else "native_v2_candidate_id"
                 if speech_v2
                 else "native_nrp_a10_candidate_id"
             )
@@ -537,17 +627,24 @@ def _bind_native_a10_provenance(
         reference_provenance: Mapping[str, Any] = {
             "original_a10g_candidate_id": original_id,
             "native_v1_candidate_id": v1_id,
-            "native_v2_root_candidate_id": root_candidate_id,
+            (
+                "nonvision_root_candidate_id"
+                if nonvision
+                else "native_v2_root_candidate_id"
+            ): root_candidate_id,
             "original_a10g_manifest_sha256": REFERENCE_MANIFEST_SHA256,
             "native_v1_manifest_sha256": NATIVE_V1_MANIFEST_SHA256,
             "native_v1_crosswalk_sha256": NATIVE_V1_CROSSWALK_SHA256,
             "substitution_contract_sha256": substitution.sha256,
-            "row_classification": lineage_row["row_classification"],
+            "row_classification": lineage_row.get(
+                "row_classification", lineage_row.get("disposition")
+            ),
             "old_semantic_signature": lineage_row["old_semantic_signature"],
             "new_semantic_signature": lineage_row["new_semantic_signature"],
-            "task_independent_compute_signature": lineage_row[
-                "task_independent_compute_signature"
-            ],
+            "task_independent_compute_signature": lineage_row.get(
+                "task_independent_compute_signature",
+                lineage_row.get("new_nonbatch_semantic_signature"),
+            ),
             "resolved_semantic_distribution_signature": semantic_distribution_signature(
                 candidate
             ),
@@ -556,6 +653,25 @@ def _bind_native_a10_provenance(
             "remote_inventory_sha256": remote_inventory_sha256,
             "speech_source_lock_sha256": source_lock_sha256,
         }
+        if nonvision:
+            from .a10_nonvision_crosswalk import PREDECESSOR_MANIFEST_SHA256
+
+            reference_provenance = {
+                **reference_provenance,
+                "predecessor_candidate_id": lineage_row[
+                    "predecessor_candidate_id"
+                ],
+                "predecessor_manifest_sha256": PREDECESSOR_MANIFEST_SHA256,
+                "historical_ordinal": lineage_row["historical_ordinal"],
+                "nonvision_ordinal": lineage_row["nonvision_ordinal"],
+                "lineage_disposition": lineage_row["disposition"],
+                "old_nonbatch_semantic_signature": lineage_row[
+                    "old_nonbatch_semantic_signature"
+                ],
+                "new_nonbatch_semantic_signature": lineage_row[
+                    "new_nonbatch_semantic_signature"
+                ],
+            }
     else:
         reference_provenance = {
             "original_a10g_candidate_id": original_id,
@@ -566,7 +682,7 @@ def _bind_native_a10_provenance(
     environment = environment_provenance()
     bound = replace(
         record,
-        production_eligible=True,
+        production_eligible=production_eligible,
         reference_provenance=reference_provenance,
         build_identity={
             key: str(environment[key])
@@ -652,13 +768,24 @@ def _load_worker_envelope(path: Path, candidate_id: str) -> Mapping[str, Any]:
 @dataclass
 class AttemptSupervisor:
     workspace: Path
-    timeout_seconds: int = 6 * 60 * 60
+    timeout_seconds: float | None = None
+    no_progress_seconds: float | None = None
+    transient_retries: int | None = None
+    production_eligible: bool = True
 
     def __post_init__(self) -> None:
         self.workspace = Path(self.workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
-        if self.timeout_seconds < 1:
+        if self.timeout_seconds is None:
+            self.timeout_seconds = 2 * 60 * 60 if PROFILE.is_nonvision_4gpu else 6 * 60 * 60
+        if self.no_progress_seconds is None:
+            self.no_progress_seconds = 10 * 60 if PROFILE.is_nonvision_4gpu else self.timeout_seconds
+        if self.transient_retries is None:
+            self.transient_retries = 1 if PROFILE.is_nonvision_4gpu else 0
+        if self.timeout_seconds < 0.05 or self.no_progress_seconds < 0.05:
             raise SupervisorError("attempt timeout must be positive")
+        if type(self.transient_retries) is not int or self.transient_retries < 0:
+            raise SupervisorError("transient retry count must be nonnegative")
 
     def run(
         self,
@@ -671,6 +798,37 @@ class AttemptSupervisor:
         archive_sha256: str,
         probe: GpuProbe,
         attempt_index: int,
+    ) -> LabelRunRecord:
+        for retry_index in range(self.transient_retries + 1):
+            try:
+                return self._run_once(
+                    candidate,
+                    task_entry,
+                    view,
+                    public_directory=public_directory,
+                    prepared_directory=prepared_directory,
+                    archive_sha256=archive_sha256,
+                    probe=probe,
+                    attempt_index=attempt_index + retry_index,
+                    retry_index=retry_index,
+                )
+            except TransientAttemptError:
+                if retry_index >= self.transient_retries:
+                    raise
+        raise AssertionError("transient retry loop did not return")
+
+    def _run_once(
+        self,
+        candidate: TargetCandidate,
+        task_entry: TaskRegistryEntry,
+        view: PreparedViewManifest,
+        *,
+        public_directory: Path,
+        prepared_directory: Path,
+        archive_sha256: str,
+        probe: GpuProbe,
+        attempt_index: int,
+        retry_index: int,
     ) -> LabelRunRecord:
         baseline = probe.read()
         if baseline.compute_process_ids:
@@ -707,6 +865,9 @@ class AttemptSupervisor:
         compiler_cache_directory.mkdir(parents=True)
         environment["KAGGLE_CONFIG_DIR"] = str(credential_directory)
         environment["CUDA_VISIBLE_DEVICES"] = str(probe.physical_index)
+        environment["PERFSEER_HARDWARE_MODE"] = (
+            "production-a10" if self.production_eligible else "local-rtx5090"
+        )
         environment["TORCHINDUCTOR_CACHE_DIR"] = str(compiler_cache_directory / "inductor")
         environment["TRITON_CACHE_DIR"] = str(compiler_cache_directory / "triton")
         log_directory = self.workspace / "attempts" / "logs"
@@ -719,6 +880,14 @@ class AttemptSupervisor:
         log_path = Path(raw_log_path)
         log_stream = os.fdopen(log_fd, "wb")
         os.chmod(log_path, 0o600)
+        heartbeat = (
+            self.workspace
+            / "state"
+            / "heartbeats"
+            / f"{candidate.candidate_id}-{attempt_index}.heartbeat"
+        )
+        heartbeat.parent.mkdir(parents=True, exist_ok=True)
+        heartbeat.unlink(missing_ok=True)
         try:
             process = subprocess.Popen(
                 [
@@ -735,6 +904,8 @@ class AttemptSupervisor:
                     archive_sha256,
                     "--output",
                     str(output),
+                    "--heartbeat",
+                    str(heartbeat),
                 ],
                 env=environment,
                 start_new_session=True,
@@ -747,18 +918,38 @@ class AttemptSupervisor:
             shutil.rmtree(compiler_cache_directory)
             raise
         timed_out = False
-        try:
-            process.wait(timeout=self.timeout_seconds)
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        timeout_reason = ""
+        started = time.monotonic()
+        if not hasattr(process, "poll"):
+            try:
+                process.wait(timeout=self.timeout_seconds)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                timeout_reason = "absolute_attempt_limit"
+        else:
+            while process.poll() is None:
+                now = time.monotonic()
+                if now - started >= self.timeout_seconds:
+                    timed_out = True
+                    timeout_reason = "absolute_attempt_limit"
+                    break
+                try:
+                    heartbeat_age = time.time() - heartbeat.stat().st_mtime
+                except OSError:
+                    heartbeat_age = now - started
+                if heartbeat_age >= self.no_progress_seconds:
+                    timed_out = True
+                    timeout_reason = "heartbeat_no_progress"
+                    break
+                time.sleep(0.25)
+        if timed_out:
             os.killpg(process.pid, signal.SIGTERM)
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=10)
-        finally:
-            log_stream.close()
+        log_stream.close()
         try:
             os.killpg(process.pid, 0)
         except ProcessLookupError:
@@ -773,9 +964,14 @@ class AttemptSupervisor:
         finally:
             shutil.rmtree(credential_directory)
             shutil.rmtree(compiler_cache_directory)
+            heartbeat.unlink(missing_ok=True)
         def publish_failure(record: LabelRunRecord) -> LabelRunRecord:
             record = _bind_native_a10_provenance(
-                record, candidate, task_entry, self.workspace
+                record,
+                candidate,
+                task_entry,
+                self.workspace,
+                production_eligible=self.production_eligible,
             )
             path = self.workspace / "attempts" / "failed" / f"{record.run_id}.json"
             output.unlink(missing_ok=True)
@@ -788,25 +984,88 @@ class AttemptSupervisor:
                 f"GPU cleanup failed; aborting campaign; child log: {log_path}"
             )
         if timed_out:
-            raise SupervisorError(
-                "label child timed out; aborting campaign instead of consuming "
-                f"a quota replacement; child log: {log_path}"
+            if not PROFILE.is_nonvision_4gpu:
+                raise SupervisorError(
+                    "label child timed out; aborting campaign instead of consuming "
+                    f"a quota replacement; child log: {log_path}"
+                )
+            if retry_index < self.transient_retries:
+                raise TransientAttemptError(
+                    f"label child {timeout_reason}; retrying once after cleanup; "
+                    f"child log: {log_path}"
+                )
+            return publish_failure(
+                build_failed_label_record(
+                    candidate,
+                    task_entry,
+                    view,
+                    cleanup,
+                    status=AttemptStatus.TIMED_OUT,
+                    failure_stage=FailureStage.TIMEOUT,
+                    gpu_uuid=probe.gpu_uuid,
+                    hardware_sha256=probe.hardware_fingerprint,
+                    attempt_index=attempt_index,
+                )
             )
         try:
             envelope = _load_worker_envelope(output, candidate.candidate_id)
         except SupervisorError as error:
-            raise SupervisorError(
-                "label child exited without a valid diagnostic envelope; aborting "
-                "instead of consuming a quota replacement; "
-                f"return code: {process.returncode}; child log: {log_path}"
-            ) from error
-        if envelope["status"] != "success" or process.returncode != 0:
-            reason_code = str(envelope["payload"].get("reason_code", ""))
-            if envelope["status"] != "oom":
+            if not PROFILE.is_nonvision_4gpu:
                 raise SupervisorError(
-                    f"label child failed with {reason_code or 'unknown_error'}; aborting "
+                    "label child exited without a valid diagnostic envelope; aborting "
                     "instead of consuming a quota replacement; "
                     f"return code: {process.returncode}; child log: {log_path}"
+                ) from error
+            if retry_index < self.transient_retries:
+                raise TransientAttemptError(
+                    "label child exited without a valid envelope; retrying once after "
+                    f"cleanup; return code: {process.returncode}; child log: {log_path}"
+                ) from error
+            return publish_failure(
+                build_failed_label_record(
+                    candidate,
+                    task_entry,
+                    view,
+                    cleanup,
+                    status=AttemptStatus.INTERRUPTED,
+                    failure_stage=FailureStage.FORWARD,
+                    gpu_uuid=probe.gpu_uuid,
+                    hardware_sha256=probe.hardware_fingerprint,
+                    attempt_index=attempt_index,
+                )
+            )
+        if envelope["status"] != "success" or process.returncode != 0:
+            reason_code = str(envelope["payload"].get("reason_code", ""))
+            if envelope["payload"].get("global_integrity_failure") is True:
+                raise SupervisorError(
+                    f"label child reported global integrity failure "
+                    f"{reason_code or 'unknown_error'}; child log: {log_path}"
+                )
+            if envelope["status"] != "oom":
+                if not PROFILE.is_nonvision_4gpu:
+                    raise SupervisorError(
+                        f"label child failed with {reason_code or 'unknown_error'}; aborting "
+                        "instead of consuming a quota replacement; "
+                        f"return code: {process.returncode}; child log: {log_path}"
+                    )
+                raw_stage = str(envelope["payload"].get("failure_stage", "forward"))
+                stage = (
+                    FailureStage(raw_stage)
+                    if raw_stage in {row.value for row in FailureStage}
+                    else FailureStage.FORWARD
+                )
+                return publish_failure(
+                    build_failed_label_record(
+                        candidate,
+                        task_entry,
+                        view,
+                        cleanup,
+                        status=AttemptStatus.QUARANTINED,
+                        failure_stage=stage,
+                        gpu_uuid=probe.gpu_uuid,
+                        hardware_sha256=probe.hardware_fingerprint,
+                        attempt_index=attempt_index,
+                    )
                 )
             raw_stage = str(envelope["payload"].get("failure_stage", "forward"))
             stage = (
@@ -856,7 +1115,11 @@ class AttemptSupervisor:
             attempt_index=attempt_index,
         )
         record = _bind_native_a10_provenance(
-            record, candidate, task_entry, self.workspace
+            record,
+            candidate,
+            task_entry,
+            self.workspace,
+            production_eligible=self.production_eligible,
         )
         current_environment_provenance = environment_provenance()
         hardware_provenance = getattr(probe, "hardware_provenance", None)
@@ -898,14 +1161,18 @@ __all__ = [
     "PhysicalGpuSlot",
     "SUPERVISOR_VERSION",
     "SupervisorError",
+    "TransientAttemptError",
     "await_worker_futures",
     "build_accepted_label_record",
     "build_failed_label_record",
     "discover_v100_probes",
     "discover_a10_probe",
+    "discover_a10_probes",
+    "discover_local_rtx5090_probe",
     "environment_provenance",
     "lock_campaign_environment",
     "wait_for_gpu_cleanup",
     "validate_a10_gpu_identity",
+    "validate_rtx5090_gpu_identity",
     "validate_v100_gpu_identity",
 ]

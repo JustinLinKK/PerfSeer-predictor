@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import threading
 import time
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 import torch
 
@@ -35,7 +35,7 @@ from .task_registry import TaskRegistryEntry
 
 
 MIB = 1024**2
-if PROFILE.name == "native_a10_speech_v2":
+if PROFILE.uses_speech_v2:
     V100_RUN_RESULT_VERSION = "perfseer_v3_nrp_a10_speech_v2_five_epoch_result_v2"
 elif PROFILE.is_native_a10:
     V100_RUN_RESULT_VERSION = "perfseer_v3_nrp_a10_five_epoch_result_v1"
@@ -93,7 +93,19 @@ class NvmlTelemetryBackend:
                 normalized_name = "".join(
                     character for character in str(name).upper() if character.isalnum()
                 )
-                if PROFILE.is_native_a10:
+                hardware_mode = os.environ.get(
+                    "PERFSEER_HARDWARE_MODE", "production-a10"
+                )
+                if PROFILE.is_nonvision_4gpu and hardware_mode == "local-rtx5090":
+                    qualified = (
+                        normalized_name == "NVIDIAGEFORCERTX5090"
+                        and 30 * 1024**3 <= memory.total <= 34 * 1024**3
+                        and (properties.major, properties.minor) == (12, 0)
+                    )
+                    expected_description = (
+                        "local NVIDIA GeForce RTX 5090 with compute capability 12.0"
+                    )
+                elif PROFILE.is_native_a10:
                     qualified = (
                         normalized_name == "NVIDIAA10"
                         and 22 * 1024**3 <= memory.total <= 26 * 1024**3
@@ -115,6 +127,7 @@ class NvmlTelemetryBackend:
                     "uuid": self._uuid,
                     "total_memory_bytes": int(memory.total),
                     "compute_capability": [properties.major, properties.minor],
+                    "hardware_mode": hardware_mode,
                 }
                 self._hardware_profile_sha256 = None
             else:
@@ -445,10 +458,13 @@ def run_five_epoch_training(
     telemetry_interval_seconds: float = 0.1,
     device: str | torch.device = "cuda",
     allow_non_v100_test_device: bool = False,
+    progress_callback: Callable[[], None] | None = None,
 ) -> FiveEpochRunResult:
     """Execute exactly one accepted-path attempt; callers isolate it in a child."""
 
     candidate.validate()
+    progress = progress_callback or (lambda: None)
+    progress()
     task_entry.validate()
     if candidate.task_id != task_entry.task_id:
         raise V100RunError("candidate/task mismatch")
@@ -546,6 +562,7 @@ def run_five_epoch_training(
                     last_loss_for_epoch = step_loss
                     optimizer_steps += 1
                     buffered.clear()
+                    progress()
             if last_loss_for_epoch is None:
                 raise V100RunError("epoch produced no optimizer steps")
             scheduler.step(last_loss_for_epoch, unit="epoch")
@@ -553,6 +570,7 @@ def run_five_epoch_training(
                 torch.cuda.synchronize()
             ended = time.monotonic()
             completed.append(epoch)
+            progress()
             if epoch_loss_finite:
                 finite_losses.append(epoch)
             if epoch_gradients_finite:

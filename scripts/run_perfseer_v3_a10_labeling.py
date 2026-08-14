@@ -15,7 +15,11 @@ from typing import Any, Mapping, Sequence
 
 
 EXPECTED_PROFILE = os.environ.get("PERFSEER_A10_IMAGE_PROFILE", "native_a10")
-if EXPECTED_PROFILE not in {"native_a10", "native_a10_speech_v2"}:
+if EXPECTED_PROFILE not in {
+    "native_a10",
+    "native_a10_speech_v2",
+    "native_a10_nonvision_4gpu_v1",
+}:
     raise RuntimeError("A10 image declares an unsupported baked profile")
 os.environ.setdefault("PERFSEER_LABELER_PROFILE", EXPECTED_PROFILE)
 if os.environ["PERFSEER_LABELER_PROFILE"] != EXPECTED_PROFILE:
@@ -30,7 +34,9 @@ from perfseer_v3.dataset_pack.a10_campaign import (
     analysis_summary,
     run_campaign,
     verify_campaign,
+    verify_local_validation,
 )
+from perfseer_v3.dataset_pack.a10_export import export_release, verify_release
 from perfseer_v3.dataset_pack.fingerprints import canonical_sha256, file_sha256
 from perfseer_v3.dataset_pack.kaggle import KaggleCliClient, validate_external_credentials
 from perfseer_v3.dataset_pack.local_smoke import (
@@ -38,6 +44,7 @@ from perfseer_v3.dataset_pack.local_smoke import (
     LOCAL_SMOKE_MODELS,
     run_family_matrix_smoke,
     run_local_smoke,
+    run_nonvision_fixture_matrix_smoke,
     run_speech_precision_matrix_smoke,
     verify_local_smoke,
 )
@@ -59,6 +66,7 @@ PINNED_IMPORTS = {
     "pandas": "pandas",
     "Pillow": "PIL",
     "py7zr": "py7zr",
+    "pyzstd": "pyzstd",
     "PyYAML": "yaml",
     "scikit-learn": "sklearn",
     "scipy": "scipy",
@@ -105,7 +113,9 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
     if (
         manifest["version"]
         != (
-            "perfseer_v3_nrp_a10_speech_image_build_manifest_v2"
+            "perfseer_v3_nrp_a10_nonvision_image_build_manifest_v1"
+            if EXPECTED_PROFILE == "native_a10_nonvision_4gpu_v1"
+            else "perfseer_v3_nrp_a10_speech_image_build_manifest_v2"
             if EXPECTED_PROFILE == "native_a10_speech_v2"
             else "perfseer_v3_nrp_a10_image_build_manifest_v1"
         )
@@ -159,18 +169,40 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
     if forbidden:
         raise RuntimeError("credential-like files are present in the image source")
     cuda_probe = None
-    if arguments.require_cuda:
-        if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
-            raise RuntimeError("local preflight requires exactly one visible CUDA GPU")
+    if arguments.hardware_mode is not None:
+        from perfseer_v3.dataset_pack.supervisor import (
+            discover_a10_probes,
+            discover_local_rtx5090_probe,
+        )
+
+        if arguments.hardware_mode == "production-a10":
+            probes = discover_a10_probes()
+        else:
+            probes = (discover_local_rtx5090_probe(),)
+        if not torch.cuda.is_available() or torch.cuda.device_count() != len(probes):
+            raise RuntimeError("CUDA visibility differs from qualified NVML workers")
         left = torch.randn((256, 256), device="cuda")
         value = left @ left
         if not bool(torch.isfinite(value).all()):
             raise RuntimeError("CUDA matrix probe is non-finite")
+        cuda_probe = {
+            "hardware_mode": arguments.hardware_mode,
+            "worker_count": len(probes),
+            "gpu_uuids": [row.gpu_uuid for row in probes],
+            "devices": [row.hardware_provenance for row in probes],
+            "finite_matrix": True,
+            "production_eligible": arguments.hardware_mode == "production-a10",
+        }
+    elif arguments.require_cuda:
+        if not torch.cuda.is_available() or torch.cuda.device_count() != 1:
+            raise RuntimeError("legacy CUDA preflight requires one visible GPU")
+        left = torch.randn((256, 256), device="cuda")
+        value = left @ left
         properties = torch.cuda.get_device_properties(0)
         cuda_probe = {
             "name": properties.name,
             "compute_capability": [properties.major, properties.minor],
-            "finite_matrix": True,
+            "finite_matrix": bool(torch.isfinite(value).all()),
             "production_eligible": False,
         }
     return {
@@ -188,8 +220,9 @@ def _preflight_kaggle() -> tuple[Mapping[str, Any], ...]:
     client = KaggleCliClient(maximum_attempts=4, initial_backoff_seconds=1.0)
     client.authenticate()
     entries = load_task_registry().entries
-    if len(entries) != 22:
-        raise RuntimeError("native campaign must gate exactly 22 Kaggle competitions")
+    expected = 12 if EXPECTED_PROFILE == "native_a10_nonvision_4gpu_v1" else 22
+    if len(entries) != expected:
+        raise RuntimeError(f"native campaign must gate exactly {expected} Kaggle competitions")
     ordered_entries = (
         tuple(
             entry
@@ -201,7 +234,10 @@ def _preflight_kaggle() -> tuple[Mapping[str, Any], ...]:
             for entry in entries
             if entry.task_id != "tensorflow-speech-yes-no"
         )
-        if EXPECTED_PROFILE == "native_a10_speech_v2"
+        if EXPECTED_PROFILE in {
+            "native_a10_speech_v2",
+            "native_a10_nonvision_4gpu_v1",
+        }
         else entries
     )
     results = tuple(
@@ -212,7 +248,10 @@ def _preflight_kaggle() -> tuple[Mapping[str, Any], ...]:
         }
         for entry in ordered_entries
     )
-    if EXPECTED_PROFILE == "native_a10_speech_v2":
+    if EXPECTED_PROFILE in {
+        "native_a10_speech_v2",
+        "native_a10_nonvision_4gpu_v1",
+    }:
         speech = results[0]
         if (
             speech.get("task_id") != "tensorflow-speech-yes-no"
@@ -242,6 +281,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     preflight.add_argument("--mlebench-checkout", type=Path, default=Path("/opt/mle-bench"))
     preflight.add_argument("--repository-root", type=Path, default=REPOSITORY_ROOT)
+    preflight.add_argument(
+        "--hardware-mode", choices=("production-a10", "local-rtx5090")
+    )
     preflight.add_argument("--require-cuda", action="store_true")
     preflight.add_argument("--verify-kaggle-access", action="store_true")
 
@@ -256,6 +298,7 @@ def _parser() -> argparse.ArgumentParser:
     smoke.add_argument("--build-manifest", type=Path, default=Path("/opt/perfseer/build-manifest.json"))
     smoke.add_argument("--model", action="append", choices=LOCAL_SMOKE_MODELS)
     smoke.add_argument("--all-families", action="store_true")
+    smoke.add_argument("--fixture-matrix", action="store_true")
     smoke.add_argument("--speech-precision-matrix", action="store_true")
     smoke.add_argument("--kaggle-executable", default="kaggle")
 
@@ -268,6 +311,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--build-manifest", type=Path, default=Path("/opt/perfseer/build-manifest.json"))
     run.add_argument("--skip-kaggle-preflight", action="store_true")
     mode = run.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--local-validation", action="store_true")
     mode.add_argument("--pilot", action="store_true")
     mode.add_argument("--chunk-index", type=int)
     run.add_argument("--max-new-accepted", type=int, default=256)
@@ -275,10 +319,23 @@ def _parser() -> argparse.ArgumentParser:
     verify = commands.add_parser("verify")
     verify.add_argument("--workspace", type=Path, required=True)
     completeness = verify.add_mutually_exclusive_group(required=True)
+    completeness.add_argument("--local-validation", action="store_true")
     completeness.add_argument("--partial", action="store_true")
     completeness.add_argument("--complete", action="store_true")
     verify.add_argument("--local", action="store_true")
     verify.add_argument("--model", action="append", choices=LOCAL_SMOKE_MODELS)
+
+    export = commands.add_parser("export")
+    export.add_argument("--workspace", type=Path, required=True)
+    export.add_argument("--output-directory", type=Path, required=True)
+    export_mode = export.add_mutually_exclusive_group(required=True)
+    export_mode.add_argument("--partial", action="store_true")
+    export_mode.add_argument("--complete", action="store_true")
+    export.add_argument("--verify-archive", action="store_true")
+
+    verify_archive = commands.add_parser("verify-export")
+    verify_archive.add_argument("--archive", type=Path, required=True)
+    verify_archive.add_argument("--skip-reconstruction", action="store_true")
     return parser
 
 
@@ -294,9 +351,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if arguments.command == "smoke-local":
-        if arguments.all_families and arguments.speech_precision_matrix:
+        if sum(
+            (arguments.all_families, arguments.fixture_matrix, arguments.speech_precision_matrix)
+        ) > 1:
             raise ValueError("select only one fixture matrix")
-        if arguments.all_families:
+        if arguments.fixture_matrix:
+            if arguments.model:
+                raise ValueError("--fixture-matrix cannot be combined with --model")
+            result = run_nonvision_fixture_matrix_smoke(arguments.workspace)
+        elif arguments.all_families:
             if arguments.model:
                 raise ValueError("--all-families cannot be combined with --model")
             result = run_family_matrix_smoke(arguments.workspace)
@@ -348,12 +411,33 @@ def main(argv: Sequence[str] | None = None) -> int:
             image_digest=arguments.image_digest,
             kaggle_executable=arguments.kaggle_executable,
             pilot=arguments.pilot,
+            local_validation=arguments.local_validation,
             chunk_index=arguments.chunk_index,
             max_new_accepted=arguments.max_new_accepted,
         )
         print(json.dumps(receipt, indent=2, sort_keys=True))
         return 0
-    if arguments.local:
+    if arguments.command == "export":
+        result = export_release(
+            arguments.workspace,
+            REPOSITORY_ROOT,
+            arguments.output_directory,
+            complete=arguments.complete,
+        )
+        if arguments.verify_archive:
+            result = {**result, "verification": verify_release(result["archive"])}
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if arguments.command == "verify-export":
+        result = verify_release(
+            arguments.archive,
+            reconstruct=not arguments.skip_reconstruction,
+        )
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+    if arguments.local_validation:
+        result = verify_local_validation(arguments.workspace)
+    elif arguments.local:
         records = verify_local_smoke(
             arguments.workspace,
             expected_models=tuple(arguments.model or LOCAL_SMOKE_MODELS),

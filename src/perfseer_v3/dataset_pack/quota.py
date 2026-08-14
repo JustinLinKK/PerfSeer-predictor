@@ -12,8 +12,11 @@ from .fingerprints import canonical_sha256
 from .labeler_profile import PROFILE
 
 
-DEFAULT_QUOTA_CONFIG_PATH = (
-    Path(__file__).resolve().parents[1] / "configs" / "v100_18k_dataset_pack.yaml"
+_CONFIG_ROOT = Path(__file__).resolve().parents[1] / "configs"
+DEFAULT_QUOTA_CONFIG_PATH = _CONFIG_ROOT / (
+    "a10_nonvision_11200_dataset_pack.yaml"
+    if PROFILE.is_nonvision_4gpu
+    else "v100_18k_dataset_pack.yaml"
 )
 
 FROZEN_QUOTA_CELLS = (
@@ -60,6 +63,23 @@ FROZEN_MODALITY_TOTALS = {
     "nlp": 5_050,
     "tabular": 950,
     "vision": 6_150,
+}
+NONVISION_QUOTA_CELLS = tuple(
+    (
+        modality,
+        family_id,
+        display_name,
+        2_600 if family_id == "independent_generated" else accepted,
+    )
+    for modality, family_id, display_name, accepted in FROZEN_QUOTA_CELLS
+    if modality != "vision"
+)
+NONVISION_MODALITY_TOTALS = {
+    "audio": 1_300,
+    "generated": 2_600,
+    "graph": 1_300,
+    "nlp": 5_050,
+    "tabular": 950,
 }
 
 
@@ -245,26 +265,46 @@ class QuotaPlan:
         if self.cloud_free_space_safety_margin_gib != 40:
             raise QuotaConfigError("cloud free-space safety margin must be exactly 40 GiB")
         self.protocol.validate()
-        if self.accepted_successful_configurations != 18_000:
-            raise QuotaConfigError("accepted configuration total must be exactly 18,000")
+        expected_candidates = 11_200 if PROFILE.is_nonvision_4gpu else 18_000
+        expected_epochs = expected_candidates * 3
+        expected_cells = (
+            NONVISION_QUOTA_CELLS if PROFILE.is_nonvision_4gpu else FROZEN_QUOTA_CELLS
+        )
+        expected_modalities = (
+            NONVISION_MODALITY_TOTALS
+            if PROFILE.is_nonvision_4gpu
+            else FROZEN_MODALITY_TOTALS
+        )
+        if self.accepted_successful_configurations != expected_candidates:
+            raise QuotaConfigError(
+                f"accepted configuration total must be exactly {expected_candidates:,}"
+            )
         if self.accepted_runs_per_configuration != 1:
             raise QuotaConfigError("every accepted configuration must have exactly one run")
         if self.configured_expected_accepted_run_records != self.expected_accepted_run_records:
-            raise QuotaConfigError("configured accepted run count must equal exactly 18,000")
+            raise QuotaConfigError("configured accepted run count differs")
         if self.configured_expected_measured_epoch_records != self.expected_measured_epoch_records:
-            raise QuotaConfigError("configured epoch record count must equal exactly 54,000")
-        if tuple(cell.as_frozen_tuple() for cell in self.cells) != FROZEN_QUOTA_CELLS:
-            raise QuotaConfigError("family quota cells differ from the frozen ordered 35-cell table")
-        if dict(self.expected_modality_totals) != FROZEN_MODALITY_TOTALS:
+            raise QuotaConfigError("configured epoch record count differs")
+        if self.configured_expected_measured_epoch_records != expected_epochs:
+            raise QuotaConfigError("configured measured epoch total differs")
+        if tuple(cell.as_frozen_tuple() for cell in self.cells) != expected_cells:
+            raise QuotaConfigError("family quota cells differ from the active frozen table")
+        if dict(self.expected_modality_totals) != expected_modalities:
             raise QuotaConfigError("expected modality totals differ from the frozen table")
-        if self.modality_totals != FROZEN_MODALITY_TOTALS:
+        if self.modality_totals != expected_modalities:
             raise QuotaConfigError("computed modality totals differ from the frozen table")
-        if self.generated_lineage_minimum < 50:
-            raise QuotaConfigError("at least 50 independent generated lineages are required")
+        minimum_lineages = 40 if PROFILE.is_nonvision_4gpu else 50
+        if self.generated_lineage_minimum < minimum_lineages:
+            raise QuotaConfigError(
+                f"at least {minimum_lineages} independent generated lineages are required"
+            )
         if not 1 <= self.generated_lineage_maximum_accepted <= 150:
             raise QuotaConfigError("generated lineage maximum must be positive and at most 150")
-        if self.generated_lineages_held_out_minimum < 10:
-            raise QuotaConfigError("at least 10 generated lineages must be held out")
+        minimum_held_out = 8 if PROFILE.is_nonvision_4gpu else 10
+        if self.generated_lineages_held_out_minimum < minimum_held_out:
+            raise QuotaConfigError(
+                f"at least {minimum_held_out} generated lineages must be held out"
+            )
 
 
 _ROOT_KEYS = {
@@ -361,7 +401,12 @@ def load_quota_plan(path: str | Path = DEFAULT_QUOTA_CONFIG_PATH) -> QuotaPlan:
             )
         )
     expected = _mapping(root["expected_modality_totals"], context="expected_modality_totals")
-    _exact_keys(expected, set(FROZEN_MODALITY_TOTALS), context="expected_modality_totals")
+    expected_modality_keys = (
+        set(NONVISION_MODALITY_TOTALS)
+        if PROFILE.is_nonvision_4gpu
+        else set(FROZEN_MODALITY_TOTALS)
+    )
+    _exact_keys(expected, expected_modality_keys, context="expected_modality_totals")
     generated = _mapping(root["generated_lineages"], context="generated_lineages")
     _exact_keys(
         generated,
@@ -392,6 +437,8 @@ __all__ = [
     "DEFAULT_QUOTA_CONFIG_PATH",
     "FROZEN_MODALITY_TOTALS",
     "FROZEN_QUOTA_CELLS",
+    "NONVISION_MODALITY_TOTALS",
+    "NONVISION_QUOTA_CELLS",
     "MeasurementProtocol",
     "QuotaCell",
     "QuotaConfigError",

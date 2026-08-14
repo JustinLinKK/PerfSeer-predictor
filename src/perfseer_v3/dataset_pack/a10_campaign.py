@@ -1,8 +1,9 @@
-"""One-worker, resumable native Nautilus A10 campaign orchestration."""
+"""Resumable native Nautilus A10 campaign orchestration."""
 
 from __future__ import annotations
 
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict
 import fcntl
@@ -11,51 +12,103 @@ import os
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
+import yaml
+
 from .a10_crosswalk import REFERENCE_MANIFEST_SHA256
 from .fingerprints import canonical_sha256, canonical_value
 from .labeler_profile import PROFILE
 from .storage import atomic_write_json
 
 
-_SPEECH_V2 = PROFILE.name == "native_a10_speech_v2"
+_SPEECH_V2 = PROFILE.uses_speech_v2
+_NONVISION = PROFILE.is_nonvision_4gpu
 A10_CAMPAIGN_VERSION = (
-    "perfseer_v3_nrp_a10_speech_18k_campaign_v2"
+    "perfseer_v3_nrp_a10_nonvision_11200_campaign_v1"
+    if _NONVISION
+    else "perfseer_v3_nrp_a10_speech_18k_campaign_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_18k_campaign_v1"
 )
 A10_RUN_IDENTITY_VERSION = (
-    "perfseer_v3_nrp_a10_speech_run_identity_v2"
+    "perfseer_v3_nrp_a10_nonvision_run_identity_v1"
+    if _NONVISION
+    else "perfseer_v3_nrp_a10_speech_run_identity_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_run_identity_v1"
 )
 A10_PILOT_RECEIPT_VERSION = (
-    "perfseer_v3_nrp_a10_speech_96_pilot_receipt_v2"
+    "perfseer_v3_nrp_a10_nonvision_32_pilot_receipt_v1"
+    if _NONVISION
+    else "perfseer_v3_nrp_a10_speech_96_pilot_receipt_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_96_pilot_receipt_v1"
 )
 A10_CHUNK_RECEIPT_VERSION = (
-    "perfseer_v3_nrp_a10_speech_chunk_receipt_v2"
+    "perfseer_v3_nrp_a10_nonvision_chunk_receipt_v1"
+    if _NONVISION
+    else "perfseer_v3_nrp_a10_speech_chunk_receipt_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_chunk_receipt_v1"
 )
 A10_TASK_RECEIPT_VERSION = (
-    "perfseer_v3_nrp_a10_speech_partial_task_receipt_v2"
+    "perfseer_v3_nrp_a10_nonvision_partial_task_receipt_v1"
+    if _NONVISION
+    else "perfseer_v3_nrp_a10_speech_partial_task_receipt_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_partial_task_receipt_v1"
 )
-PILOT_SIZE = 96
+LOCAL_VALIDATION_RECEIPT_VERSION = "perfseer_v3_nrp_a10_nonvision_local_validation_receipt_v1"
+PILOT_SIZE = 32 if _NONVISION else 96
 CHUNK_SIZE = 256
-PRODUCTION_CHUNK_COUNT = 70
-TOTAL_CANDIDATES = 18_000
+PRODUCTION_CHUNK_COUNT = 44 if _NONVISION else 70
+TOTAL_CANDIDATES = 11_200 if _NONVISION else 18_000
 MEASURED_EPOCHS_PER_LABEL = 3
+MAX_REPLACEMENTS_PER_SLOT = 3 if _NONVISION else 100
 
 
 class A10CampaignError(RuntimeError):
     """Raised when campaign ordering, resume state, or verification fails closed."""
 
 
+def run_isolated_worker_batch(
+    roots: Sequence[Any],
+    probes: Sequence[Any],
+    callback: Callable[[Any, Any], Any],
+    *,
+    isolated_exceptions: tuple[type[BaseException], ...] = (),
+) -> tuple[tuple[Any, ...], tuple[tuple[Any, BaseException], ...]]:
+    """Run one candidate per unique GPU and observe every sibling future."""
+
+    if not roots or len(roots) > len(probes):
+        raise A10CampaignError("worker batch size is outside the available probe count")
+    selected_probes = tuple(probes[: len(roots)])
+    if len({probe.gpu_uuid for probe in selected_probes}) != len(selected_probes):
+        raise A10CampaignError("worker batch assigns one GPU more than once")
+    successes: list[Any] = []
+    isolated: list[tuple[Any, BaseException]] = []
+    global_failures: list[BaseException] = []
+    with ThreadPoolExecutor(max_workers=len(roots)) as pool:
+        future_roots = {
+            pool.submit(callback, root, probe): root
+            for root, probe in zip(roots, selected_probes, strict=True)
+        }
+        for future in as_completed(future_roots):
+            root = future_roots[future]
+            try:
+                successes.append(future.result())
+            except isolated_exceptions as error:
+                isolated.append((root, error))
+            except BaseException as error:
+                global_failures.append(error)
+    if global_failures:
+        raise global_failures[0]
+    return tuple(successes), tuple(isolated)
+
+
 def _crosswalk_functions() -> tuple[Callable[..., Any], Callable[..., Any]]:
-    if _SPEECH_V2:
+    if _NONVISION:
+        from .a10_nonvision_crosswalk import build_crosswalk, freeze_crosswalk
+    elif _SPEECH_V2:
         from .a10_speech_crosswalk import build_crosswalk, freeze_crosswalk
     else:
         from .a10_crosswalk import build_crosswalk, freeze_crosswalk
@@ -64,7 +117,9 @@ def _crosswalk_functions() -> tuple[Callable[..., Any], Callable[..., Any]]:
 
 def _campaign_contract_path(root: Path) -> Path:
     name = (
-        "a10_speech_v2_campaign_contract.json"
+        "a10_nonvision_campaign_contract.json"
+        if _NONVISION
+        else "a10_speech_v2_campaign_contract.json"
         if _SPEECH_V2
         else "a10_campaign_contract.json"
     )
@@ -72,28 +127,50 @@ def _campaign_contract_path(root: Path) -> Path:
 
 
 def _pilot_receipt_path(root: Path) -> Path:
-    name = "speech_v2_pilot_receipt.json" if _SPEECH_V2 else "pilot_receipt.json"
+    name = (
+        "nonvision_pilot_receipt.json"
+        if _NONVISION
+        else "speech_v2_pilot_receipt.json"
+        if _SPEECH_V2
+        else "pilot_receipt.json"
+    )
     return root / "state" / name
 
 
 def _chunk_receipt_path(root: Path, index: int) -> Path:
-    directory = "speech_v2_chunk_receipts" if _SPEECH_V2 else "chunk_receipts"
+    directory = (
+        "nonvision_chunk_receipts"
+        if _NONVISION
+        else "speech_v2_chunk_receipts"
+        if _SPEECH_V2
+        else "chunk_receipts"
+    )
     return root / "state" / directory / f"chunk-{index:02d}.json"
 
 
 def _partial_task_receipt_path(root: Path, task_id: str) -> Path:
     directory = (
-        "speech_v2_partial_task_receipts"
+        "nonvision_partial_task_receipts"
+        if _NONVISION
+        else "speech_v2_partial_task_receipts"
         if _SPEECH_V2
         else "partial_task_receipts"
     )
     return root / "state" / directory / f"{task_id}.json"
 
 
+def _incomplete_receipt_path(root: Path, name: str) -> Path:
+    return root / "state" / "incomplete_receipts" / f"{name}.json"
+
+
+def _failure_ledger_path(root: Path) -> Path:
+    return root / "state" / "failure_ledger.json"
+
+
 def _assert_workspace_generation(root: Path) -> None:
     if not _SPEECH_V2:
         return
-    forbidden = (
+    forbidden = [
         root / "state" / "a10_campaign_contract.json",
         root / "state" / "a10_crosswalk_summary.json",
         root / "state" / "a10_crosswalk.jsonl",
@@ -101,9 +178,21 @@ def _assert_workspace_generation(root: Path) -> None:
         root / "state" / "pilot_receipt.json",
         root / "state" / "chunk_receipts",
         root / "state" / "partial_task_receipts",
-    )
+    ]
+    if _NONVISION:
+        forbidden.extend(
+            (
+                root / "state" / "a10_speech_v2_campaign_contract.json",
+                root / "state" / "a10_speech_v2_crosswalk_summary.json",
+                root / "state" / "a10_speech_v2_crosswalk.jsonl",
+                root / "state" / "campaign-speech-v2.lock",
+                root / "state" / "speech_v2_pilot_receipt.json",
+                root / "state" / "speech_v2_chunk_receipts",
+                root / "state" / "speech_v2_partial_task_receipts",
+            )
+        )
     if any(path.exists() or path.is_symlink() for path in forbidden):
-        raise A10CampaignError("speech V2 refuses a native-A10 V1 workspace")
+        raise A10CampaignError("active profile refuses an older A10 workspace")
 
 
 def _coverage_tokens(candidate: Any) -> set[tuple[str, str]]:
@@ -115,13 +204,77 @@ def _coverage_tokens(candidate: Any) -> set[tuple[str, str]]:
         ("regime", candidate.regime),
         ("checkpoint", str(bool(candidate.activation_checkpointing["enabled"]))),
         ("memory_tier", candidate.batch_plan.effective_tier),
+        (
+            "requested_effective_batch",
+            str(candidate.microbatch_size * candidate.gradient_accumulation_steps),
+        ),
     }
+
+
+def _nonvision_pilot_candidates(source: Sequence[Any], manifest_sha256: str) -> tuple[Any, ...]:
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "registries"
+        / "native_a10_nonvision_pilot_v1.yaml"
+    )
+    try:
+        contract = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise A10CampaignError("non-vision pilot contract is unreadable") from error
+    if not isinstance(contract, Mapping):
+        raise A10CampaignError("non-vision pilot contract must be an object")
+    expected_keys = {
+        "version",
+        "manifest_sha256",
+        "candidate_count",
+        "category_counts",
+        "minimum_factor_counts",
+        "candidate_ids",
+    }
+    if set(contract) != expected_keys or (
+        contract["version"] != "perfseer_v3_nrp_a10_nonvision_32_pilot_v1"
+        or contract["manifest_sha256"] != manifest_sha256
+        or contract["candidate_count"] != 32
+    ):
+        raise A10CampaignError("non-vision pilot identity differs")
+    ids = tuple(contract["candidate_ids"])
+    by_id = {row.candidate_id: row for row in source}
+    if len(ids) != 32 or len(set(ids)) != 32 or any(value not in by_id for value in ids):
+        raise A10CampaignError("non-vision pilot candidate IDs differ")
+    selected = tuple(by_id[value] for value in ids)
+    categories = Counter(row.quota_modality for row in selected)
+    if dict(sorted(categories.items())) != dict(contract["category_counts"]):
+        raise A10CampaignError("non-vision pilot category totals differ")
+    if len({row.family_id for row in selected}) != 22:
+        raise A10CampaignError("non-vision pilot does not cover all 22 families")
+    if len({row.task_id for row in selected}) != 12:
+        raise A10CampaignError("non-vision pilot does not cover all 12 tasks")
+    factors = {
+        "requested_effective_batch": Counter(
+            row.microbatch_size * row.gradient_accumulation_steps for row in selected
+        ),
+        "precision": Counter(row.precision_policy["policy_id"] for row in selected),
+        "execution": Counter(row.execution["mode"] for row in selected),
+        "regime": Counter(row.regime for row in selected),
+        "checkpoint": Counter(
+            bool(row.activation_checkpointing["enabled"]) for row in selected
+        ),
+    }
+    for factor, minimum in contract["minimum_factor_counts"].items():
+        if not factors[factor] or min(factors[factor].values()) < int(minimum):
+            raise A10CampaignError(f"non-vision pilot {factor} coverage differs")
+    if set(factors["requested_effective_batch"]) != {32, 64, 128, 256, 512}:
+        raise A10CampaignError("non-vision pilot batch-size coverage differs")
+    return selected
 
 
 def pilot_candidates(manifest: Any | None = None) -> tuple[Any, ...]:
     from .sampler import build_target_manifest
 
-    source = (manifest or build_target_manifest()).candidates
+    frozen = manifest or build_target_manifest()
+    source = frozen.candidates
+    if _NONVISION:
+        return _nonvision_pilot_candidates(source, frozen.sha256)
     universe = set().union(*(_coverage_tokens(row) for row in source))
     remaining = set(universe)
     selected: list[Any] = []
@@ -143,7 +296,7 @@ def pilot_candidates(manifest: Any | None = None) -> tuple[Any, ...]:
         and len(selected) < PILOT_SIZE
     )
     if len(selected) != PILOT_SIZE:
-        raise A10CampaignError("pilot does not contain exactly 96 candidates")
+        raise A10CampaignError(f"pilot does not contain exactly {PILOT_SIZE} candidates")
     selected_tokens = set().union(*(_coverage_tokens(row) for row in selected))
     if selected_tokens != universe or len({row.candidate_id for row in selected}) != PILOT_SIZE:
         raise A10CampaignError("pilot is not a unique complete factor cover")
@@ -163,32 +316,45 @@ def production_candidates(manifest: Any | None = None) -> tuple[Any, ...]:
             key=lambda row: (task_order[row.task_id], row.ordinal),
         )
     )
-    if len(result) != 17_904 or len({row.candidate_id for row in result}) != len(result):
-        raise A10CampaignError("production projection must contain 17,904 unique candidates")
+    expected = TOTAL_CANDIDATES - PILOT_SIZE
+    if len(result) != expected or len({row.candidate_id for row in result}) != len(result):
+        raise A10CampaignError(
+            f"production projection must contain {expected:,} unique candidates"
+        )
     return result
 
 
 def chunk_candidates(chunk_index: int, manifest: Any | None = None) -> tuple[Any, ...]:
     if type(chunk_index) is not int or not 0 <= chunk_index < PRODUCTION_CHUNK_COUNT:
-        raise A10CampaignError("chunk index must be in [0, 69]")
+        raise A10CampaignError(
+            f"chunk index must be in [0, {PRODUCTION_CHUNK_COUNT - 1}]"
+        )
     rows = production_candidates(manifest)
     start = chunk_index * CHUNK_SIZE
     result = rows[start : start + CHUNK_SIZE]
-    expected = CHUNK_SIZE if chunk_index < PRODUCTION_CHUNK_COUNT - 1 else 240
+    expected = (
+        CHUNK_SIZE
+        if chunk_index < PRODUCTION_CHUNK_COUNT - 1
+        else (TOTAL_CANDIDATES - PILOT_SIZE) % CHUNK_SIZE or CHUNK_SIZE
+    )
     if len(result) != expected:
         raise A10CampaignError("chunk candidate count differs from the frozen sequence")
     return result
 
 
-def build_campaign_contract() -> Mapping[str, Any]:
+def build_campaign_contract(
+    manifest: Any | None = None,
+    crosswalk: Any | None = None,
+) -> Mapping[str, Any]:
     from .sampler import build_target_manifest
     from .task_registry import load_task_registry
 
     if not PROFILE.is_native_a10:
         raise A10CampaignError("A10 campaign requires a native A10 process profile")
-    manifest = build_target_manifest()
-    build_crosswalk, _ = _crosswalk_functions()
-    crosswalk = build_crosswalk(manifest)
+    manifest = manifest or build_target_manifest()
+    if crosswalk is None:
+        build_crosswalk, _ = _crosswalk_functions()
+        crosswalk = build_crosswalk(manifest)
     pilot = pilot_candidates(manifest)
     production = production_candidates(manifest)
     family_counts = Counter(row.family_id for row in manifest.candidates)
@@ -216,10 +382,29 @@ def build_campaign_contract() -> Mapping[str, Any]:
             tuple(row.candidate_id for row in production)
         ),
         "production_chunk_count": PRODUCTION_CHUNK_COUNT,
-        "production_chunk_sizes": (*((CHUNK_SIZE,) * 69), 240),
-        "worker_count": 1,
+        "production_chunk_sizes": (
+            (*((CHUNK_SIZE,) * 43), 160)
+            if _NONVISION
+            else (*((CHUNK_SIZE,) * 69), 240)
+        ),
+        "worker_count": 4 if _NONVISION else 1,
     }
-    if _SPEECH_V2:
+    if _NONVISION:
+        from .a10_nonvision_crosswalk import PREDECESSOR_MANIFEST_SHA256
+        from .speech_substitution import load_speech_substitution_contract
+
+        payload.update(
+            {
+                "predecessor_manifest_sha256": PREDECESSOR_MANIFEST_SHA256,
+                "substitution_contract_sha256": load_speech_substitution_contract().sha256,
+                "lineage_disposition_counts": crosswalk.summary[
+                    "disposition_counts"
+                ],
+                "lineage_exclusion_counts": crosswalk.summary["exclusion_counts"],
+                "workspace_generation": "native_a10_nonvision_4gpu_v1",
+            }
+        )
+    elif _SPEECH_V2:
         from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
         from .speech_substitution import load_speech_substitution_contract
 
@@ -233,12 +418,20 @@ def build_campaign_contract() -> Mapping[str, Any]:
                 "workspace_generation": "native_a10_speech_v2",
             }
         )
+    expected_tasks = 12 if _NONVISION else 22
+    expected_families = 22 if _NONVISION else 35
+    expected_chunks = (
+        (*((256,) * 43), 160)
+        if _NONVISION
+        else (*((256,) * 69), 240)
+    )
     if (
         payload["candidate_count"] != TOTAL_CANDIDATES
-        or payload["measured_epoch_count"] != 54_000
-        or payload["task_count"] != 22
-        or payload["family_count"] != 35
-        or payload["production_chunk_sizes"] != (*((256,) * 69), 240)
+        or payload["measured_epoch_count"]
+        != TOTAL_CANDIDATES * MEASURED_EPOCHS_PER_LABEL
+        or payload["task_count"] != expected_tasks
+        or payload["family_count"] != expected_families
+        or payload["production_chunk_sizes"] != expected_chunks
     ):
         raise A10CampaignError("campaign counts differ from the approved contract")
     payload["contract_sha256"] = canonical_sha256(payload)
@@ -250,7 +443,7 @@ def analysis_summary() -> Mapping[str, Any]:
     return {
         **contract,
         "pilot_size": PILOT_SIZE,
-        "remaining_after_pilot": 17_904,
+        "remaining_after_pilot": TOTAL_CANDIDATES - PILOT_SIZE,
         "production_eligible_hardware_only": True,
     }
 
@@ -259,7 +452,11 @@ def analysis_summary() -> Mapping[str, Any]:
 def exclusive_workspace_lock(workspace: str | Path) -> Iterator[Path]:
     root = Path(workspace).resolve()
     lock_path = root / "state" / (
-        "campaign-speech-v2.lock" if _SPEECH_V2 else "campaign.lock"
+        "campaign-nonvision-4gpu.lock"
+        if _NONVISION
+        else "campaign-speech-v2.lock"
+        if _SPEECH_V2
+        else "campaign.lock"
     )
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
@@ -310,7 +507,7 @@ def freeze_campaign_state(
     manifest, _ = freeze_initial_target_manifest(root)
     _, freeze_crosswalk = _crosswalk_functions()
     crosswalk = freeze_crosswalk(root, manifest)
-    contract = build_campaign_contract()
+    contract = build_campaign_contract(manifest, crosswalk)
     if manifest.sha256 != contract["native_manifest_sha256"]:
         raise A10CampaignError("workspace manifest differs from campaign contract")
     _freeze_json(_campaign_contract_path(root), contract, context="campaign contract")
@@ -336,12 +533,18 @@ def _load_record_for_root(root: Path, candidate: Any) -> tuple[Any, Any] | None:
     return None if record is None else (slot, record)
 
 
-def _verify_native_record(record: Any, resolved: Any, root_candidate: Any) -> None:
+def _verify_native_record(
+    record: Any,
+    resolved: Any,
+    root_candidate: Any,
+    *,
+    production_eligible: bool,
+) -> None:
     record.validate()
     reference = record.reference_provenance
     common_invalid = (
         record.status.value != "accepted"
-        or record.production_eligible is not True
+        or record.production_eligible is not production_eligible
         or record.target_hardware_id != PROFILE.target_hardware_id
         or not isinstance(reference, Mapping)
         or not record.build_identity
@@ -349,7 +552,43 @@ def _verify_native_record(record: Any, resolved: Any, root_candidate: Any) -> No
     if common_invalid:
         raise A10CampaignError("accepted record lacks native/reference/build provenance")
     assert isinstance(reference, Mapping)
-    if _SPEECH_V2:
+    if _NONVISION:
+        from .a10_nonvision_crosswalk import PREDECESSOR_MANIFEST_SHA256
+        from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
+        from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
+
+        substituted = reference.get("dataset_substitution") is True
+        provenance_invalid = (
+            reference.get("nonvision_root_candidate_id") != root_candidate.candidate_id
+            or reference.get("predecessor_manifest_sha256")
+            != PREDECESSOR_MANIFEST_SHA256
+            or reference.get("original_a10g_manifest_sha256")
+            != REFERENCE_MANIFEST_SHA256
+            or reference.get("native_v1_manifest_sha256")
+            != NATIVE_V1_MANIFEST_SHA256
+            or reference.get("substitution_contract_sha256")
+            != load_speech_substitution_contract().sha256
+            or reference.get("lineage_disposition") != "retained"
+            or type(reference.get("historical_ordinal")) is not int
+            or type(reference.get("nonvision_ordinal")) is not int
+            or type(reference.get("dataset_substitution")) is not bool
+            or substituted != (root_candidate.task_id == SPEECH_TASK_ID)
+            or any(
+                not isinstance(reference.get(key), str)
+                or len(str(reference.get(key))) != 64
+                for key in (
+                    "original_a10g_candidate_id",
+                    "native_v1_candidate_id",
+                    "predecessor_candidate_id",
+                    "predecessor_manifest_sha256",
+                    "source_archive_sha256",
+                    "remote_inventory_sha256",
+                    "old_nonbatch_semantic_signature",
+                    "new_nonbatch_semantic_signature",
+                )
+            )
+        )
+    elif _SPEECH_V2:
         from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
         from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
 
@@ -406,6 +645,7 @@ def _receipt(
     name: str,
     candidates: Sequence[Any],
     contract_sha256: str,
+    production_eligible: bool = True,
 ) -> Mapping[str, Any]:
     labels = []
     for candidate in candidates:
@@ -413,7 +653,12 @@ def _receipt(
         if resolved is None:
             raise A10CampaignError(f"{name} candidate {candidate.candidate_id} is unresolved")
         slot, record = resolved
-        _verify_native_record(record, slot.current_candidate, candidate)
+        _verify_native_record(
+            record,
+            slot.current_candidate,
+            candidate,
+            production_eligible=production_eligible,
+        )
         labels.append(
             {
                 "root_candidate_id": candidate.candidate_id,
@@ -421,6 +666,36 @@ def _receipt(
                 "record_sha256": canonical_sha256(asdict(record)),
             }
         )
+    if _NONVISION:
+        hardware_payloads = []
+        for path in sorted((root / "provenance" / "hardware").glob("*.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if canonical_sha256(payload) != path.stem:
+                raise A10CampaignError("hardware provenance hash differs")
+            hardware_payloads.append(payload)
+        expected_name = "NVIDIA A10" if production_eligible else "NVIDIA GeForce RTX 5090"
+        expected_capability = [8, 6] if production_eligible else [12, 0]
+        expected_mode = "production-a10" if production_eligible else "local-rtx5090"
+        expected_count = 4 if production_eligible else 1
+        # Limit qualification to GPUs actually referenced by this receipt.
+        record_uuids = set()
+        for candidate in candidates:
+            resolved = _load_record_for_root(root, candidate)
+            assert resolved is not None
+            record_uuids.add(resolved[1].gpu_uuid)
+        by_uuid = {row.get("uuid"): row for row in hardware_payloads}
+        identities = set(record_uuids)
+        if (
+            len(identities) != expected_count
+            or any(uuid not in by_uuid for uuid in identities)
+            or any(by_uuid[uuid].get("name") != expected_name for uuid in identities)
+            or any(
+                by_uuid[uuid].get("compute_capability") != expected_capability
+                for uuid in identities
+            )
+            or any(by_uuid[uuid].get("hardware_mode") != expected_mode for uuid in identities)
+        ):
+            raise A10CampaignError("receipt GPU identity/worker count differs")
     value: dict[str, Any] = {
         "version": version,
         "name": name,
@@ -439,8 +714,9 @@ def _execute_candidates(
     mlebench_checkout: Path,
     candidates: Sequence[Any],
     kaggle_executable: str,
-    probe: Any,
-) -> None:
+    probes: Sequence[Any],
+    production_eligible: bool,
+) -> tuple[Mapping[str, Any], ...]:
     from .kaggle import KaggleCliClient
     from .materialization import TaskMaterializer, seal_worker_inputs
     from .mlebench_bridge import PinnedMleBenchPreparer
@@ -452,10 +728,17 @@ def _execute_candidates(
         _load_slot,
         _record_indexes,
         _save_slot,
+        SlotExhaustedError,
     )
 
+    expected_workers = 4 if (_NONVISION and production_eligible) else 1
+    if len(probes) != expected_workers:
+        raise A10CampaignError("worker probe count differs from the execution mode")
+    if len({probe.gpu_uuid for probe in probes}) != len(probes):
+        raise A10CampaignError("worker probe UUID assignment is duplicated")
     tasks = {row.task_id: row for row in load_task_registry().entries}
     task_order = tuple(dict.fromkeys(row.task_id for row in candidates))
+    exhausted: list[Mapping[str, Any]] = []
     for task_id in task_order:
         task_candidates = tuple(row for row in candidates if row.task_id == task_id)
         unresolved = tuple(row for row in task_candidates if _load_record_for_root(workspace, row) is None)
@@ -470,7 +753,7 @@ def _execute_candidates(
         materialized = materializer.materialize(tasks[task_id])
         seal_worker_inputs(materialized)
         try:
-            for root_candidate in unresolved:
+            def process_root(root_candidate: Any, worker_probe: Any) -> None:
                 while True:
                     slot_path = workspace / "state" / "slots" / f"{root_candidate.candidate_id}.json"
                     slot = _load_slot(slot_path, root_candidate)
@@ -482,16 +765,36 @@ def _execute_candidates(
                         slot = _advance_failed_slot(workspace, slot, failure, root_candidate)
                     slot = _save_slot(slot_path, slot)
                     current = slot.current_candidate
-                    AttemptSupervisor(workspace).run(
+                    AttemptSupervisor(
+                        workspace,
+                        production_eligible=production_eligible,
+                    ).run(
                         current,
                         tasks[task_id],
                         materialized.view_manifest,
                         public_directory=materialized.public,
                         prepared_directory=materialized.prepared_view,
                         archive_sha256=materialized.inventory.archive_sha256,
-                        probe=probe,
+                        probe=worker_probe,
                         attempt_index=len(failures.get(current.candidate_id, ())),
                     )
+
+            for offset in range(0, len(unresolved), len(probes)):
+                batch = unresolved[offset : offset + len(probes)]
+                _, isolated = run_isolated_worker_batch(
+                    batch,
+                    probes,
+                    process_root,
+                    isolated_exceptions=(SlotExhaustedError,),
+                )
+                exhausted.extend(
+                    {
+                        "root_candidate_id": root_candidate.candidate_id,
+                        "task_id": root_candidate.task_id,
+                        "reason": str(error),
+                    }
+                    for root_candidate, error in isolated
+                )
         finally:
             durable = []
             for candidate in task_candidates:
@@ -504,6 +807,11 @@ def _execute_candidates(
                 "task_id": task_id,
                 "dataset_fingerprint": materialized.view_manifest.dataset_fingerprint,
                 "durable_records": durable,
+                "unresolved_root_candidate_ids": [
+                    candidate.candidate_id
+                    for candidate in task_candidates
+                    if _load_record_for_root(workspace, candidate) is None
+                ],
             }
             partial["receipt_sha256"] = canonical_sha256(partial)
             atomic_write_json(
@@ -513,6 +821,7 @@ def _execute_candidates(
             materializer._delete_task_cache()
             if materializer.task_cache.exists() or materializer.task_cache.is_symlink():
                 raise A10CampaignError("task cache cleanup did not complete")
+    return tuple(exhausted)
 
 
 def run_campaign(
@@ -524,18 +833,28 @@ def run_campaign(
     image_digest: str,
     kaggle_executable: str = "kaggle",
     pilot: bool = False,
+    local_validation: bool = False,
     chunk_index: int | None = None,
     max_new_accepted: int = CHUNK_SIZE,
     probe: Any | None = None,
+    probes: Sequence[Any] | None = None,
     executor: Callable[[Sequence[Any]], None] | None = None,
 ) -> Mapping[str, Any]:
     from .sampler import build_target_manifest
-    from .supervisor import discover_a10_probe
+    from .supervisor import (
+        discover_a10_probe,
+        discover_a10_probes,
+        discover_local_rtx5090_probe,
+    )
 
-    if pilot == (chunk_index is not None):
-        raise A10CampaignError("select exactly one of pilot or chunk_index")
-    if not pilot and max_new_accepted != CHUNK_SIZE:
+    if sum((pilot, local_validation, chunk_index is not None)) != 1:
+        raise A10CampaignError(
+            "select exactly one of local_validation, pilot, or chunk_index"
+        )
+    if chunk_index is not None and max_new_accepted != CHUNK_SIZE:
         raise A10CampaignError("production Jobs must cap new accepted labels at exactly 256")
+    if probe is not None and probes is not None:
+        raise A10CampaignError("probe and probes are mutually exclusive")
     root = Path(workspace).resolve()
     _assert_workspace_generation(root)
     with exclusive_workspace_lock(root):
@@ -545,7 +864,12 @@ def run_campaign(
             image_digest=image_digest,
         )
         manifest = build_target_manifest()
-        if pilot:
+        if local_validation:
+            candidates = pilot_candidates(manifest)
+            name = "local-validation"
+            version = LOCAL_VALIDATION_RECEIPT_VERSION
+            receipt_path = root / "state" / "local_validation_receipt.json"
+        elif pilot:
             candidates = pilot_candidates(manifest)
             name = "pilot"
             version = A10_PILOT_RECEIPT_VERSION
@@ -570,26 +894,61 @@ def run_campaign(
                 name=name,
                 candidates=candidates,
                 contract_sha256=str(contract["contract_sha256"]),
+                production_eligible=not local_validation,
             )
             return _freeze_json(receipt_path, expected, context=f"{name} receipt")
         if executor is not None:
             executor(candidates)
         else:
-            worker = probe or discover_a10_probe()
-            _execute_candidates(
+            if probes is not None:
+                worker_probes = tuple(probes)
+            elif probe is not None:
+                worker_probes = (probe,)
+            elif local_validation:
+                worker_probes = (discover_local_rtx5090_probe(),)
+            elif _NONVISION:
+                worker_probes = discover_a10_probes()
+            else:
+                worker_probes = (discover_a10_probe(),)
+            unresolved = _execute_candidates(
                 workspace=root,
                 repository_root=Path(repository_root).resolve(),
                 mlebench_checkout=Path(mlebench_checkout).resolve(),
                 candidates=candidates,
                 kaggle_executable=kaggle_executable,
-                probe=worker,
+                probes=worker_probes,
+                production_eligible=not local_validation,
             )
+            if unresolved:
+                ledger: dict[str, Any] = {
+                    "version": "perfseer_v3_nrp_a10_nonvision_failure_ledger_v1",
+                    "campaign_name": name,
+                    "failures": unresolved,
+                }
+                ledger["ledger_sha256"] = canonical_sha256(ledger)
+                atomic_write_json(_failure_ledger_path(root), ledger)
+                incomplete: dict[str, Any] = {
+                    "version": "perfseer_v3_nrp_a10_nonvision_incomplete_receipt_v1",
+                    "campaign_name": name,
+                    "campaign_contract_sha256": contract["contract_sha256"],
+                    "unresolved_root_candidate_ids": [
+                        row["root_candidate_id"] for row in unresolved
+                    ],
+                    "failure_ledger_sha256": ledger["ledger_sha256"],
+                }
+                incomplete["receipt_sha256"] = canonical_sha256(incomplete)
+                atomic_write_json(_incomplete_receipt_path(root, name), incomplete)
+                raise A10CampaignError(
+                    f"{name} drained all schedulable work with {len(unresolved)} "
+                    "unresolved quota slots"
+                )
         receipt = _receipt(
             root=root,
             version=version,
             name=name,
             candidates=candidates,
             contract_sha256=str(contract["contract_sha256"]),
+            production_eligible=not local_validation,
         )
         atomic_write_json(receipt_path, receipt)
         return receipt
@@ -633,7 +992,9 @@ def verify_campaign(
         completed_chunks += 1
         accepted += len(candidates)
     if complete and (completed_chunks != PRODUCTION_CHUNK_COUNT or accepted != TOTAL_CANDIDATES):
-        raise A10CampaignError("complete verification requires pilot plus all 70 chunks")
+        raise A10CampaignError(
+            f"complete verification requires pilot plus all {PRODUCTION_CHUNK_COUNT} chunks"
+        )
     result = {
         "status": "complete" if accepted == TOTAL_CANDIDATES else "partial",
         "accepted_labels": accepted,
@@ -643,6 +1004,53 @@ def verify_campaign(
         "campaign_contract_sha256": contract["contract_sha256"],
     }
     return canonical_value(result)
+
+
+def verify_local_validation(workspace: str | Path) -> Mapping[str, Any]:
+    if not _NONVISION:
+        raise A10CampaignError("local validation receipt requires the non-vision profile")
+    from .sampler import build_target_manifest
+
+    root = Path(workspace).resolve()
+    contract = build_campaign_contract()
+    candidates = pilot_candidates(build_target_manifest())
+    receipt = _receipt(
+        root=root,
+        version=LOCAL_VALIDATION_RECEIPT_VERSION,
+        name="local-validation",
+        candidates=candidates,
+        contract_sha256=str(contract["contract_sha256"]),
+        production_eligible=False,
+    )
+    _freeze_json(
+        root / "state" / "local_validation_receipt.json",
+        receipt,
+        context="local validation receipt",
+    )
+    hardware_payloads = []
+    for path in sorted((root / "provenance" / "hardware").glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if canonical_sha256(payload) != path.stem:
+            raise A10CampaignError("local hardware provenance hash differs")
+        hardware_payloads.append(payload)
+    identities = {row.get("uuid") for row in hardware_payloads}
+    if (
+        len(identities) != 1
+        or any(row.get("name") != "NVIDIA GeForce RTX 5090" for row in hardware_payloads)
+        or any(row.get("compute_capability") != [12, 0] for row in hardware_payloads)
+        or any(row.get("hardware_mode") != "local-rtx5090" for row in hardware_payloads)
+    ):
+        raise A10CampaignError("local validation hardware is not one qualified RTX 5090")
+    return canonical_value(
+        {
+            "status": "passed",
+            "accepted_labels": len(candidates),
+            "measured_epoch_records": len(candidates) * MEASURED_EPOCHS_PER_LABEL,
+            "production_eligible": False,
+            "gpu_uuid": next(iter(identities)),
+            "receipt_sha256": receipt["receipt_sha256"],
+        }
+    )
 
 
 __all__ = [
@@ -657,6 +1065,8 @@ __all__ = [
     "freeze_campaign_state",
     "pilot_candidates",
     "production_candidates",
+    "run_isolated_worker_batch",
     "run_campaign",
     "verify_campaign",
+    "verify_local_validation",
 ]

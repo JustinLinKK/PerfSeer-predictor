@@ -39,7 +39,7 @@ from .task_registry import TaskRegistryEntry, load_task_registry
 from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
 
 
-_SPEECH_V2 = PROFILE.name == "native_a10_speech_v2"
+_SPEECH_V2 = PROFILE.uses_speech_v2
 MATERIALIZATION_STATE_VERSION = (
     "perfseer_v3_nrp_a10_speech_task_materialization_state_v2"
     if _SPEECH_V2
@@ -466,7 +466,7 @@ class TaskMaterializer:
         state: TaskMaterializationState,
         inventory: ArchiveInventory,
     ) -> SpeechSourceLock | None:
-        if PROFILE.name != "native_a10_speech_v2" or entry.task_id != SPEECH_TASK_ID:
+        if not PROFILE.uses_speech_v2 or entry.task_id != SPEECH_TASK_ID:
             return None
         if state.archive_inventory_sha256 is None:
             raise TaskMaterializationError("speech source cannot lock before archive inspection")
@@ -494,7 +494,7 @@ class TaskMaterializer:
         self.kaggle.authenticate()
         probe = self.kaggle.probe_competition(entry.kaggle_slug)
         probe.validate()
-        if PROFILE.name == "native_a10_speech_v2" and entry.task_id == SPEECH_TASK_ID:
+        if PROFILE.uses_speech_v2 and entry.task_id == SPEECH_TASK_ID:
             expected_inventory = sorted(
                 (
                     str(row["name"]),
