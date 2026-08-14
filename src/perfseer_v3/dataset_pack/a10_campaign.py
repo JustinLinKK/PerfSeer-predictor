@@ -22,42 +22,57 @@ from .storage import atomic_write_json
 
 _SPEECH_V2 = PROFILE.uses_speech_v2
 _NONVISION = PROFILE.is_nonvision_4gpu
+_DISASTER_V2 = PROFILE.uses_disaster_v2
 A10_CAMPAIGN_VERSION = (
-    "perfseer_v3_nrp_a10_nonvision_11200_campaign_v1"
+    "perfseer_v3_nrp_a10_nonvision_disaster_11200_campaign_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_nonvision_11200_campaign_v1"
     if _NONVISION
     else "perfseer_v3_nrp_a10_speech_18k_campaign_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_18k_campaign_v1"
 )
 A10_RUN_IDENTITY_VERSION = (
-    "perfseer_v3_nrp_a10_nonvision_run_identity_v1"
+    "perfseer_v3_nrp_a10_nonvision_disaster_run_identity_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_nonvision_run_identity_v1"
     if _NONVISION
     else "perfseer_v3_nrp_a10_speech_run_identity_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_run_identity_v1"
 )
 A10_PILOT_RECEIPT_VERSION = (
-    "perfseer_v3_nrp_a10_nonvision_32_pilot_receipt_v1"
+    "perfseer_v3_nrp_a10_nonvision_disaster_32_pilot_receipt_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_nonvision_32_pilot_receipt_v1"
     if _NONVISION
     else "perfseer_v3_nrp_a10_speech_96_pilot_receipt_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_96_pilot_receipt_v1"
 )
 A10_CHUNK_RECEIPT_VERSION = (
-    "perfseer_v3_nrp_a10_nonvision_chunk_receipt_v1"
+    "perfseer_v3_nrp_a10_nonvision_disaster_chunk_receipt_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_nonvision_chunk_receipt_v1"
     if _NONVISION
     else "perfseer_v3_nrp_a10_speech_chunk_receipt_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_chunk_receipt_v1"
 )
 A10_TASK_RECEIPT_VERSION = (
-    "perfseer_v3_nrp_a10_nonvision_partial_task_receipt_v1"
+    "perfseer_v3_nrp_a10_nonvision_disaster_partial_task_receipt_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_nonvision_partial_task_receipt_v1"
     if _NONVISION
     else "perfseer_v3_nrp_a10_speech_partial_task_receipt_v2"
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_partial_task_receipt_v1"
 )
-LOCAL_VALIDATION_RECEIPT_VERSION = "perfseer_v3_nrp_a10_nonvision_local_validation_receipt_v1"
+LOCAL_VALIDATION_RECEIPT_VERSION = (
+    "perfseer_v3_nrp_a10_nonvision_disaster_local_validation_receipt_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_nonvision_local_validation_receipt_v1"
+)
 PILOT_SIZE = 32 if _NONVISION else 96
 CHUNK_SIZE = 256
 PRODUCTION_CHUNK_COUNT = 44 if _NONVISION else 70
@@ -106,7 +121,9 @@ def run_isolated_worker_batch(
 
 
 def _crosswalk_functions() -> tuple[Callable[..., Any], Callable[..., Any]]:
-    if _NONVISION:
+    if _DISASTER_V2:
+        from .a10_disaster_crosswalk import build_crosswalk, freeze_crosswalk
+    elif _NONVISION:
         from .a10_nonvision_crosswalk import build_crosswalk, freeze_crosswalk
     elif _SPEECH_V2:
         from .a10_speech_crosswalk import build_crosswalk, freeze_crosswalk
@@ -117,7 +134,9 @@ def _crosswalk_functions() -> tuple[Callable[..., Any], Callable[..., Any]]:
 
 def _campaign_contract_path(root: Path) -> Path:
     name = (
-        "a10_nonvision_campaign_contract.json"
+        "a10_nonvision_disaster_campaign_contract.json"
+        if _DISASTER_V2
+        else "a10_nonvision_campaign_contract.json"
         if _NONVISION
         else "a10_speech_v2_campaign_contract.json"
         if _SPEECH_V2
@@ -128,7 +147,9 @@ def _campaign_contract_path(root: Path) -> Path:
 
 def _pilot_receipt_path(root: Path) -> Path:
     name = (
-        "nonvision_pilot_receipt.json"
+        "nonvision_disaster_pilot_receipt.json"
+        if _DISASTER_V2
+        else "nonvision_pilot_receipt.json"
         if _NONVISION
         else "speech_v2_pilot_receipt.json"
         if _SPEECH_V2
@@ -139,7 +160,9 @@ def _pilot_receipt_path(root: Path) -> Path:
 
 def _chunk_receipt_path(root: Path, index: int) -> Path:
     directory = (
-        "nonvision_chunk_receipts"
+        "nonvision_disaster_chunk_receipts"
+        if _DISASTER_V2
+        else "nonvision_chunk_receipts"
         if _NONVISION
         else "speech_v2_chunk_receipts"
         if _SPEECH_V2
@@ -150,7 +173,9 @@ def _chunk_receipt_path(root: Path, index: int) -> Path:
 
 def _partial_task_receipt_path(root: Path, task_id: str) -> Path:
     directory = (
-        "nonvision_partial_task_receipts"
+        "nonvision_disaster_partial_task_receipts"
+        if _DISASTER_V2
+        else "nonvision_partial_task_receipts"
         if _NONVISION
         else "speech_v2_partial_task_receipts"
         if _SPEECH_V2
@@ -179,6 +204,18 @@ def _assert_workspace_generation(root: Path) -> None:
         root / "state" / "chunk_receipts",
         root / "state" / "partial_task_receipts",
     ]
+    if _DISASTER_V2:
+        forbidden.extend(
+            (
+                root / "state" / "a10_nonvision_campaign_contract.json",
+                root / "state" / "a10_nonvision_crosswalk_summary.json",
+                root / "state" / "a10_nonvision_crosswalk.jsonl",
+                root / "state" / "campaign-nonvision-4gpu.lock",
+                root / "state" / "nonvision_pilot_receipt.json",
+                root / "state" / "nonvision_chunk_receipts",
+                root / "state" / "nonvision_partial_task_receipts",
+            )
+        )
     if _NONVISION:
         forbidden.extend(
             (
@@ -192,7 +229,9 @@ def _assert_workspace_generation(root: Path) -> None:
             )
         )
     if any(path.exists() or path.is_symlink() for path in forbidden):
-        raise A10CampaignError("active profile refuses an older A10 workspace")
+        raise A10CampaignError(
+            "active profile refuses a V1 workspace or any older A10 workspace generation"
+        )
 
 
 def _coverage_tokens(candidate: Any) -> set[tuple[str, str]]:
@@ -215,7 +254,11 @@ def _nonvision_pilot_candidates(source: Sequence[Any], manifest_sha256: str) -> 
     path = (
         Path(__file__).resolve().parents[1]
         / "registries"
-        / "native_a10_nonvision_pilot_v1.yaml"
+        / (
+            "native_a10_nonvision_disaster_pilot_v2.yaml"
+            if _DISASTER_V2
+            else "native_a10_nonvision_pilot_v1.yaml"
+        )
     )
     try:
         contract = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -231,8 +274,13 @@ def _nonvision_pilot_candidates(source: Sequence[Any], manifest_sha256: str) -> 
         "minimum_factor_counts",
         "candidate_ids",
     }
+    expected_version = (
+        "perfseer_v3_nrp_a10_nonvision_disaster_32_pilot_v2"
+        if _DISASTER_V2
+        else "perfseer_v3_nrp_a10_nonvision_32_pilot_v1"
+    )
     if set(contract) != expected_keys or (
-        contract["version"] != "perfseer_v3_nrp_a10_nonvision_32_pilot_v1"
+        contract["version"] != expected_version
         or contract["manifest_sha256"] != manifest_sha256
         or contract["candidate_count"] != 32
     ):
@@ -389,7 +437,33 @@ def build_campaign_contract(
         ),
         "worker_count": 4 if _NONVISION else 1,
     }
-    if _NONVISION:
+    if _DISASTER_V2:
+        from .a10_disaster_crosswalk import PREDECESSOR_MANIFEST_SHA256
+        from .disaster_substitution import load_disaster_substitution_contract
+        from .speech_substitution import load_speech_substitution_contract
+
+        payload.update(
+            {
+                "predecessor_manifest_sha256": PREDECESSOR_MANIFEST_SHA256,
+                "predecessor_crosswalk_sha256": crosswalk.summary[
+                    "predecessor_crosswalk_sha256"
+                ],
+                "substitution_contract_sha256": (
+                    load_disaster_substitution_contract().sha256
+                ),
+                "disaster_substitution_contract_sha256": (
+                    load_disaster_substitution_contract().sha256
+                ),
+                "speech_substitution_contract_sha256": (
+                    load_speech_substitution_contract().sha256
+                ),
+                "lineage_classification_counts": crosswalk.summary[
+                    "classification_counts"
+                ],
+                "workspace_generation": "native_a10_nonvision_disaster_v2",
+            }
+        )
+    elif _NONVISION:
         from .a10_nonvision_crosswalk import PREDECESSOR_MANIFEST_SHA256
         from .speech_substitution import load_speech_substitution_contract
 
@@ -452,7 +526,9 @@ def analysis_summary() -> Mapping[str, Any]:
 def exclusive_workspace_lock(workspace: str | Path) -> Iterator[Path]:
     root = Path(workspace).resolve()
     lock_path = root / "state" / (
-        "campaign-nonvision-4gpu.lock"
+        "campaign-nonvision-disaster-v2.lock"
+        if _DISASTER_V2
+        else "campaign-nonvision-4gpu.lock"
         if _NONVISION
         else "campaign-speech-v2.lock"
         if _SPEECH_V2
@@ -552,7 +628,73 @@ def _verify_native_record(
     if common_invalid:
         raise A10CampaignError("accepted record lacks native/reference/build provenance")
     assert isinstance(reference, Mapping)
-    if _NONVISION:
+    if _DISASTER_V2:
+        from .a10_disaster_crosswalk import (
+            PREDECESSOR_CROSSWALK_SHA256,
+            PREDECESSOR_MANIFEST_SHA256,
+        )
+        from .disaster_substitution import (
+            DISASTER_TASK_ID,
+            load_disaster_substitution_contract,
+        )
+        from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
+
+        substituted = reference.get("dataset_substitution") is True
+        classification = reference.get("row_classification")
+        disaster_lock = reference.get("disaster_source_lock_sha256")
+        speech_lock = reference.get("speech_source_lock_sha256")
+        provenance_invalid = (
+            reference.get("v2_root_candidate_id") != root_candidate.candidate_id
+            or reference.get("predecessor_manifest_sha256")
+            != PREDECESSOR_MANIFEST_SHA256
+            or reference.get("predecessor_crosswalk_sha256")
+            != PREDECESSOR_CROSSWALK_SHA256
+            or reference.get("substitution_contract_sha256")
+            != load_disaster_substitution_contract().sha256
+            or reference.get("disaster_substitution_contract_sha256")
+            != load_disaster_substitution_contract().sha256
+            or reference.get("speech_substitution_contract_sha256")
+            != load_speech_substitution_contract().sha256
+            or classification
+            not in {"unchanged", "nlp_registry_rebound", "dataset_substitution"}
+            or type(reference.get("dataset_substitution")) is not bool
+            or substituted != (root_candidate.task_id == DISASTER_TASK_ID)
+            or (substituted and classification != "dataset_substitution")
+            or (
+                root_candidate.task_id == DISASTER_TASK_ID
+                and (not isinstance(disaster_lock, str) or len(disaster_lock) != 64)
+            )
+            or (
+                root_candidate.task_id != DISASTER_TASK_ID
+                and disaster_lock is not None
+            )
+            or (
+                root_candidate.task_id == SPEECH_TASK_ID
+                and (not isinstance(speech_lock, str) or len(speech_lock) != 64)
+            )
+            or (
+                root_candidate.task_id != SPEECH_TASK_ID
+                and speech_lock is not None
+            )
+            or any(
+                not isinstance(reference.get(key), str)
+                or len(str(reference.get(key))) != 64
+                for key in (
+                    "predecessor_candidate_id",
+                    "v1_root_candidate_id",
+                    "v2_root_candidate_id",
+                    "predecessor_manifest_sha256",
+                    "predecessor_crosswalk_sha256",
+                    "substitution_contract_sha256",
+                    "source_archive_sha256",
+                    "remote_inventory_sha256",
+                    "old_semantic_signature",
+                    "new_semantic_signature",
+                    "task_independent_compute_signature",
+                )
+            )
+        )
+    elif _NONVISION:
         from .a10_nonvision_crosswalk import PREDECESSOR_MANIFEST_SHA256
         from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
         from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
@@ -719,7 +861,7 @@ def _execute_candidates(
 ) -> tuple[Mapping[str, Any], ...]:
     from .kaggle import KaggleCliClient
     from .materialization import TaskMaterializer, seal_worker_inputs
-    from .mlebench_bridge import PinnedMleBenchPreparer
+    from .substitution_preparer import SubstitutionAwarePreparer
     from .supervisor import AttemptSupervisor
     from .task_registry import load_task_registry
     from .workflow import (
@@ -748,7 +890,7 @@ def _execute_candidates(
             workspace=workspace,
             repository_root=repository_root,
             kaggle=KaggleCliClient(executable=kaggle_executable),
-            preparer=PinnedMleBenchPreparer(mlebench_checkout),
+            preparer=SubstitutionAwarePreparer(mlebench_checkout),
         )
         materialized = materializer.materialize(tasks[task_id])
         seal_worker_inputs(materialized)
@@ -921,14 +1063,22 @@ def run_campaign(
             )
             if unresolved:
                 ledger: dict[str, Any] = {
-                    "version": "perfseer_v3_nrp_a10_nonvision_failure_ledger_v1",
+                    "version": (
+                        "perfseer_v3_nrp_a10_nonvision_disaster_failure_ledger_v2"
+                        if _DISASTER_V2
+                        else "perfseer_v3_nrp_a10_nonvision_failure_ledger_v1"
+                    ),
                     "campaign_name": name,
                     "failures": unresolved,
                 }
                 ledger["ledger_sha256"] = canonical_sha256(ledger)
                 atomic_write_json(_failure_ledger_path(root), ledger)
                 incomplete: dict[str, Any] = {
-                    "version": "perfseer_v3_nrp_a10_nonvision_incomplete_receipt_v1",
+                    "version": (
+                        "perfseer_v3_nrp_a10_nonvision_disaster_incomplete_receipt_v2"
+                        if _DISASTER_V2
+                        else "perfseer_v3_nrp_a10_nonvision_incomplete_receipt_v1"
+                    ),
                     "campaign_name": name,
                     "campaign_contract_sha256": contract["contract_sha256"],
                     "unresolved_root_candidate_ids": [

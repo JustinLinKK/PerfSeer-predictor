@@ -1,4 +1,8 @@
-# PerfSeer V3 Non-Vision Four-A10 Labeling Runbook
+# Historical V1: PerfSeer V3 Non-Vision Four-A10 Labeling Runbook
+
+> This document preserves the deprecated Detecting-Insults V1 workflow for lineage
+> only. Do not start a new campaign from it. Use the active
+> [Disaster V2 runbook](PerfSeer_V3_Native_Nautilus_A10_NonVision_Disaster_V2_Runbook.md).
 
 This runbook starts from a clean local checkout and ends with a verified, downloaded
 release. It never merges the teammate's vision measurements. The active corpus has

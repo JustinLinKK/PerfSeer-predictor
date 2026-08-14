@@ -293,10 +293,16 @@ with tempfile.TemporaryDirectory() as d:
  with mock.patch('perfseer_v3.dataset_pack.supervisor.subprocess.Popen',side_effect=lambda *a,**k:Hanging()),mock.patch('perfseer_v3.dataset_pack.supervisor.os.killpg',side_effect=killpg),mock.patch('perfseer_v3.dataset_pack.supervisor.wait_for_gpu_cleanup',return_value=cleanup),mock.patch('perfseer_v3.dataset_pack.supervisor._bind_native_a10_provenance',side_effect=lambda record,*args,**kwargs: replace(record,production_eligible=kwargs.get('production_eligible',True))):
   timeout=AttemptSupervisor(root,timeout_seconds=.05,no_progress_seconds=.05).run(c,t,v,public_directory=public,prepared_directory=prepared,archive_sha256='a'*64,probe=Probe(),attempt_index=20)
   assert timeout.status.value=='timed_out'
- print(model.status.value,crash.status.value,timeout.status.value,len(tuple((root/'attempts/failed').glob('*.json'))))
+ print(model.status.value,crash.status.value,timeout.status.value,len(tuple((root/'attempts/failed').glob('*.json'))),len(tuple((root/'attempts/diagnostics').glob('*.json'))))
 """
     )
-    assert result.stdout.split() == ["quarantined", "interrupted", "timed_out", "3"]
+    assert result.stdout.split() == [
+        "quarantined",
+        "interrupted",
+        "timed_out",
+        "3",
+        "3",
+    ]
 
 
 def test_digest_only_four_a10_yaml_and_pvc(tmp_path: Path) -> None:

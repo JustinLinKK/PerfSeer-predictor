@@ -1,126 +1,78 @@
-# PerfSeer V3 Non-Vision Four-A10 Labeler
+# PerfSeer V3 Disaster-Tweets Substitution
 
 ## Objective
 
-Create `feature/perfseer-v3-nautilus-a10-nonvision-4gpu-labeler` from the
-clean Speech V2 branch. Preserve the parent commit as the historical 18K
-reference, remove all vision-sourced work from the active campaign, build one
-immutable image that runs four independent A10 workers in production and one
-RTX 5090 worker during local validation, and test the complete workflow
-locally. Do not publish an image or modify Nautilus.
+Create `feature/perfseer-v3-nautilus-a10-nonvision-4gpu-disaster-v2`
+from the clean non-vision four-A10 branch. Preserve the existing V1 corpus,
+manifest, image, and hashes as historical references. Replace the deprecated
+Detecting Insults competition with Kaggle Natural Language Processing with
+Disaster Tweets while keeping all compute and distribution quotas unchanged.
+Build and test locally only; execute no cluster or registry command.
 
-## Corpus and lineage contract
+## Contract and lineage
 
-- Exclude all candidates whose `source_modality` is `vision`, including the
-  generated-from-vision slice. Keep the teammate's vision corpus separate.
-- Freeze exactly 11,200 candidates, 12 Kaggle tasks, 22 model families, and
-  33,600 retained measured epochs: audio 1,300; graph 1,300; NLP 5,050;
-  tabular 950; and non-vision generated 2,600.
-- Preserve precision totals of 3,232 TF32, 3,183 BF16, 2,541 FP16 AMP, and
-  2,244 mixed-structured candidates.
-- Generate an immutable crosswalk with 11,200 retained Speech V2 rows and
-  6,800 excluded rows. Record old/new IDs, semantic signatures, predecessor
-  hashes, and exclusion reasons. All retained IDs change under the new batch
-  contract.
-- Keep historical V1/V2 contracts available through the parent branch and a
-  concise active lineage record, but remove vision tasks, families, gates,
-  runtime allowlists, and active documentation from this image/profile.
+- Add profile `native_a10_nonvision_disaster_v2` and an isolated workspace at
+  `/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2`.
+- Replace `detecting-insults` at its historical ordinal with task
+  `disaster-tweets`, Kaggle slug `nlp-getting-started`, modality `nlp`, and a
+  binary categorical target. Inputs are ordered keyword, location, and text
+  strings; source IDs are unique Kaggle `id` values.
+- Freeze the advertised three-file inventory and its SHA-256. Fail closed on
+  inventory/archive drift, schema drift, duplicate IDs, empty text, invalid or
+  missing target classes, or fewer than 4,096 valid rows.
+- Select exactly 4,096 training rows with the existing deterministic SHA-256
+  ordering and no replacement.
+- Preserve 11,200 candidates, 12 tasks, 22 families, 33,600 measured epochs,
+  all modality/precision/execution/regime/checkpoint distributions, and exactly
+  2,240 candidates at each effective batch size 32, 64, 128, 256, and 512.
+- Preserve the former 1,075-row insults allocation exactly across BERT, MLA,
+  BiLSTM-CRF, FastText, and DistilBERT and across every compute dimension.
+- Generate a V1-to-V2 crosswalk with 9,050 unchanged rows, 1,075 NLP registry
+  rebounds, and 1,075 dataset substitutions. Preserve task-independent compute
+  signatures and prohibit silent merging of insults and disaster measurements.
+- Bind predecessor IDs/hashes, substitution contract, source locks, and the
+  dataset-substitution flag into results and exports.
 
-## Batch and repair contract
+## Image and workflow
 
-- Requested effective batch is exactly one of `32, 64, 128, 256, 512`, with
-  2,240 candidates assigned to each size.
-- Record requested effective batch, runtime microbatch, and gradient
-  accumulation separately. Initial microbatch caps are 512 for light, 256 for
-  standard, and 64 for heavy families; accumulation preserves effective batch.
-- On CUDA OOM, halve microbatch and double accumulation down to microbatch 1.
-  Persist every attempt and verify GPU cleanup before continuing.
-- If microbatch 1 fails, quarantine the configuration and generate a
-  deterministic replacement in the same task, family, precision, execution,
-  batch, and coverage cell. Allow no more than three replacements per slot.
+- Add a sibling immutable Disaster V2 image using the existing pinned PyTorch
+  2.10/CUDA 12.8 base and dependency lock; keep V1 reproducible.
+- Continue using pinned MLE-bench for the other eleven tasks. Use a narrowly
+  scoped, hash-verified CSV preparer for Disaster Tweets, copying only the three
+  contracted files into the prepared source.
+- Lock remote inventory, downloaded archive, and extracted inventory on the
+  workspace. Reject V1 state rather than migrating it.
+- Keep the unified CLI, four independent production A10 workers, one-worker
+  RTX 5090 validation, OOM repair, failure isolation, export, and verification
+  behavior.
+- Preserve the 32 pilot ordinals; regenerate only its five affected IDs. Render
+  V2-specific digest-only pilot, chunk, and export Jobs with the unchanged A10
+  resource contract.
+- Replace the active Detecting Insults gate with Disaster Tweets. Probe Disaster
+  first, TensorFlow Speech Recognition second, and the other ten afterward.
+  Require an actual smallest-file download for every competition.
 
-## Four-worker execution
+## Acceptance
 
-- Run one controller and four independent child-process worker slots in one
-  Pod. Do not use DDP or NCCL.
-- Production requires four unique homogeneous NVIDIA A10 GPUs, compute
-  capability 8.6, 22--26 GiB each, and unique UUIDs. Pin one visible GPU to
-  each child through `CUDA_VISIBLE_DEVICES`; the child uses logical device 0.
-- Materialize and hash-lock each task once, expose prepared data read-only,
-  use a CephFS-compatible exclusive campaign lock, and write unique atomic
-  state, log, and result files.
-- Require worker heartbeats, a ten-minute no-progress timeout, and a two-hour
-  absolute attempt timeout. Retry a cleanly recoverable transient timeout or
-  process crash once.
-- Persist and isolate candidate-local errors so sibling workers and later
-  candidates continue. Abort immediately only for global hardware, cleanup,
-  credential, dataset, archive, workspace, hash, or atomic-state failures.
-- Drain schedulable work before reporting failure. If quota remains incomplete,
-  write a partial receipt and failure ledger, then exit nonzero.
+- Verify exact corpus totals, affected allocations, batch totals, unique IDs,
+  historical V1 hashes, and the 9,050/1,075/1,075 crosswalk.
+- Test the custom preparer against valid data and every specified schema,
+  inventory, archive, count, and class failure.
+- Exercise all five affected families and four precision paths with real
+  Disaster data when Kaggle access permits.
+- Re-run the 11,200-construction audit, 123-route fixture matrix, concurrency and
+  injected-failure tests, export reconstruction, dependency/image preflight,
+  secret scan, and local YAML verifier.
+- Rebuild after executable-source changes and run the 32-label, five-epoch RTX
+  5090 workflow only when all twelve real Kaggle download gates pass. If the
+  Disaster or Speech agreement remains blocked, record the external blocker and
+  do not substitute mirrors or synthetic evidence.
+- Run no `kubectl`, Nautilus, image-push, or other cluster command.
 
-## Image, CLI, and downloadable artifacts
+## Assumptions
 
-- Build a pinned `linux/amd64` PyTorch 2.10/CUDA 12.8 image supporting
-  `sm_86` and `sm_120`, the 22 non-vision families, embedded clean source, and
-  pinned MLE-bench. Perform no Git, apt, pip, conda, or dataset installation at
-  startup, and never put credentials or datasets in image layers.
-- Provide `analyze`, `image-preflight`, `smoke-local`, `run-campaign`, `verify`,
-  and `export` interfaces. Production supports the pilot and ordered 256-label
-  chunks; local validation uses one RTX 5090 and a separate non-production
-  workspace.
-- Export no trained weights or checkpoints. Produce a verified `.tar.zst`
-  containing labels, exact per-candidate training configurations,
-  content-addressed model/runtime source, a candidate-to-artifact index,
-  failure/quarantine ledgers, manifests, receipts, and SHA-256 sums.
-- Verify offline that every exported representative configuration reconstructs
-  its model from the bundled source.
-
-## Local and offline acceptance
-
-- Verify corpus counts, distributions, lineage, batch totals, four-worker
-  assignment, hardware rejection, locking, atomic resume, OOM descent,
-  timeout handling, failure isolation, and incomplete final status.
-- Build the final image and verify dependencies, embedded hashes, CUDA
-  architectures, read-only startup, credential absence, and absence of active
-  vision tasks/families.
-- Audit model construction across all 11,200 candidates and run boundary
-  one-step tests across every family, precision, execution, batch, and
-  generated-model structural path.
-- Run 32 real five-epoch labels inside the final image on the local RTX 5090,
-  sequentially with one worker: audio 5, graph 5, tabular 5, NLP 11, generated
-  6. The frozen selection covers all 22 families, all 12 tasks, all precision
-  and execution modes, all regimes, checkpointing on/off, and at least five
-  candidates at each requested effective batch. Retain epochs 3--5 and mark
-  every record `production_eligible: false`.
-- Inject OOM, timeout, deterministic child error, and crash cases and prove the
-  queue continues. Rebuild after source changes and repeat final preflight,
-  real workflow, export reconstruction, secret scan, and offline Kubernetes
-  validation.
-- Require real access to all 12 Kaggle competitions. If an agreement or archive
-  blocks a dataset, preserve the implementation and record the external
-  blocker; never substitute a mirror or synthetic production evidence.
-
-## Nautilus handoff
-
-- Render digest-only Jobs requesting four `nvidia.com/gpu` A10s, 32 CPU,
-  128 GiB RAM, 32 GiB `/dev/shm`, 32 GiB temporary storage, a read-only Kaggle
-  Secret, a dedicated 700 GiB RWX CephFS PVC, `backoffLimit: 0`, and a 48-hour
-  deadline. Requests and limits are equal.
-- Use the 32 local validation IDs as the canonical A10 pilot. Process the
-  remaining 11,168 rows in 44 sequential chunks: 43 chunks of 256 and one of
-  160. Never allow overlapping writers.
-- Provide a command-by-command runbook for Kaggle gates, public NRP GitLab
-  project creation, local build/test, registry login and push, digest
-  resolution, Secret/PVC creation, offline rendering, pilot submission,
-  immediate diagnostics, tracked monitoring, sequential chunks, verification,
-  S3/rclone export, download, and final hash verification.
-- During implementation, perform no registry push or Nautilus mutation. Only
-  read-only cluster queries such as `kubectl get`, `describe`, `logs`, and
-  event inspection are permitted.
-
-## Limitations
-
-The RTX 5090 test validates the immutable container, task preparation, model
-factories, five-epoch protocol, recovery, and export paths. It cannot prove A10
-memory fit or four-A10 scheduling. The future operator-run four-A10 pilot is the
-production acceptance gate.
+- Availability and operational stability take priority over preserving the old
+  insults-domain semantics.
+- Existing V1 labels remain a separate corpus; no workspace migration occurs.
+- The operator must accept both Disaster Tweets and TensorFlow Speech
+  Recognition rules before full real-data validation can complete.

@@ -24,7 +24,9 @@ from .contracts import (
     FingerprintBundle,
     GpuCleanupEvidence,
     LABEL_RUN_RECORD_VERSION,
+    LOCAL_VALIDATION_RETAINED_EPOCH_SPREAD_LIMIT,
     LabelRunRecord,
+    PRODUCTION_RETAINED_EPOCH_SPREAD_LIMIT,
 )
 from .fingerprints import canonical_sha256
 from .label_worker import WORKER_ENVELOPE_VERSION
@@ -38,6 +40,10 @@ from .a10_speech_crosswalk import (
     NATIVE_V1_MANIFEST_SHA256,
 )
 from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
+from .disaster_substitution import (
+    DISASTER_TASK_ID,
+    load_disaster_substitution_contract,
+)
 from .operation_support import build_operation_support_contract
 from .prepared_view import PreparedViewManifest
 from .sampler import TargetCandidate
@@ -45,8 +51,18 @@ from .storage import atomic_write_json
 from .task_registry import TaskRegistryEntry
 
 
-SUPERVISOR_VERSION = "perfseer_v3_v100_attempt_supervisor_v2"
-CAMPAIGN_ENVIRONMENT_VERSION = "perfseer_v3_v100_campaign_environment_v1"
+SUPERVISOR_VERSION = (
+    "perfseer_v3_nrp_a10_nonvision_disaster_attempt_supervisor_v2"
+    if PROFILE.uses_disaster_v2
+    else "perfseer_v3_v100_attempt_supervisor_v2"
+)
+CAMPAIGN_ENVIRONMENT_VERSION = (
+    "perfseer_v3_nrp_a10_nonvision_disaster_campaign_environment_v2"
+    if PROFILE.uses_disaster_v2
+    else "perfseer_v3_v100_campaign_environment_v1"
+)
+PRODUCTION_CLEANUP_RELEASE_TOLERANCE_MIB = 64.0
+LOCAL_VALIDATION_CLEANUP_RELEASE_TOLERANCE_MIB = 4_096.0
 _CAMPAIGN_PACKAGES = (
     "appdirs",
     "kaggle",
@@ -423,6 +439,7 @@ def build_accepted_label_record(
     cleanup: GpuCleanupEvidence,
     *,
     attempt_index: int,
+    production_eligible: bool = True,
 ) -> LabelRunRecord:
     run.validate()
     cleanup.validate()
@@ -458,6 +475,7 @@ def build_accepted_label_record(
         epoch_measurements=run.epoch_measurements,
         cleanup=cleanup,
         targets=None,
+        production_eligible=production_eligible,
     )
     record = replace(draft, targets=draft.aggregate_targets())
     record.validate_against_configuration(candidate, task_entry)
@@ -532,8 +550,11 @@ def _bind_native_a10_provenance(
         return record
     nonvision = PROFILE.is_nonvision_4gpu
     speech_v2 = PROFILE.uses_speech_v2
+    disaster_v2 = PROFILE.uses_disaster_v2
     mapping_path = workspace / "state" / (
-        "a10_nonvision_crosswalk.jsonl"
+        "a10_disaster_crosswalk.jsonl"
+        if disaster_v2
+        else "a10_nonvision_crosswalk.jsonl"
         if nonvision
         else "a10_speech_v2_crosswalk.jsonl"
         if speech_v2
@@ -553,20 +574,126 @@ def _bind_native_a10_provenance(
         for line in mapping_path.read_text(encoding="utf-8").splitlines():
             row = json.loads(line)
             native_key = (
-                "nonvision_candidate_id"
+                "v2_candidate_id"
+                if disaster_v2
+                else "nonvision_candidate_id"
                 if nonvision
                 else "native_v2_candidate_id"
                 if speech_v2
                 else "native_nrp_a10_candidate_id"
             )
             if row.get(native_key) == root_candidate_id:
-                original_id = row.get("original_a10g_candidate_id")
-                v1_id = row.get("native_v1_candidate_id")
+                original_id = (
+                    row.get("v1_candidate_id")
+                    if disaster_v2
+                    else row.get("original_a10g_candidate_id")
+                )
+                v1_id = (
+                    row.get("v1_candidate_id")
+                    if disaster_v2
+                    else row.get("native_v1_candidate_id")
+                )
                 lineage_row = row
                 break
     if original_id is None:
         raise SupervisorError("native A10 record has no frozen reference crosswalk row")
-    if speech_v2:
+    if disaster_v2:
+        from .a10_disaster_crosswalk import (
+            PREDECESSOR_CROSSWALK_SHA256,
+            PREDECESSOR_MANIFEST_SHA256,
+        )
+
+        if not isinstance(lineage_row, Mapping) or not isinstance(v1_id, str):
+            raise SupervisorError("Disaster V2 record has no V1-to-V2 lineage row")
+        try:
+            materialization_state = json.loads(
+                (workspace / "task_cache" / "materialization_state.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise SupervisorError(
+                "Disaster V2 record cannot bind source archive provenance"
+            ) from error
+        if (
+            not isinstance(materialization_state, Mapping)
+            or materialization_state.get("task_id") != task_entry.task_id
+            or materialization_state.get("archive_sha256") is None
+            or materialization_state.get("stage") != "view_ready"
+            or materialization_state.get("dataset_fingerprint")
+            != record.fingerprints.dataset_sha256
+        ):
+            raise SupervisorError("Disaster V2 materialization provenance is incomplete")
+        state_payload = dict(materialization_state)
+        state_sha256 = state_payload.pop("state_sha256", None)
+        if state_sha256 != canonical_sha256(state_payload):
+            raise SupervisorError("Disaster V2 materialization state hash differs")
+        archive_sha256 = materialization_state.get("archive_sha256")
+        remote_inventory_sha256 = materialization_state.get(
+            "remote_inventory_sha256"
+        )
+        if any(
+            not isinstance(value, str) or len(value) != 64
+            for value in (archive_sha256, remote_inventory_sha256)
+        ):
+            raise SupervisorError("Disaster V2 source provenance digests are invalid")
+        speech_source_lock_sha256 = None
+        disaster_source_lock_sha256 = None
+        if task_entry.task_id in {SPEECH_TASK_ID, DISASTER_TASK_ID}:
+            lock_path = (
+                workspace
+                / "state"
+                / "source_locks"
+                / f"{task_entry.task_id}.json"
+            )
+            try:
+                source_lock = json.loads(lock_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as error:
+                raise SupervisorError(
+                    f"{task_entry.task_id} has no immutable source lock"
+                ) from error
+            if not isinstance(source_lock, Mapping) or (
+                source_lock.get("archive_sha256") != archive_sha256
+                or source_lock.get("remote_inventory_sha256")
+                != remote_inventory_sha256
+            ):
+                raise SupervisorError("source lock differs from materialization")
+            lock_sha256 = source_lock.get("lock_sha256")
+            if not isinstance(lock_sha256, str) or len(lock_sha256) != 64:
+                raise SupervisorError("source-lock digest is invalid")
+            if task_entry.task_id == SPEECH_TASK_ID:
+                speech_source_lock_sha256 = lock_sha256
+            else:
+                disaster_source_lock_sha256 = lock_sha256
+        disaster_contract = load_disaster_substitution_contract()
+        speech_contract = load_speech_substitution_contract()
+        reference_provenance = {
+            "predecessor_candidate_id": v1_id,
+            "v1_root_candidate_id": v1_id,
+            "v2_root_candidate_id": root_candidate_id,
+            "predecessor_manifest_sha256": PREDECESSOR_MANIFEST_SHA256,
+            "predecessor_crosswalk_sha256": PREDECESSOR_CROSSWALK_SHA256,
+            "substitution_contract_sha256": disaster_contract.sha256,
+            "disaster_substitution_contract_sha256": disaster_contract.sha256,
+            "speech_substitution_contract_sha256": speech_contract.sha256,
+            "row_classification": lineage_row["row_classification"],
+            "old_task_id": lineage_row["old_task_id"],
+            "new_task_id": lineage_row["new_task_id"],
+            "old_semantic_signature": lineage_row["old_semantic_signature"],
+            "new_semantic_signature": lineage_row["new_semantic_signature"],
+            "task_independent_compute_signature": lineage_row[
+                "new_compute_signature"
+            ],
+            "resolved_semantic_distribution_signature": (
+                semantic_distribution_signature(candidate)
+            ),
+            "dataset_substitution": task_entry.task_id == DISASTER_TASK_ID,
+            "source_archive_sha256": archive_sha256,
+            "remote_inventory_sha256": remote_inventory_sha256,
+            "speech_source_lock_sha256": speech_source_lock_sha256,
+            "disaster_source_lock_sha256": disaster_source_lock_sha256,
+        }
+    elif speech_v2:
         if not isinstance(lineage_row, Mapping) or not isinstance(v1_id, str):
             raise SupervisorError("speech V2 record has no three-way lineage row")
         try:
@@ -744,6 +871,77 @@ def wait_for_gpu_cleanup(
     )
     evidence.validate()
     return evidence
+
+
+def cleanup_release_tolerance_mib(*, production_eligible: bool) -> float:
+    """Keep headless A10 cleanup strict while allowing local display-memory drift."""
+
+    return (
+        PRODUCTION_CLEANUP_RELEASE_TOLERANCE_MIB
+        if production_eligible
+        else LOCAL_VALIDATION_CLEANUP_RELEASE_TOLERANCE_MIB
+    )
+
+
+def retained_epoch_spread_limit(*, production_eligible: bool) -> float:
+    """Keep the corpus gate strict; tolerate desktop jitter only in non-production."""
+
+    return (
+        PRODUCTION_RETAINED_EPOCH_SPREAD_LIMIT
+        if production_eligible
+        else LOCAL_VALIDATION_RETAINED_EPOCH_SPREAD_LIMIT
+    )
+
+
+def build_worker_failure_diagnostic(
+    *,
+    candidate_id: str,
+    run_id: str,
+    attempt_index: int,
+    return_code: int | None,
+    child_log: str,
+    worker_diagnostic: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Bind a worker's bounded failure reason to its durable failed run."""
+
+    diagnostic = {
+        "version": f"{SUPERVISOR_VERSION}_worker_failure_diagnostic_v1",
+        "candidate_id": candidate_id,
+        "run_id": run_id,
+        "attempt_index": attempt_index,
+        "return_code": return_code,
+        "child_log": child_log,
+        "failure_stage": worker_diagnostic.get("failure_stage"),
+        "reason_code": worker_diagnostic.get("reason_code"),
+        "reason_message": worker_diagnostic.get("reason_message"),
+    }
+    return {
+        **diagnostic,
+        "diagnostic_sha256": canonical_sha256(diagnostic),
+    }
+
+
+def terminate_lingering_process_group(
+    process_group_id: int,
+    *,
+    timeout_seconds: float = 10.0,
+    poll_seconds: float = 0.1,
+) -> bool:
+    """Kill residual descendants and prove the whole process group disappeared."""
+
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return True
+    os.killpg(process_group_id, signal.SIGKILL)
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(process_group_id, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(poll_seconds)
+    return False
 
 
 def _load_worker_envelope(path: Path, candidate_id: str) -> Mapping[str, Any]:
@@ -950,22 +1148,25 @@ class AttemptSupervisor:
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait(timeout=10)
         log_stream.close()
-        try:
-            os.killpg(process.pid, 0)
-        except ProcessLookupError:
-            process_tree_exited = True
-        else:
-            process_tree_exited = False
-            os.killpg(process.pid, signal.SIGKILL)
+        process_tree_exited = terminate_lingering_process_group(process.pid)
         try:
             cleanup = wait_for_gpu_cleanup(
-                probe, baseline, child_process_tree_exited=process_tree_exited
+                probe,
+                baseline,
+                release_tolerance_mib=cleanup_release_tolerance_mib(
+                    production_eligible=self.production_eligible
+                ),
+                child_process_tree_exited=process_tree_exited,
             )
         finally:
             shutil.rmtree(credential_directory)
             shutil.rmtree(compiler_cache_directory)
             heartbeat.unlink(missing_ok=True)
-        def publish_failure(record: LabelRunRecord) -> LabelRunRecord:
+        def publish_failure(
+            record: LabelRunRecord,
+            *,
+            worker_diagnostic: Mapping[str, Any] | None = None,
+        ) -> LabelRunRecord:
             record = _bind_native_a10_provenance(
                 record,
                 candidate,
@@ -974,14 +1175,44 @@ class AttemptSupervisor:
                 production_eligible=self.production_eligible,
             )
             path = self.workspace / "attempts" / "failed" / f"{record.run_id}.json"
+            if worker_diagnostic is not None:
+                atomic_write_json(
+                    self.workspace
+                    / "attempts"
+                    / "diagnostics"
+                    / f"{record.run_id}.json",
+                    build_worker_failure_diagnostic(
+                        candidate_id=candidate.candidate_id,
+                        run_id=record.run_id,
+                        attempt_index=attempt_index,
+                        return_code=process.returncode,
+                        child_log=str(log_path.relative_to(self.workspace)),
+                        worker_diagnostic=worker_diagnostic,
+                    ),
+                )
             output.unlink(missing_ok=True)
             dispatch.unlink(missing_ok=True)
             atomic_write_json(path, asdict(record))
             return record
 
         if not cleanup.passed:
+            failure = {
+                "version": SUPERVISOR_VERSION,
+                "candidate_id": candidate.candidate_id,
+                "failure_kind": "gpu_cleanup_integrity_failure",
+                "child_log": str(log_path.relative_to(self.workspace)),
+                "cleanup": asdict(cleanup),
+            }
+            atomic_write_json(
+                self.workspace
+                / "state"
+                / "global_failures"
+                / f"gpu-cleanup-{candidate.candidate_id}.json",
+                {**failure, "failure_sha256": canonical_sha256(failure)},
+            )
             raise SupervisorError(
-                f"GPU cleanup failed; aborting campaign; child log: {log_path}"
+                "GPU cleanup failed; aborting campaign; "
+                f"child log: {log_path}; evidence: {failure['cleanup']}"
             )
         if timed_out:
             if not PROFILE.is_nonvision_4gpu:
@@ -1005,7 +1236,14 @@ class AttemptSupervisor:
                     gpu_uuid=probe.gpu_uuid,
                     hardware_sha256=probe.hardware_fingerprint,
                     attempt_index=attempt_index,
-                )
+                ),
+                worker_diagnostic={
+                    "failure_stage": FailureStage.TIMEOUT.value,
+                    "reason_code": f"supervisor.{timeout_reason}",
+                    "reason_message": (
+                        "label worker exceeded its no-progress or absolute time limit"
+                    ),
+                },
             )
         try:
             envelope = _load_worker_envelope(output, candidate.candidate_id)
@@ -1032,7 +1270,14 @@ class AttemptSupervisor:
                     gpu_uuid=probe.gpu_uuid,
                     hardware_sha256=probe.hardware_fingerprint,
                     attempt_index=attempt_index,
-                )
+                ),
+                worker_diagnostic={
+                    "failure_stage": FailureStage.FORWARD.value,
+                    "reason_code": "supervisor.invalid_worker_envelope",
+                    "reason_message": (
+                        "label worker exited without a valid hashed result envelope"
+                    ),
+                },
             )
         if envelope["status"] != "success" or process.returncode != 0:
             reason_code = str(envelope["payload"].get("reason_code", ""))
@@ -1065,7 +1310,8 @@ class AttemptSupervisor:
                         gpu_uuid=probe.gpu_uuid,
                         hardware_sha256=probe.hardware_fingerprint,
                         attempt_index=attempt_index,
-                    )
+                    ),
+                    worker_diagnostic=envelope["payload"],
                 )
             raw_stage = str(envelope["payload"].get("failure_stage", "forward"))
             stage = (
@@ -1084,14 +1330,26 @@ class AttemptSupervisor:
                     gpu_uuid=probe.gpu_uuid,
                     hardware_sha256=probe.hardware_fingerprint,
                     attempt_index=attempt_index,
-                )
+                ),
+                worker_diagnostic=envelope["payload"],
             )
         run = FiveEpochRunResult.from_dict(envelope["payload"])
         if run.gpu_uuid != probe.gpu_uuid or run.hardware_sha256 != probe.hardware_fingerprint:
             raise SupervisorError("child hardware differs from assigned physical GPU")
         epoch_times = tuple(float(row.epoch_ms) for row in run.epoch_measurements)
         mean = sum(epoch_times) / len(epoch_times)
-        if mean <= 0 or (max(epoch_times) - min(epoch_times)) / mean > 0.10:
+        relative_spread = (
+            (max(epoch_times) - min(epoch_times)) / mean
+            if mean > 0
+            else float("inf")
+        )
+        spread_limit = retained_epoch_spread_limit(
+            production_eligible=self.production_eligible
+        )
+        if (
+            mean <= 0
+            or relative_spread > spread_limit
+        ):
             return publish_failure(
                 build_failed_label_record(
                     candidate,
@@ -1104,7 +1362,15 @@ class AttemptSupervisor:
                     hardware_sha256=run.hardware_sha256,
                     attempt_index=attempt_index,
                     run=run,
-                )
+                ),
+                worker_diagnostic={
+                    "failure_stage": FailureStage.STABILITY.value,
+                    "reason_code": "supervisor.retained_epoch_spread",
+                    "reason_message": (
+                        f"retained epoch spread {relative_spread:.6f} exceeded "
+                        f"limit {spread_limit:.6f}"
+                    ),
+                },
             )
         record = build_accepted_label_record(
             candidate,
@@ -1113,6 +1379,7 @@ class AttemptSupervisor:
             run,
             cleanup,
             attempt_index=attempt_index,
+            production_eligible=self.production_eligible,
         )
         record = _bind_native_a10_provenance(
             record,

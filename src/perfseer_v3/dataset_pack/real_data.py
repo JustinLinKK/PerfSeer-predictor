@@ -36,6 +36,62 @@ def _numeric(value: Any) -> float:
     return _stable_bucket(str(value), 10_000) / 10_000.0
 
 
+def _geometry_nodes(payload: bytes) -> torch.Tensor:
+    """Decode either conventional XYZ or NOMAD's ASE/FHI-aims geometry form."""
+
+    try:
+        lines = payload.decode("utf-8").splitlines()
+    except UnicodeDecodeError as error:
+        raise RealPreparedDataError("prepared geometry is not UTF-8") from error
+    nonempty = [line.strip() for line in lines if line.strip()]
+    if not nonempty:
+        raise RealPreparedDataError("prepared geometry is empty")
+    atoms: list[tuple[str, float, float, float]] = []
+    try:
+        atom_count = int(nonempty[0])
+    except ValueError:
+        atom_count = -1
+    try:
+        if atom_count >= 1:
+            if len(nonempty) < atom_count + 2:
+                raise ValueError("conventional XYZ atom count exceeds the file")
+            for line in nonempty[2 : 2 + atom_count]:
+                fields = line.split()
+                if len(fields) < 4:
+                    raise ValueError("conventional XYZ atom row is incomplete")
+                atoms.append(
+                    (fields[0], float(fields[1]), float(fields[2]), float(fields[3]))
+                )
+        else:
+            for line in nonempty:
+                fields = line.split()
+                if fields[0] not in {"atom", "atom_frac"}:
+                    continue
+                if len(fields) != 5:
+                    raise ValueError("ASE/FHI-aims atom row has the wrong width")
+                atoms.append(
+                    (fields[4], float(fields[1]), float(fields[2]), float(fields[3]))
+                )
+    except (IndexError, ValueError) as error:
+        raise RealPreparedDataError("prepared geometry atom rows cannot be decoded") from error
+    if not 1 <= len(atoms) <= 10_000 or (
+        atom_count >= 1 and len(atoms) != atom_count
+    ):
+        raise RealPreparedDataError("prepared geometry has an invalid atom count")
+    if any(
+        not species or not all(math.isfinite(value) for value in coordinates)
+        for species, *coordinates in atoms
+    ):
+        raise RealPreparedDataError("prepared geometry contains invalid atom values")
+    return torch.tensor(
+        [
+            [_stable_bucket(species, 32) / 31.0, x, y, z, 0.0, 1.0]
+            for species, x, y, z in atoms
+        ],
+        dtype=torch.float32,
+    )
+
+
 def _pad_1d(rows: Sequence[torch.Tensor], *, value: int | float = 0) -> torch.Tensor:
     width = max(row.numel() for row in rows)
     return torch.stack([F.pad(row, (0, width - row.numel()), value=value) for row in rows])
@@ -218,21 +274,8 @@ class VerifiedPreparedDataset:
                 ),
             }
         elif modality == "graph":
-            lines = self._reference_bytes(raw_inputs["geometry"]).decode("utf-8").splitlines()
-            try:
-                atom_count = int(lines[0])
-                atoms = [line.split() for line in lines[2 : 2 + atom_count]]
-                if len(atoms) != atom_count:
-                    raise ValueError
-                nodes = torch.tensor(
-                    [
-                        [_stable_bucket(atom[0], 32) / 31.0, *map(float, atom[1:4]), 0.0, 1.0]
-                        for atom in atoms
-                    ],
-                    dtype=torch.float32,
-                )
-            except (ValueError, IndexError) as error:
-                raise RealPreparedDataError("prepared geometry.xyz cannot be decoded") from error
+            nodes = _geometry_nodes(self._reference_bytes(raw_inputs["geometry"]))
+            atom_count = nodes.shape[0]
             edge_ids = torch.arange(max(1, atom_count), dtype=torch.long)
             inputs = {
                 "node_features": nodes,
@@ -344,5 +387,6 @@ def build_verified_real_batch(
 __all__ = [
     "RealPreparedDataError",
     "VerifiedPreparedDataset",
+    "_geometry_nodes",
     "build_verified_real_batch",
 ]

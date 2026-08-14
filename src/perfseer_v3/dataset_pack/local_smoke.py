@@ -17,6 +17,7 @@ from .quota import FROZEN_QUOTA_CELLS, NONVISION_QUOTA_CELLS
 from .kaggle import KaggleCliClient
 from .materialization import TaskMaterializer
 from .mlebench_bridge import PinnedMleBenchPreparer
+from .substitution_preparer import SubstitutionAwarePreparer
 from .adapters import adapter_for_task
 from .local_runtime import (
     _build_model,
@@ -38,12 +39,15 @@ from .task_registry import TaskRegistryEntry, load_task_registry
 from .v100_runner import (
     FiveEpochRunResult,
     TelemetryReading,
+    _compile_training_path,
     run_five_epoch_training,
 )
 
 
 LOCAL_SMOKE_VERSION = (
-    "perfseer_v3_nrp_a10_speech_rtx5090_real_label_smoke_v2"
+    "perfseer_v3_nrp_a10_nonvision_disaster_rtx5090_real_label_smoke_v2"
+    if PROFILE.uses_disaster_v2
+    else "perfseer_v3_nrp_a10_speech_rtx5090_real_label_smoke_v2"
     if PROFILE.uses_speech_v2
     else "perfseer_v3_nrp_a10_rtx5090_real_label_smoke_v1"
     if PROFILE.is_native_a10
@@ -232,8 +236,26 @@ def _execute_one_batch_update(
     raw: Mapping[str, Any],
 ) -> Mapping[str, Any]:
     configure_precision_backends(candidate)
+    if candidate.execution["mode"] == "compiled":
+        reset_compiler = getattr(torch.compiler, "reset", None)
+        if not callable(reset_compiler):
+            raise LocalSmokeError(
+                "compiled fixture validation requires torch.compiler.reset"
+            )
+        # The production supervisor launches every candidate in a fresh
+        # process.  Reset Dynamo here so a multi-candidate validation matrix
+        # cannot hit the process-wide recompile limit and silently stop
+        # exercising Inductor after the first few shapes/precision policies.
+        reset_compiler()
     batch = bind_candidate_batch_shape(candidate, adapter, _move(raw, device))
     model = _build_model(candidate, adapter, device)
+    forward_loss = _compile_training_path(
+        candidate,
+        model,
+        adapter,
+        batch,
+        device,
+    )
     optimizer = _build_optimizer(candidate, model)
     scheduler = _build_scheduler(
         candidate,
@@ -263,12 +285,7 @@ def _execute_one_batch_update(
         adapter=adapter,
         optimizer=optimizer,
         scheduler=scheduler,
-        forward_loss=lambda: _forward_loss(
-            model,
-            adapter,
-            batch,
-            bool(candidate.activation_checkpointing["enabled"]),
-        ),
+        forward_loss=lambda: forward_loss(batch),
         scaler=scaler,
     )
     if not bool(torch.isfinite(updated_loss)) or not _gradients_finite(model):
@@ -278,6 +295,8 @@ def _execute_one_batch_update(
         "task_id": candidate.task_id,
         "configuration_id": candidate.candidate_id,
         "precision_policy": candidate.precision_policy["policy_id"],
+        "requested_execution_mode": candidate.execution["mode"],
+        "observed_backend_id": candidate.execution["backend_id"],
         "one_batch_update": "passed",
     }
 
@@ -345,6 +364,25 @@ def _fixture_coverage_tokens(candidate: TargetCandidate) -> set[tuple[str, str]]
                 str(candidate.architecture_parameters["architecture_specification"]),
             )
         )
+        tokens.add(
+            (
+                "generated_lineage_execution",
+                f"{candidate.source_lineage}:{candidate.execution['mode']}",
+            )
+        )
+        tokens.add(
+            (
+                "generated_lineage_precision",
+                f"{candidate.source_lineage}:"
+                f"{candidate.precision_policy['policy_id']}",
+            )
+        )
+        tokens.add(
+            (
+                "generated_optimizer_modality",
+                f"{candidate.optimizer['name']}:{candidate.source_modality}",
+            )
+        )
     return tokens
 
 
@@ -388,7 +426,11 @@ def run_nonvision_fixture_matrix_smoke(workspace: str | Path) -> Mapping[str, An
     ]
     covered = set().union(*(_fixture_coverage_tokens(row) for row in candidates))
     result: dict[str, Any] = {
-        "version": "perfseer_v3_nrp_a10_nonvision_rtx5090_fixture_matrix_v1",
+        "version": (
+            "perfseer_v3_nrp_a10_nonvision_disaster_rtx5090_fixture_matrix_v3"
+            if PROFILE.uses_disaster_v2
+            else "perfseer_v3_nrp_a10_nonvision_rtx5090_fixture_matrix_v2"
+        ),
         "production_eligible": False,
         "hardware_provenance": backend.hardware_provenance,
         "candidate_count": len(candidates),
@@ -449,7 +491,11 @@ def run_manifest_construction_audit(workspace: str | Path) -> Mapping[str, Any]:
     ):
         raise LocalSmokeError("construction audit totals differ from the active corpus")
     result: dict[str, Any] = {
-        "version": "perfseer_v3_nrp_a10_nonvision_manifest_construction_audit_v1",
+        "version": (
+            "perfseer_v3_nrp_a10_nonvision_disaster_manifest_construction_audit_v2"
+            if PROFILE.uses_disaster_v2
+            else "perfseer_v3_nrp_a10_nonvision_manifest_construction_audit_v1"
+        ),
         "candidate_count": len(rows),
         "family_count": len({row["family_id"] for row in rows}),
         "production_eligible": False,
@@ -485,15 +531,22 @@ def run_speech_precision_matrix_smoke(
         workspace=Path(workspace).resolve() / "materialized" / entry.task_id,
         repository_root=Path(repository_root).resolve(),
         kaggle=KaggleCliClient(executable=kaggle_executable),
-        preparer=PinnedMleBenchPreparer(Path(mlebench_checkout)),
+        preparer=SubstitutionAwarePreparer(Path(mlebench_checkout)),
     ).materialize(entry)
-    from .a10_speech_crosswalk import build_crosswalk
     from .real_data import VerifiedPreparedDataset
     from .speech_substitution import load_speech_substitution_contract
 
-    lineage = {
-        str(row["native_v2_candidate_id"]): row for row in build_crosswalk(manifest).rows
-    }
+    if PROFILE.uses_disaster_v2:
+        from .a10_disaster_crosswalk import build_crosswalk
+
+        lineage = {str(row["v2_candidate_id"]): row for row in build_crosswalk(manifest).rows}
+    else:
+        from .a10_speech_crosswalk import build_crosswalk
+
+        lineage = {
+            str(row["native_v2_candidate_id"]): row
+            for row in build_crosswalk(manifest).rows
+        }
     dataset = VerifiedPreparedDataset(
         entry,
         materialized.public,
@@ -537,15 +590,25 @@ def run_speech_precision_matrix_smoke(
                 raw=raw,
             )
             row_lineage = lineage[candidate.candidate_id]
-            rows.append(
+            lineage_values = (
                 {
-                    **update,
-                    "input_kind": "verified_real_speech_prepared_view",
-                    "dataset_fingerprint": dataset.dataset_fingerprint,
+                    "predecessor_candidate_id": row_lineage["v1_candidate_id"],
+                    "row_classification": row_lineage["row_classification"],
+                }
+                if PROFILE.uses_disaster_v2
+                else {
                     "original_a10g_candidate_id": row_lineage[
                         "original_a10g_candidate_id"
                     ],
                     "native_v1_candidate_id": row_lineage["native_v1_candidate_id"],
+                }
+            )
+            rows.append(
+                {
+                    **update,
+                    **lineage_values,
+                    "input_kind": "verified_real_speech_prepared_view",
+                    "dataset_fingerprint": dataset.dataset_fingerprint,
                     "dataset_substitution": True,
                 }
             )
@@ -571,6 +634,112 @@ def run_speech_precision_matrix_smoke(
     atomic_write_json(
         Path(workspace).resolve() / "speech-precision-matrix.json", result
     )
+    return canonical_value(result)
+
+
+def run_disaster_precision_matrix_smoke(
+    workspace: str | Path,
+    *,
+    repository_root: str | Path,
+    mlebench_checkout: str | Path,
+    kaggle_executable: str = "kaggle",
+) -> Mapping[str, Any]:
+    """Exercise every affected NLP-family/precision path on verified Disaster data."""
+
+    if not PROFILE.uses_disaster_v2:
+        raise LocalSmokeError("Disaster precision matrix requires its V2 profile")
+    backend = Rtx5090TelemetryBackend()
+    device = torch.device("cuda")
+    manifest = build_target_manifest()
+    entry = _entry("disaster-tweets")
+    materialized = TaskMaterializer(
+        workspace=Path(workspace).resolve() / "materialized" / entry.task_id,
+        repository_root=Path(repository_root).resolve(),
+        kaggle=KaggleCliClient(executable=kaggle_executable),
+        preparer=SubstitutionAwarePreparer(Path(mlebench_checkout)),
+    ).materialize(entry)
+    from .a10_disaster_crosswalk import build_crosswalk
+    from .disaster_substitution import load_disaster_substitution_contract
+    from .real_data import VerifiedPreparedDataset
+
+    lineage = {str(row["v2_candidate_id"]): row for row in build_crosswalk(manifest).rows}
+    dataset = VerifiedPreparedDataset(
+        entry,
+        materialized.public,
+        materialized.prepared_view,
+        materialized.inventory.archive_sha256,
+    )
+    rows = []
+    families = (
+        "bert_base",
+        "mla_mini_transformer",
+        "bilstm_crf",
+        "fasttext_embeddingbag",
+        "distilbert_distillation",
+    )
+    precisions = ("fp32_tf32", "bf16", "fp16_grad_scaler", "mixed_structured")
+    for family in families:
+        for precision in precisions:
+            matches = tuple(
+                row
+                for row in manifest.candidates
+                if row.task_id == "disaster-tweets"
+                and row.family_id == family
+                and row.precision_policy["policy_id"] == precision
+                and row.execution["mode"] == "eager"
+            )
+            if not matches:
+                raise LocalSmokeError(
+                    f"Disaster V2 has no eager {family}/{precision} candidate"
+                )
+            candidate = sorted(
+                matches,
+                key=lambda row: (
+                    row.microbatch_size,
+                    row.gradient_accumulation_steps,
+                    row.candidate_id,
+                ),
+            )[0]
+            raw = dataset.build_batch(tuple(range(candidate.microbatch_size)))
+            update = _execute_one_batch_update(
+                candidate,
+                device,
+                adapter=adapter_for_task(candidate.task_id),
+                raw=raw,
+            )
+            row_lineage = lineage[candidate.candidate_id]
+            rows.append(
+                {
+                    **update,
+                    "input_kind": "verified_real_disaster_prepared_view",
+                    "dataset_fingerprint": dataset.dataset_fingerprint,
+                    "predecessor_candidate_id": row_lineage["v1_candidate_id"],
+                    "row_classification": row_lineage["row_classification"],
+                    "dataset_substitution": True,
+                }
+            )
+    result: dict[str, Any] = {
+        "version": "perfseer_v3_nrp_a10_disaster_rtx5090_precision_matrix_v2",
+        "production_eligible": False,
+        "hardware_provenance": backend.hardware_provenance,
+        "family_count": len(families),
+        "precision_count": len(precisions),
+        "update_count": len(rows),
+        "dataset_fingerprint": materialized.view_manifest.dataset_fingerprint,
+        "source_archive_sha256": materialized.inventory.archive_sha256,
+        "remote_inventory_sha256": materialized.state.remote_inventory_sha256,
+        "disaster_source_lock_sha256": (
+            materialized.source_lock.lock_sha256
+            if materialized.source_lock is not None
+            else None
+        ),
+        "substitution_contract_sha256": load_disaster_substitution_contract().sha256,
+        "updates": rows,
+    }
+    if result["update_count"] != 20:
+        raise LocalSmokeError("Disaster precision matrix must contain 20 updates")
+    result["result_sha256"] = canonical_sha256(result)
+    atomic_write_json(Path(workspace).resolve() / "disaster-precision-matrix.json", result)
     return canonical_value(result)
 
 
@@ -605,10 +774,16 @@ def run_local_smoke(
     if not lock_path.is_file():
         raise LocalSmokeError("dependency lock is missing")
     backend = Rtx5090TelemetryBackend()
-    preparer = PinnedMleBenchPreparer(Path(mlebench_checkout))
+    preparer = SubstitutionAwarePreparer(Path(mlebench_checkout))
     records: list[Mapping[str, Any]] = []
     speech_lineage: Mapping[str, Mapping[str, Any]] = {}
-    if PROFILE.uses_speech_v2:
+    if PROFILE.uses_disaster_v2:
+        from .a10_disaster_crosswalk import build_crosswalk
+
+        speech_lineage = {
+            str(row["v2_candidate_id"]): row for row in build_crosswalk().rows
+        }
+    elif PROFILE.uses_speech_v2:
         from .a10_speech_crosswalk import build_crosswalk
 
         speech_lineage = {
@@ -658,7 +833,43 @@ def run_local_smoke(
             "measured_epochs": [3, 4, 5],
             "run": result.to_dict(),
         }
-        if PROFILE.uses_speech_v2:
+        if PROFILE.uses_disaster_v2:
+            from .a10_disaster_crosswalk import (
+                PREDECESSOR_CROSSWALK_SHA256,
+                PREDECESSOR_MANIFEST_SHA256,
+            )
+            from .disaster_substitution import (
+                DISASTER_TASK_ID,
+                load_disaster_substitution_contract,
+            )
+            from .speech_substitution import load_speech_substitution_contract
+
+            lineage = speech_lineage.get(candidate.candidate_id)
+            if lineage is None:
+                raise LocalSmokeError("Disaster V2 smoke candidate has no lineage row")
+            record["reference_provenance"] = {
+                "predecessor_candidate_id": lineage["v1_candidate_id"],
+                "v1_root_candidate_id": lineage["v1_candidate_id"],
+                "v2_root_candidate_id": candidate.candidate_id,
+                "predecessor_manifest_sha256": PREDECESSOR_MANIFEST_SHA256,
+                "predecessor_crosswalk_sha256": PREDECESSOR_CROSSWALK_SHA256,
+                "substitution_contract_sha256": (
+                    load_disaster_substitution_contract().sha256
+                ),
+                "speech_substitution_contract_sha256": (
+                    load_speech_substitution_contract().sha256
+                ),
+                "row_classification": lineage["row_classification"],
+                "dataset_substitution": candidate.task_id == DISASTER_TASK_ID,
+                "source_archive_sha256": materialized.inventory.archive_sha256,
+                "remote_inventory_sha256": materialized.state.remote_inventory_sha256,
+                "source_lock_sha256": (
+                    materialized.source_lock.lock_sha256
+                    if materialized.source_lock is not None
+                    else None
+                ),
+            }
+        elif PROFILE.uses_speech_v2:
             from .a10_crosswalk import REFERENCE_MANIFEST_SHA256
             from .a10_speech_crosswalk import NATIVE_V1_MANIFEST_SHA256
             from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
@@ -724,7 +935,34 @@ def verify_local_smoke(
             or tuple(row.epoch for row in run.epoch_measurements) != (3, 4, 5)
         ):
             raise LocalSmokeError(f"smoke record for {model} violates the contract")
-        if PROFILE.uses_speech_v2:
+        if PROFILE.uses_disaster_v2:
+            from .disaster_substitution import DISASTER_TASK_ID
+
+            provenance = value.get("reference_provenance")
+            if (
+                not isinstance(provenance, Mapping)
+                or provenance.get("dataset_substitution")
+                is not (candidate.task_id == DISASTER_TASK_ID)
+                or any(
+                    not isinstance(provenance.get(key), str)
+                    or len(str(provenance.get(key))) != 64
+                    for key in (
+                        "predecessor_candidate_id",
+                        "v1_root_candidate_id",
+                        "v2_root_candidate_id",
+                        "predecessor_manifest_sha256",
+                        "predecessor_crosswalk_sha256",
+                        "substitution_contract_sha256",
+                        "speech_substitution_contract_sha256",
+                        "source_archive_sha256",
+                        "remote_inventory_sha256",
+                    )
+                )
+            ):
+                raise LocalSmokeError(
+                    "Disaster V2 smoke lineage/source provenance differs"
+                )
+        elif PROFILE.uses_speech_v2:
             provenance = value.get("reference_provenance")
             if (
                 not isinstance(provenance, Mapping)
@@ -765,6 +1003,7 @@ __all__ = [
     "run_family_matrix_smoke",
     "run_nonvision_fixture_matrix_smoke",
     "run_manifest_construction_audit",
+    "run_disaster_precision_matrix_smoke",
     "run_speech_precision_matrix_smoke",
     "select_smoke_candidate",
     "select_nonvision_fixture_matrix",

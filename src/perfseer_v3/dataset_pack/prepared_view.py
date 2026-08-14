@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 from dataclasses import asdict, dataclass
 import hashlib
+import heapq
 import io
 import json
 import math
@@ -19,12 +20,15 @@ import zipfile
 from .fingerprints import canonical_sha256, canonical_value
 from .labeler_profile import PROFILE
 from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
+from .disaster_substitution import load_disaster_substitution_contract
 from .storage import atomic_write_json, atomic_write_jsonl
 from .task_registry import MLEBENCH_METADATA_REVISION, TaskRegistryEntry
 
 
 PREPARED_VIEW_VERSION = (
-    "perfseer_v3_nrp_a10_speech_prepared_view_v2"
+    "perfseer_v3_nrp_a10_disaster_prepared_view_v2"
+    if PROFILE.uses_disaster_v2
+    else "perfseer_v3_nrp_a10_speech_prepared_view_v2"
     if PROFILE.uses_speech_v2
     else "perfseer_v3_v100_prepared_view_v2"
 )
@@ -145,6 +149,16 @@ class SourceSample:
         canonical_value(self.target)
         if target_schema is not None:
             _validate_target(self.target, target_schema)
+
+
+@dataclass(frozen=True)
+class _ReverseRank:
+    """Make heapq retain the lexicographically smallest deterministic ranks."""
+
+    value: tuple[str, str]
+
+    def __lt__(self, other: "_ReverseRank") -> bool:
+        return self.value > other.value
 
 
 def _validate_target(target: Any, schema: Mapping[str, Any]) -> None:
@@ -393,6 +407,72 @@ def _tabular_table(
     return result
 
 
+def _stream_tabular_smallest(
+    entry: TaskRegistryEntry,
+    public: Path,
+    *,
+    table: str,
+    id_column: str,
+    target_columns: Sequence[str],
+    limit: int = PREPARED_EXAMPLE_COUNT,
+) -> tuple[list[SourceSample], int]:
+    """Select a deterministic bounded view from a table too large to load in RAM."""
+
+    path = public / table
+    if not path.is_file() or path.is_symlink():
+        raise PreparedViewError(f"prepared training table is missing: {path.name!r}")
+    retained: list[tuple[_ReverseRank, int, SourceSample]] = []
+    source_count = 0
+    with path.open("r", encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        columns = tuple(reader.fieldnames or ())
+        required = {id_column, *target_columns}
+        if not required <= set(columns):
+            raise PreparedViewError(f"prepared table is missing columns {sorted(required)!r}")
+        feature_columns = tuple(name for name in columns if name not in required)
+        if not feature_columns:
+            raise PreparedViewError("tabular task has no feature columns")
+        for row_index, row in enumerate(reader):
+            source_count += 1
+            identity = str(row[id_column] or "").strip()
+            if not identity:
+                raise PreparedViewError("prepared source sample is incomplete")
+            target: Any = (
+                _cell(row[target_columns[0]])
+                if len(target_columns) == 1
+                else [_cell(row[name]) for name in target_columns]
+            )
+            _validate_target(target, entry.target_schema)
+            rank = (
+                canonical_sha256(
+                    {"task_id": entry.task_id, "source_sample_id": identity}
+                ),
+                identity,
+            )
+            if len(retained) == limit and rank >= retained[0][0].value:
+                continue
+            source = SourceSample(
+                identity,
+                {"features": {name: _cell(row[name]) for name in feature_columns}},
+                target,
+            )
+            source.validate(entry.target_schema)
+            item = (_ReverseRank(rank), row_index, source)
+            if len(retained) < limit:
+                heapq.heappush(retained, item)
+            else:
+                heapq.heapreplace(retained, item)
+    if source_count == 0:
+        raise PreparedViewError(f"prepared training table is empty: {path.name!r}")
+    selected = [
+        item[2]
+        for item in sorted(retained, key=lambda item: (item[0].value, item[1]))
+    ]
+    if len({source.source_sample_id for source in selected}) != len(selected):
+        raise PreparedViewError("selected prepared source sample IDs are not unique")
+    return selected, source_count
+
+
 _RANZCR_TARGETS = (
     "ETT - Abnormal",
     "ETT - Borderline",
@@ -461,6 +541,25 @@ def _source_samples(entry: TaskRegistryEntry, public: Path) -> list[SourceSample
         return _text_table(public, table="train.csv", id_column="id", text_columns=("comment_text",), target_columns=_JIGSAW_TARGETS)
     if task == "detecting-insults":
         return _text_table(public, table="train.csv", id_column=None, text_columns=("Date", "Comment"), target_columns=("Insult",))
+    if task == "disaster-tweets":
+        samples = _text_table(
+            public,
+            table="train.csv",
+            id_column="id",
+            text_columns=("keyword", "location", "text"),
+            target_columns=("target",),
+        )
+        if len(samples) != 7_613:
+            raise PreparedViewError("Disaster Tweets source row count differs")
+        if any(
+            not str(sample.inputs["text"][2]).strip()
+            or sample.target not in {0, 1}
+            for sample in samples
+        ):
+            raise PreparedViewError("Disaster Tweets contains invalid text or target")
+        if {sample.target for sample in samples} != {0, 1}:
+            raise PreparedViewError("Disaster Tweets must contain both target classes")
+        return samples
     if task == "spooky-author":
         return _text_table(public, table="train.csv", id_column="id", text_columns=("text",), target_columns=("author",))
     if task == "random-acts-of-pizza":
@@ -666,24 +765,41 @@ def build_shared_prepared_view(
         raise PreparedViewError("prepared-view source/destination state is invalid")
     if len(archive_sha256) != 64:
         raise PreparedViewError("prepared-view archive SHA-256 is invalid")
-    sources = _source_samples(entry, public)
-    if not sources:
-        raise PreparedViewError("prepared-view recipe found no training examples")
-    for source in sources:
-        source.validate(entry.target_schema)
-    if len({source.source_sample_id for source in sources}) != len(sources):
-        raise PreparedViewError("prepared source sample IDs are not unique")
     speech_view = entry.task_id == SPEECH_TASK_ID
-    if speech_view:
-        selected = sources
-    else:
-        ordered = sorted(
-            sources,
-            key=lambda source: canonical_sha256(
-                {"task_id": entry.task_id, "source_sample_id": source.source_sample_id}
-            ),
+    if entry.task_id == "nyc-taxi-fare":
+        ordered, source_example_count = _stream_tabular_smallest(
+            entry,
+            public,
+            table="labels.csv",
+            id_column="key",
+            target_columns=("fare_amount",),
         )
-        selected = [ordered[index % len(ordered)] for index in range(PREPARED_EXAMPLE_COUNT)]
+        selected = [
+            ordered[index % len(ordered)] for index in range(PREPARED_EXAMPLE_COUNT)
+        ]
+    else:
+        sources = _source_samples(entry, public)
+        if not sources:
+            raise PreparedViewError("prepared-view recipe found no training examples")
+        for source in sources:
+            source.validate(entry.target_schema)
+        if len({source.source_sample_id for source in sources}) != len(sources):
+            raise PreparedViewError("prepared source sample IDs are not unique")
+        source_example_count = len(sources)
+        if speech_view:
+            selected = sources
+        else:
+            ordered = sorted(
+                sources,
+                key=lambda source: canonical_sha256(
+                    {"task_id": entry.task_id, "source_sample_id": source.source_sample_id}
+                )
+                + source.source_sample_id,
+            )
+            selected = [
+                ordered[index % len(ordered)]
+                for index in range(PREPARED_EXAMPLE_COUNT)
+            ]
     occurrences: dict[str, int] = {}
     rows = []
     content_cache: dict[tuple[str, ...], tuple[str, int]] = {}
@@ -719,6 +835,21 @@ def build_shared_prepared_view(
                 "substitution_contract_sha256": substitution.sha256,
             }
         )
+    elif entry.task_id == "disaster-tweets":
+        substitution = load_disaster_substitution_contract()
+        if len({row.source_sample_id for row in selected}) != PREPARED_EXAMPLE_COUNT:
+            raise PreparedViewError("Disaster prepared view must sample without replacement")
+        recipe.update(
+            {
+                "selection": "sha256_order_then_deterministic_cycle_v1",
+                "input_columns": ["keyword", "location", "text"],
+                "nullable_metadata_fill": "",
+                "target_column": "target",
+                "source_id_column": "id",
+                "sampling_with_replacement": False,
+                "substitution_contract_sha256": substitution.sha256,
+            }
+        )
     recipe_sha256 = canonical_sha256(recipe)
     samples_sha256 = canonical_sha256(rows)
     task_schema_sha256 = canonical_sha256(entry.target_schema)
@@ -731,11 +862,11 @@ def build_shared_prepared_view(
             "mlebench_revision": MLEBENCH_METADATA_REVISION,
             "task_schema_sha256": task_schema_sha256,
             "archive_sha256": archive_sha256,
-            "source_example_count": len(sources),
+            "source_example_count": source_example_count,
             "prepared_example_count": len(rows),
             "sampling_with_replacement": False
             if speech_view
-            else len(sources) < PREPARED_EXAMPLE_COUNT,
+            else source_example_count < PREPARED_EXAMPLE_COUNT,
             "recipe_sha256": recipe_sha256,
             "samples_sha256": samples_sha256,
         }
@@ -748,11 +879,11 @@ def build_shared_prepared_view(
         mlebench_revision=MLEBENCH_METADATA_REVISION,
         task_schema_sha256=task_schema_sha256,
         archive_sha256=archive_sha256,
-        source_example_count=len(sources),
+        source_example_count=source_example_count,
         prepared_example_count=len(rows),
         sampling_with_replacement=False
         if speech_view
-        else len(sources) < PREPARED_EXAMPLE_COUNT,
+        else source_example_count < PREPARED_EXAMPLE_COUNT,
         recipe_sha256=recipe_sha256,
         samples_sha256=samples_sha256,
         dataset_fingerprint=fingerprint,

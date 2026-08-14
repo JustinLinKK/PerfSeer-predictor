@@ -27,6 +27,11 @@ from .speech_substitution import (
     SPEECH_TASK_ID,
     load_speech_substitution_contract,
 )
+from .disaster_substitution import (
+    DISASTER_TASK_ID,
+    HISTORICAL_TASK_ID as HISTORICAL_INSULTS_TASK_ID,
+    load_disaster_substitution_contract,
+)
 
 
 DEFAULT_MODEL_REGISTRY_PATH = (
@@ -359,6 +364,31 @@ def load_model_registry(
             rebound_entries.append(source_entry)
         if rebound_families != expected_families:
             raise ModelRegistryError("V2 audio-family registry rebound is incomplete")
+        root = {**root, "entries": rebound_entries}
+    if PROFILE.uses_disaster_v2 and default_source:
+        contract = load_disaster_substitution_contract()
+        expected_families = set(contract.payload["affected_families"])
+        rebound_entries = []
+        rebound_families: set[str] = set()
+        for raw_entry in root["entries"]:
+            source_entry = dict(raw_entry)
+            adapters = tuple(source_entry.get("adapter_ids", ()))
+            if HISTORICAL_INSULTS_TASK_ID in adapters:
+                family_id = str(source_entry.get("family_id", ""))
+                if family_id not in expected_families:
+                    raise ModelRegistryError(
+                        "an unexpected family references the historical insults task"
+                    )
+                source_entry["adapter_ids"] = [
+                    DISASTER_TASK_ID
+                    if value == HISTORICAL_INSULTS_TASK_ID
+                    else value
+                    for value in adapters
+                ]
+                rebound_families.add(family_id)
+            rebound_entries.append(source_entry)
+        if rebound_families != expected_families:
+            raise ModelRegistryError("Disaster V2 NLP-family rebound is incomplete")
         root = {**root, "entries": rebound_entries}
     if PROFILE.is_nonvision_4gpu and default_source:
         task_ids = {entry.task_id for entry in tasks.entries}

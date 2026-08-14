@@ -8,7 +8,9 @@ import math
 import os
 from dataclasses import asdict
 from pathlib import Path
+import re
 import threading
+import traceback
 from typing import Any, Mapping, Sequence
 
 import torch
@@ -31,6 +33,22 @@ WORKER_ENVELOPE_VERSION = "perfseer_v3_v100_label_worker_envelope_v1"
 
 class LabelWorkerError(RuntimeError):
     pass
+
+
+def _diagnostic_message(error: BaseException) -> str:
+    """Return a bounded, single-line failure reason without credential values."""
+
+    value = " ".join(str(error).split()) or error.__class__.__name__
+    for name in ("KAGGLE_API_TOKEN", "KAGGLE_KEY", "KAGGLE_USERNAME"):
+        secret = os.environ.get(name)
+        if secret:
+            value = value.replace(secret, "<redacted>")
+    value = re.sub(
+        r"(?i)(token|key|password|secret)(\s*[=:]\s*)[^\s,;]+",
+        r"\1\2<redacted>",
+        value,
+    )
+    return value[:2_000]
 
 
 def _failure_stage(error: BaseException) -> str:
@@ -278,6 +296,10 @@ def run_worker(arguments: argparse.Namespace) -> int:
         )
         return 20
     except Exception as error:
+        # The parent redirects this process to a private 0600 attempt log.
+        # Keep the full stack there while the durable/exportable diagnostic
+        # carries only the bounded, redacted single-line reason below.
+        traceback.print_exc()
         atomic_write_json(
             arguments.output,
             _envelope(
@@ -286,6 +308,7 @@ def run_worker(arguments: argparse.Namespace) -> int:
                 payload={
                     "failure_stage": _failure_stage(error),
                     "reason_code": f"{error.__class__.__module__}.{error.__class__.__name__}",
+                    "reason_message": _diagnostic_message(error),
                     "global_integrity_failure": _global_integrity_failure(error),
                 },
             ),
@@ -332,6 +355,7 @@ if __name__ == "__main__":
 __all__ = [
     "LabelWorkerError",
     "WORKER_ENVELOPE_VERSION",
+    "_diagnostic_message",
     "main",
     "resolve_transfer_inputs",
     "run_worker",

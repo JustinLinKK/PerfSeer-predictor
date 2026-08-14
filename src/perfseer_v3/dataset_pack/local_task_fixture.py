@@ -128,6 +128,20 @@ def _populate(task_id: str, public: Path) -> None:
             public / "train.csv",
             [{"Insult": 0, "Date": "x", "Comment": "hello"}],
         )
+    elif task_id == "disaster-tweets":
+        _write_csv(
+            public / "train.csv",
+            [
+                {
+                    "id": index,
+                    "keyword": "fire" if index % 2 else "",
+                    "location": "test" if index % 3 else "",
+                    "text": f"fixture tweet {index}",
+                    "target": index % 2,
+                }
+                for index in range(7_613)
+            ],
+        )
     elif task_id == "spooky-author":
         _write_csv(
             public / "train.csv",

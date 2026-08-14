@@ -43,7 +43,11 @@ from .storage import atomic_write_json, atomic_write_jsonl
 from .task_registry import load_task_registry
 
 
-EXPORT_VERSION = "perfseer_v3_nrp_a10_nonvision_release_v1"
+EXPORT_VERSION = (
+    "perfseer_v3_nrp_a10_nonvision_disaster_release_v2"
+    if PROFILE.uses_disaster_v2
+    else "perfseer_v3_nrp_a10_nonvision_release_v1"
+)
 SOURCE_BUNDLE_VERSION = "perfseer_v3_content_addressed_source_bundle_v1"
 FORBIDDEN_WEIGHT_SUFFIXES = {".bin", ".ckpt", ".pt", ".pth", ".safetensors"}
 
@@ -110,7 +114,11 @@ def _canonical_training_configuration(
         raise A10ExportError("resolved candidate did not preserve requested effective batch")
     return canonical_value(
         {
-            "version": "perfseer_v3_nrp_a10_nonvision_training_configuration_v1",
+            "version": (
+                "perfseer_v3_nrp_a10_nonvision_disaster_training_configuration_v2"
+                if PROFILE.uses_disaster_v2
+                else "perfseer_v3_nrp_a10_nonvision_training_configuration_v1"
+            ),
             "root_candidate_id": root_candidate.candidate_id,
             "resolved_candidate_id": resolved_candidate.candidate_id,
             "family_id": resolved_candidate.family_id,
@@ -262,6 +270,7 @@ def export_release(
         for source in (
             workspace / "attempts" / "failed",
             workspace / "attempts" / "repairs",
+            workspace / "attempts" / "diagnostics",
         ):
             if source.is_dir():
                 shutil.copytree(source, release / "failure-artifacts" / source.name)
@@ -307,7 +316,9 @@ def export_release(
             }
         )
         archive = output_directory / (
-            f"perfseer-v3-a10-nonvision-{'complete' if complete else 'partial'}-"
+            f"perfseer-v3-a10-nonvision-"
+            f"{'disaster-v2-' if PROFILE.uses_disaster_v2 else ''}"
+            f"{'complete' if complete else 'partial'}-"
             f"{release_hash[:16]}.tar.zst"
         )
         _deterministic_tar(release, archive)

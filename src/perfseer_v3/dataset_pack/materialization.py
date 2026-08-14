@@ -37,25 +37,40 @@ from .storage import (
 )
 from .task_registry import TaskRegistryEntry, load_task_registry
 from .speech_substitution import SPEECH_TASK_ID, load_speech_substitution_contract
+from .disaster_substitution import (
+    DISASTER_TASK_ID,
+    EXPECTED_INVENTORY,
+    EXPECTED_INVENTORY_SHA256,
+    load_disaster_substitution_contract,
+)
 
 
 _SPEECH_V2 = PROFILE.uses_speech_v2
+_DISASTER_V2 = PROFILE.uses_disaster_v2
 MATERIALIZATION_STATE_VERSION = (
-    "perfseer_v3_nrp_a10_speech_task_materialization_state_v2"
+    "perfseer_v3_nrp_a10_disaster_task_materialization_state_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_speech_task_materialization_state_v2"
     if _SPEECH_V2
     else "perfseer_v3_v100_task_materialization_state_v1"
 )
 TASK_LOOP_STATE_VERSION = (
-    "perfseer_v3_nrp_a10_speech_task_loop_state_v2"
+    "perfseer_v3_nrp_a10_disaster_task_loop_state_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_speech_task_loop_state_v2"
     if _SPEECH_V2
     else "perfseer_v3_v100_task_loop_state_v2"
 )
 TASK_COMPLETION_VERSION = (
-    "perfseer_v3_nrp_a10_speech_task_completion_v2"
+    "perfseer_v3_nrp_a10_disaster_task_completion_v2"
+    if _DISASTER_V2
+    else "perfseer_v3_nrp_a10_speech_task_completion_v2"
     if _SPEECH_V2
     else "perfseer_v3_v100_task_completion_v1"
 )
 SPEECH_SOURCE_LOCK_VERSION = "perfseer_v3_nrp_a10_speech_source_lock_v2"
+DISASTER_SOURCE_LOCK_VERSION = "perfseer_v3_nrp_a10_disaster_source_lock_v2"
+LIVE_ARCHIVE_EXPANSION_FACTOR = 16
 MATERIALIZATION_STAGES = (
     "selected",
     "downloaded",
@@ -142,6 +157,78 @@ class SpeechSourceLock:
         return result
 
 
+@dataclass(frozen=True)
+class DisasterSourceLock:
+    version: str
+    task_id: str
+    kaggle_slug: str
+    remote_inventory_sha256: str
+    archive_sha256: str
+    archive_inventory_sha256: str
+    substitution_contract_sha256: str
+    lock_sha256: str
+
+    def unhashed_payload(self) -> Mapping[str, Any]:
+        payload = canonical_value(asdict(self))
+        payload.pop("lock_sha256")
+        return payload
+
+    def validate(self) -> None:
+        if (
+            self.version != DISASTER_SOURCE_LOCK_VERSION
+            or self.task_id != DISASTER_TASK_ID
+            or self.kaggle_slug != "nlp-getting-started"
+        ):
+            raise TaskMaterializationError("Disaster source-lock identity differs")
+        for name in (
+            "remote_inventory_sha256",
+            "archive_sha256",
+            "archive_inventory_sha256",
+            "substitution_contract_sha256",
+            "lock_sha256",
+        ):
+            _digest(getattr(self, name), context=f"Disaster source lock {name}")
+        if self.remote_inventory_sha256 != EXPECTED_INVENTORY_SHA256:
+            raise TaskMaterializationError("Disaster remote inventory lock differs")
+        if self.substitution_contract_sha256 != load_disaster_substitution_contract().sha256:
+            raise TaskMaterializationError("Disaster source lock uses another substitution")
+        if self.lock_sha256 != canonical_sha256(self.unhashed_payload()):
+            raise TaskMaterializationError("Disaster source lock hash differs")
+
+    def to_dict(self) -> Mapping[str, Any]:
+        self.validate()
+        return canonical_value(asdict(self))
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        remote_inventory_sha256: str,
+        archive_sha256: str,
+        archive_inventory_sha256: str,
+    ) -> "DisasterSourceLock":
+        draft = cls(
+            version=DISASTER_SOURCE_LOCK_VERSION,
+            task_id=DISASTER_TASK_ID,
+            kaggle_slug="nlp-getting-started",
+            remote_inventory_sha256=remote_inventory_sha256,
+            archive_sha256=archive_sha256,
+            archive_inventory_sha256=archive_inventory_sha256,
+            substitution_contract_sha256=load_disaster_substitution_contract().sha256,
+            lock_sha256="",
+        )
+        result = replace(draft, lock_sha256=canonical_sha256(draft.unhashed_payload()))
+        result.validate()
+        return result
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "DisasterSourceLock":
+        if not isinstance(value, Mapping) or set(value) != set(cls.__dataclass_fields__):
+            raise TaskMaterializationError("serialized Disaster source-lock schema differs")
+        result = cls(**dict(value))
+        result.validate()
+        return result
+
 class KaggleAcquirer(Protocol):
     def authenticate(self) -> None: ...
 
@@ -175,6 +262,22 @@ def _outside_repository(path: Path, repository: Path) -> bool:
     except ValueError:
         return True
     return False
+
+
+def live_archive_extraction_ceiling(
+    entry: TaskRegistryEntry, probe: KaggleCompetitionProbe
+) -> int:
+    """Bound inspection by frozen metadata and the authenticated live inventory."""
+
+    entry.validate()
+    probe.validate()
+    value = max(
+        entry.maximum_extracted_bytes,
+        probe.compressed_bytes * LIVE_ARCHIVE_EXPANSION_FACTOR,
+    )
+    if value < probe.compressed_bytes:
+        raise TaskMaterializationError("live archive extraction ceiling underflowed")
+    return value
 
 
 @dataclass(frozen=True)
@@ -250,7 +353,7 @@ class MaterializedTask:
     inventory: ArchiveInventory
     view_manifest: PreparedViewManifest
     state: TaskMaterializationState
-    source_lock: SpeechSourceLock | None = None
+    source_lock: SpeechSourceLock | DisasterSourceLock | None = None
 
 
 def seal_worker_inputs(materialized: MaterializedTask) -> None:
@@ -488,12 +591,50 @@ class TaskMaterializer:
         atomic_write_json(path, expected.to_dict())
         return expected
 
+    def _freeze_disaster_source_lock(
+        self,
+        entry: TaskRegistryEntry,
+        state: TaskMaterializationState,
+        inventory: ArchiveInventory,
+    ) -> DisasterSourceLock | None:
+        if not PROFILE.uses_disaster_v2 or entry.task_id != DISASTER_TASK_ID:
+            return None
+        if state.archive_inventory_sha256 is None:
+            raise TaskMaterializationError("Disaster source cannot lock before inspection")
+        expected = DisasterSourceLock.build(
+            remote_inventory_sha256=state.remote_inventory_sha256,
+            archive_sha256=inventory.archive_sha256,
+            archive_inventory_sha256=state.archive_inventory_sha256,
+        )
+        path = self.workspace / "state" / "source_locks" / f"{entry.task_id}.json"
+        if path.is_file():
+            actual = DisasterSourceLock.from_dict(_load_json(path))
+            if actual != expected:
+                raise TaskMaterializationError("Disaster source archive or inventory drifted")
+            return actual
+        if path.exists() or path.is_symlink():
+            raise TaskMaterializationError("Disaster source-lock path is invalid")
+        atomic_write_json(path, expected.to_dict())
+        return expected
+
     def materialize(self, entry: TaskRegistryEntry) -> MaterializedTask:
         entry.validate()
         credentials = validate_external_credentials(self.repository_root)
         self.kaggle.authenticate()
         probe = self.kaggle.probe_competition(entry.kaggle_slug)
         probe.validate()
+        # The historical MLE-bench size hints are admission estimates, not safe
+        # live archive inventories.  Keep candidate identities stable while
+        # deriving a bounded inspection ceiling from the authenticated inventory
+        # that is frozen into materialization state before any download occurs.
+        extraction_ceiling = live_archive_extraction_ceiling(entry, probe)
+        if PROFILE.uses_disaster_v2 and entry.task_id == DISASTER_TASK_ID:
+            actual_inventory = tuple(sorted((row.name, row.size_bytes) for row in probe.files))
+            if (
+                actual_inventory != tuple(sorted(EXPECTED_INVENTORY))
+                or probe.sha256 != EXPECTED_INVENTORY_SHA256
+            ):
+                raise TaskMaterializationError("Disaster remote inventory differs from V2")
         if PROFILE.uses_speech_v2 and entry.task_id == SPEECH_TASK_ID:
             expected_inventory = sorted(
                 (
@@ -537,7 +678,7 @@ class TaskMaterializer:
                 stage="before_download",
                 current_non_task_bytes=retained,
                 task_archive_bytes=estimated_archive_bytes,
-                extracted_bytes=entry.maximum_extracted_bytes,
+                extracted_bytes=extraction_ceiling,
                 # The exact largest-member/5% value is unavailable until the ZIP is
                 # present.  Reserve a non-zero transfer/extraction estimate here and
                 # replace it with exact inventory values at the next two gates.
@@ -557,14 +698,14 @@ class TaskMaterializer:
             if downloaded.resolve() != archive.resolve():
                 raise TaskMaterializationError("Kaggle client returned an unexpected archive path")
             inventory = inspect_zip_archive(
-                archive, maximum_uncompressed_bytes=entry.maximum_extracted_bytes
+                archive, maximum_uncompressed_bytes=extraction_ceiling
             )
             state = replace(state, stage="downloaded", archive_sha256=inventory.archive_sha256)
             self._save_state(state)
         if not archive.is_file() or state.archive_sha256 is None:
             raise TaskMaterializationError("resume archive is missing")
         inventory = inspect_zip_archive(
-            archive, maximum_uncompressed_bytes=entry.maximum_extracted_bytes
+            archive, maximum_uncompressed_bytes=extraction_ceiling
         )
         if inventory.archive_sha256 != state.archive_sha256:
             raise TaskMaterializationError("resume archive checksum changed")
@@ -594,6 +735,9 @@ class TaskMaterializer:
         elif state.archive_inventory_sha256 != inventory.inventory_sha256:
             raise TaskMaterializationError("resume archive inventory changed")
         source_lock = self._freeze_speech_source_lock(entry, state, inventory)
+        disaster_lock = self._freeze_disaster_source_lock(entry, state, inventory)
+        if disaster_lock is not None:
+            source_lock = disaster_lock
 
         extracted = self.task_cache / "extracted"
         stage_index = MATERIALIZATION_STAGES.index(state.stage)
@@ -606,7 +750,7 @@ class TaskMaterializer:
             extract_zip_archive(archive, extracted, inventory)
             nested = inspect_nested_zip_archives(
                 extracted,
-                maximum_uncompressed_bytes=entry.maximum_extracted_bytes,
+                maximum_uncompressed_bytes=extraction_ceiling,
             )
             nested_sha = canonical_sha256([row.to_dict() for row in nested])
             state = replace(
@@ -628,7 +772,7 @@ class TaskMaterializer:
             raise TaskMaterializationError("resume extracted task is missing")
         nested_inventories = inspect_nested_zip_archives(
             extracted,
-            maximum_uncompressed_bytes=entry.maximum_extracted_bytes,
+            maximum_uncompressed_bytes=extraction_ceiling,
         )
         current_nested_sha = canonical_sha256([row.to_dict() for row in nested_inventories])
         if current_nested_sha != state.nested_inventory_sha256:

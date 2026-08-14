@@ -21,6 +21,9 @@ WORKSPACE = "/workspace/perfseer-v3-native-a10-nonvision-11200-v1"
 PROFILE = "native_a10_nonvision_4gpu_v1"
 CHUNK_COUNT = 44
 EXPORT_TEMPLATE = Path("k8s/a10-nonvision-export-job.yaml")
+CAMPAIGN_TEMPLATE = Path("k8s/a10-nonvision-4gpu-labeler-job.yaml")
+JOB_PREFIX = "perfseer-v3-a10-nonvision"
+CAMPAIGN_LABEL = "native-a10-nonvision-11200-v1"
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -204,7 +207,7 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
     template = arguments.template or (
         EXPORT_TEMPLATE
         if arguments.mode == "export"
-        else Path("k8s/a10-nonvision-4gpu-labeler-job.yaml")
+        else CAMPAIGN_TEMPLATE
     )
     result = _load(template)
     suffix = (
@@ -214,14 +217,31 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
         if arguments.mode == "export"
         else f"chunk-{arguments.chunk_index:02d}"
     )
-    result["metadata"]["name"] = f"perfseer-v3-a10-nonvision-{suffix}"
+    result["metadata"]["name"] = f"{JOB_PREFIX}-{suffix}"
     result["metadata"]["namespace"] = arguments.namespace
+    result["metadata"].setdefault("labels", {})[
+        "perfseer.ai/campaign"
+    ] = CAMPAIGN_LABEL
     result["metadata"]["annotations"][
         "perfseer.ai/source-revision"
     ] = arguments.source_revision
     pod_spec = result["spec"]["template"]["spec"]
+    result["spec"]["template"].setdefault("metadata", {}).setdefault(
+        "labels", {}
+    )["perfseer.ai/campaign"] = CAMPAIGN_LABEL
     container = pod_spec["containers"][0]
     container["image"] = arguments.image
+    _replace_argument(container["args"], "--workspace", WORKSPACE)
+    if arguments.mode == "export":
+        _replace_argument(
+            container["args"], "--output-directory", f"{WORKSPACE}/releases"
+        )
+    for variable in container.get("env", []):
+        if variable.get("name") in {
+            "PERFSEER_A10_IMAGE_PROFILE",
+            "PERFSEER_LABELER_PROFILE",
+        }:
+            variable["value"] = PROFILE
     if arguments.mode != "export":
         _replace_argument(container["args"], "--repository-revision", arguments.source_revision)
         _replace_argument(container["args"], "--image-digest", arguments.image)

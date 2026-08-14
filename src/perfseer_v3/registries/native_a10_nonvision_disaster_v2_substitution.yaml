@@ -1,0 +1,47 @@
+version: perfseer_v3_native_a10_nonvision_disaster_substitution_contract_v2
+old_task:
+  historical_ordinal: 11
+  nonvision_ordinal: 1
+  task_id: detecting-insults
+  kaggle_slug: detecting-insults-in-social-commentary
+  modality: nlp
+  compressed_size_hint_bytes: 2000000
+new_task:
+  historical_ordinal: 11
+  nonvision_ordinal: 1
+  task_id: disaster-tweets
+  kaggle_slug: nlp-getting-started
+  modality: nlp
+  compressed_size_hint_bytes: 1431241
+  source_inventory:
+    - {name: sample_submission.csv, size_bytes: 22746}
+    - {name: test.csv, size_bytes: 420783}
+    - {name: train.csv, size_bytes: 987712}
+  source_inventory_sha256: c1d9ad5c3af3130823c5687d033a8ce4b3cd9961c859b8e17d6f39cc2302e847
+  source_row_count: 7613
+  columns: [id, keyword, location, text, target]
+  input_columns: [keyword, location, text]
+  target_values: [0, 1]
+  prepared_example_count: 4096
+  selection: sha256_order_then_deterministic_cycle_v1
+affected_families:
+  bert_base: 275
+  bilstm_crf: 150
+  distilbert_distillation: 275
+  fasttext_embeddingbag: 125
+  mla_mini_transformer: 250
+affected_precision_counts:
+  fp32_tf32: 214
+  bf16: 321
+  fp16_grad_scaler: 324
+  mixed_structured: 216
+affected_effective_batch_counts:
+  "32": 215
+  "64": 215
+  "128": 215
+  "256": 215
+  "512": 215
+lineage_expectations:
+  unchanged: 9050
+  nlp_registry_rebound: 1075
+  dataset_substitution: 1075

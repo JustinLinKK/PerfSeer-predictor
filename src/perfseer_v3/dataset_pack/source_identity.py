@@ -40,8 +40,18 @@ A10_NONVISION_SOURCE_ROOTS = (
     "containers/a10-labeler/requirements.in",
     "containers/a10-labeler/requirements.lock",
 )
+A10_NONVISION_DISASTER_V2_SOURCE_ROOTS = (
+    "pyproject.toml",
+    "scripts/run_perfseer_v3_a10_labeling.py",
+    "src/perfseer_v3",
+    "containers/a10-nonvision-disaster-v2-labeler/Dockerfile",
+    "containers/a10-labeler/requirements.in",
+    "containers/a10-labeler/requirements.lock",
+)
 SOURCE_ROOTS = (
-    A10_NONVISION_SOURCE_ROOTS
+    A10_NONVISION_DISASTER_V2_SOURCE_ROOTS
+    if PROFILE.uses_disaster_v2
+    else A10_NONVISION_SOURCE_ROOTS
     if PROFILE.is_nonvision_4gpu
     else A10_SPEECH_V2_SOURCE_ROOTS
     if PROFILE.uses_speech_v2
@@ -81,6 +91,7 @@ __all__ = [
     "A10_SOURCE_ROOTS",
     "A10_SPEECH_V2_SOURCE_ROOTS",
     "A10_NONVISION_SOURCE_ROOTS",
+    "A10_NONVISION_DISASTER_V2_SOURCE_ROOTS",
     "SOURCE_ROOTS",
     "V100_SOURCE_ROOTS",
     "source_tree_sha256",

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: perfseer-v3-a10-nonvision-disaster-v2
+  namespace: REPLACE_NAMESPACE
+  labels:
+    app.kubernetes.io/name: perfseer-v3-a10-nonvision-disaster-v2-labeler
+    perfseer.ai/campaign: native-a10-nonvision-disaster-11200-v2
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 700Gi
+  storageClassName: rook-cephfs

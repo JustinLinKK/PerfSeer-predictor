@@ -36,6 +36,8 @@ AUXILIARY_TARGET_NAMES = (
     "peak_live_tensor_mib",
     "profiler_gpu_time_fraction",
 )
+PRODUCTION_RETAINED_EPOCH_SPREAD_LIMIT = 0.10
+LOCAL_VALIDATION_RETAINED_EPOCH_SPREAD_LIMIT = 0.60
 
 
 class _StringEnum(str, Enum):
@@ -536,8 +538,16 @@ class LabelRunRecord:
             if not self.cleanup.passed:
                 raise ValueError("accepted records require a passing cleanup gate")
             spread = self.epoch_time_relative_spread
-            if spread is None or spread > 0.10:
-                raise ValueError("accepted records exceed the 10% epoch stability gate")
+            spread_limit = (
+                PRODUCTION_RETAINED_EPOCH_SPREAD_LIMIT
+                if self.production_eligible
+                else LOCAL_VALIDATION_RETAINED_EPOCH_SPREAD_LIMIT
+            )
+            if spread is None or spread > spread_limit:
+                raise ValueError(
+                    "accepted records exceed their epoch stability gate "
+                    f"({spread_limit:.0%})"
+                )
             derived = self.aggregate_targets()
             if self.targets is None:
                 raise ValueError("accepted records require all six aggregated targets")

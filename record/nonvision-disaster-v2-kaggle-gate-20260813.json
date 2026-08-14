@@ -1,0 +1,43 @@
+{
+  "version": "perfseer_v3_nonvision_disaster_v2_kaggle_gate_evidence_v1",
+  "observed_date": "2026-08-13",
+  "profile": "native_a10_nonvision_disaster_v2",
+  "production_credential_source": "mounted_external_kaggle_json",
+  "all_12_smallest_file_downloads": "passed",
+  "disaster_tweets": {
+    "slug": "nlp-getting-started",
+    "remote_inventory": [
+      ["sample_submission.csv", 22746],
+      ["test.csv", 420783],
+      ["train.csv", 987712]
+    ],
+    "remote_inventory_sha256": "c1d9ad5c3af3130823c5687d033a8ce4b3cd9961c859b8e17d6f39cc2302e847",
+    "smallest_file_download": "passed",
+    "remote_name": "sample_submission.csv",
+    "advertised_bytes": 22746,
+    "downloaded_bytes": 22746,
+    "downloaded_sha256": "ec431de21357caad931108491d696954cd77c53149b7ce13380ca4d00d4da2db",
+    "rules_url": "https://www.kaggle.com/competitions/nlp-getting-started/rules"
+  },
+  "tensorflow_speech_recognition": {
+    "slug": "tensorflow-speech-recognition-challenge",
+    "smallest_file_download": "passed",
+    "remote_name": "link_to_gcp_credits_form.txt",
+    "advertised_bytes": 50,
+    "downloaded_bytes": 50,
+    "downloaded_sha256": "4be267bcb2c48e7b4639a2d58056fcf05d4bc5f571dc0a96d7febd7d889467ca",
+    "rules_url": "https://www.kaggle.com/competitions/tensorflow-speech-recognition-challenge/rules"
+  },
+  "jigsaw_toxic_comment": {
+    "slug": "jigsaw-toxic-comment-classification-challenge",
+    "smallest_file_download": "passed",
+    "remote_name": "sample_submission.csv.zip",
+    "advertised_bytes": 1459715,
+    "downloaded_bytes": 1459715,
+    "downloaded_sha256": "1f31b797bfd4e3f98d316e001d0d0cbf5bbd812e0a6fefe9b244e09f664af63a",
+    "rules_url": "https://www.kaggle.com/competitions/jigsaw-toxic-comment-classification-challenge/rules"
+  },
+  "credential_source_note": "A separate host environment API token was denied Disaster rules; it was not used by the image or intended Job Secret.",
+  "production_evidence_used": false,
+  "mirror_used": false
+}

@@ -16,6 +16,7 @@ import torch.nn.functional as F
 
 from ..fingerprints import canonical_sha256
 from ..task_registry import (
+    DISASTER_V2_TASK_SCHEMAS,
     FROZEN_TASK_SCHEMAS,
     SPEECH_V2_TASK_SCHEMAS,
     TaskRegistryEntry,
@@ -49,7 +50,11 @@ class PreparedTaskFixture:
 
 _TASK_KINDS = {
     task_id: (str(schema["kind"]), int(schema["target_width"]))
-    for task_id, schema in {**FROZEN_TASK_SCHEMAS, **SPEECH_V2_TASK_SCHEMAS}.items()
+    for task_id, schema in {
+        **FROZEN_TASK_SCHEMAS,
+        **SPEECH_V2_TASK_SCHEMAS,
+        **DISASTER_V2_TASK_SCHEMAS,
+    }.items()
 }
 
 

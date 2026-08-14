@@ -22,7 +22,7 @@ from .materialization import (
     save_task_loop_state,
     verify_task_completion,
 )
-from .mlebench_bridge import PinnedMleBenchPreparer
+from .substitution_preparer import SubstitutionAwarePreparer
 from .repair import (
     OomRepairAttempt,
     make_quota_replacement,
@@ -43,7 +43,9 @@ from .task_registry import load_task_registry
 
 
 WORKFLOW_VERSION = (
-    "perfseer_v3_nrp_a10_nonvision_11200_workflow_v1"
+    "perfseer_v3_nrp_a10_nonvision_disaster_11200_workflow_v2"
+    if PROFILE.uses_disaster_v2
+    else "perfseer_v3_nrp_a10_nonvision_11200_workflow_v1"
     if PROFILE.is_nonvision_4gpu
     else "perfseer_v3_v100_18k_workflow_v2"
 )
@@ -441,7 +443,7 @@ def run_task_workflow(
         workspace=root,
         repository_root=Path(repository_root),
         kaggle=KaggleCliClient(executable=kaggle_executable),
-        preparer=PinnedMleBenchPreparer(Path(mlebench_checkout)),
+        preparer=SubstitutionAwarePreparer(Path(mlebench_checkout)),
     )
     _verify_completed_prefix(root, loop, manifest)
     workers = tuple(probes or (() if materialize_only else discover_v100_probes()))

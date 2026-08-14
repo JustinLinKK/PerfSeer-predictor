@@ -19,6 +19,7 @@ if EXPECTED_PROFILE not in {
     "native_a10",
     "native_a10_speech_v2",
     "native_a10_nonvision_4gpu_v1",
+    "native_a10_nonvision_disaster_v2",
 }:
     raise RuntimeError("A10 image declares an unsupported baked profile")
 os.environ.setdefault("PERFSEER_LABELER_PROFILE", EXPECTED_PROFILE)
@@ -43,6 +44,7 @@ from perfseer_v3.dataset_pack.local_smoke import (
     CAMPAIGN_FAMILIES,
     LOCAL_SMOKE_MODELS,
     run_family_matrix_smoke,
+    run_disaster_precision_matrix_smoke,
     run_local_smoke,
     run_manifest_construction_audit,
     run_nonvision_fixture_matrix_smoke,
@@ -114,7 +116,9 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
     if (
         manifest["version"]
         != (
-            "perfseer_v3_nrp_a10_nonvision_image_build_manifest_v1"
+            "perfseer_v3_nrp_a10_nonvision_disaster_image_build_manifest_v2"
+            if EXPECTED_PROFILE == "native_a10_nonvision_disaster_v2"
+            else "perfseer_v3_nrp_a10_nonvision_image_build_manifest_v1"
             if EXPECTED_PROFILE == "native_a10_nonvision_4gpu_v1"
             else "perfseer_v3_nrp_a10_speech_image_build_manifest_v2"
             if EXPECTED_PROFILE == "native_a10_speech_v2"
@@ -170,7 +174,10 @@ def _image_preflight(arguments: argparse.Namespace) -> Mapping[str, Any]:
     if forbidden:
         raise RuntimeError("credential-like files are present in the image source")
     corpus_probe = None
-    if EXPECTED_PROFILE == "native_a10_nonvision_4gpu_v1":
+    if EXPECTED_PROFILE in {
+        "native_a10_nonvision_4gpu_v1",
+        "native_a10_nonvision_disaster_v2",
+    }:
         from perfseer_v3.dataset_pack.model_registry import load_model_registry
         from perfseer_v3.dataset_pack.sampler import build_target_manifest
 
@@ -245,26 +252,25 @@ def _preflight_kaggle() -> tuple[Mapping[str, Any], ...]:
     client = KaggleCliClient(maximum_attempts=4, initial_backoff_seconds=1.0)
     client.authenticate()
     entries = load_task_registry().entries
-    expected = 12 if EXPECTED_PROFILE == "native_a10_nonvision_4gpu_v1" else 22
+    expected = (
+        12
+        if EXPECTED_PROFILE
+        in {"native_a10_nonvision_4gpu_v1", "native_a10_nonvision_disaster_v2"}
+        else 22
+    )
     if len(entries) != expected:
         raise RuntimeError(f"native campaign must gate exactly {expected} Kaggle competitions")
-    ordered_entries = (
-        tuple(
-            entry
-            for entry in entries
-            if entry.task_id == "tensorflow-speech-yes-no"
-        )
-        + tuple(
-            entry
-            for entry in entries
-            if entry.task_id != "tensorflow-speech-yes-no"
-        )
-        if EXPECTED_PROFILE in {
-            "native_a10_speech_v2",
-            "native_a10_nonvision_4gpu_v1",
-        }
-        else entries
+    priority = (
+        ("disaster-tweets", "tensorflow-speech-yes-no")
+        if EXPECTED_PROFILE == "native_a10_nonvision_disaster_v2"
+        else ("tensorflow-speech-yes-no",)
+        if EXPECTED_PROFILE
+        in {"native_a10_speech_v2", "native_a10_nonvision_4gpu_v1"}
+        else ()
     )
+    ordered_entries = tuple(
+        entry for task_id in priority for entry in entries if entry.task_id == task_id
+    ) + tuple(entry for entry in entries if entry.task_id not in priority)
     results = tuple(
         {
             "task_id": entry.task_id,
@@ -273,11 +279,27 @@ def _preflight_kaggle() -> tuple[Mapping[str, Any], ...]:
         }
         for entry in ordered_entries
     )
-    if EXPECTED_PROFILE in {
+    if EXPECTED_PROFILE == "native_a10_nonvision_disaster_v2":
+        disaster = results[0]
+        if (
+            disaster.get("task_id") != "disaster-tweets"
+            or disaster.get("remote_name") != "sample_submission.csv"
+            or disaster.get("advertised_bytes") != 22_746
+            or disaster.get("downloaded_bytes") != 22_746
+        ):
+            raise RuntimeError(
+                "Disaster Tweets rules gate did not download its advertised smallest file"
+            )
+        speech_index = 1
+    elif EXPECTED_PROFILE in {
         "native_a10_speech_v2",
         "native_a10_nonvision_4gpu_v1",
     }:
-        speech = results[0]
+        speech_index = 0
+    else:
+        speech_index = None
+    if speech_index is not None:
+        speech = results[speech_index]
         if (
             speech.get("task_id") != "tensorflow-speech-yes-no"
             or speech.get("remote_name") != "link_to_gcp_credits_form.txt"
@@ -326,6 +348,7 @@ def _parser() -> argparse.ArgumentParser:
     smoke.add_argument("--fixture-matrix", action="store_true")
     smoke.add_argument("--construction-audit", action="store_true")
     smoke.add_argument("--speech-precision-matrix", action="store_true")
+    smoke.add_argument("--disaster-precision-matrix", action="store_true")
     smoke.add_argument("--kaggle-executable", default="kaggle")
 
     run = commands.add_parser("run-campaign")
@@ -383,6 +406,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.fixture_matrix,
                 arguments.construction_audit,
                 arguments.speech_precision_matrix,
+                arguments.disaster_precision_matrix,
             )
         ) > 1:
             raise ValueError("select only one fixture matrix")
@@ -398,6 +422,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             if arguments.model:
                 raise ValueError("--all-families cannot be combined with --model")
             result = run_family_matrix_smoke(arguments.workspace)
+        elif arguments.disaster_precision_matrix:
+            if arguments.model:
+                raise ValueError(
+                    "--disaster-precision-matrix cannot be combined with --model"
+                )
+            result = run_disaster_precision_matrix_smoke(
+                arguments.workspace,
+                repository_root=REPOSITORY_ROOT,
+                mlebench_checkout=arguments.mlebench_checkout,
+                kaggle_executable=arguments.kaggle_executable,
+            )
         elif arguments.speech_precision_matrix:
             if arguments.model:
                 raise ValueError(

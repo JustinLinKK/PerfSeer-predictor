@@ -17,6 +17,12 @@ from .speech_substitution import (
     SPEECH_TASK_ID,
     load_speech_substitution_contract,
 )
+from .disaster_substitution import (
+    DISASTER_KAGGLE_SLUG,
+    DISASTER_TASK_ID,
+    HISTORICAL_TASK_ID as HISTORICAL_INSULTS_TASK_ID,
+    load_disaster_substitution_contract,
+)
 
 
 DEFAULT_TASK_REGISTRY_PATH = (
@@ -73,6 +79,12 @@ SPEECH_V2_TASKS = tuple(
     for task_id, slug, modality in FROZEN_TASKS
 )
 NONVISION_TASKS = tuple(row for row in SPEECH_V2_TASKS if row[2] != "vision")
+DISASTER_V2_TASKS = tuple(
+    (DISASTER_TASK_ID, DISASTER_KAGGLE_SLUG, modality)
+    if task_id == HISTORICAL_INSULTS_TASK_ID
+    else (task_id, slug, modality)
+    for task_id, slug, modality in NONVISION_TASKS
+)
 FROZEN_COMPRESSED_SIZE_HINTS = (
     7_760_000_000,
     850_000_000,
@@ -107,6 +119,10 @@ NONVISION_COMPRESSED_SIZE_HINTS = tuple(
         SPEECH_V2_TASKS, SPEECH_V2_COMPRESSED_SIZE_HINTS, strict=True
     )
     if modality != "vision"
+)
+DISASTER_V2_COMPRESSED_SIZE_HINTS = tuple(
+    1_431_241 if index == 1 else value
+    for index, value in enumerate(NONVISION_COMPRESSED_SIZE_HINTS)
 )
 MLEBENCH_METADATA_REVISION = "507f92e1138bb6e40dac5c6ee7a6758e6424bf97"
 TASK_SCHEMA_VERSION = "perfseer_v3_task_schema_v1"
@@ -149,6 +165,18 @@ SPEECH_V2_TASK_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
 NONVISION_TASK_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
     task_id: SPEECH_V2_TASK_SCHEMAS[task_id]
     for task_id, _, _ in NONVISION_TASKS
+}
+DISASTER_V2_TASK_SCHEMAS: Mapping[str, Mapping[str, Any]] = {
+    **{
+        task_id: schema
+        for task_id, schema in NONVISION_TASK_SCHEMAS.items()
+        if task_id != HISTORICAL_INSULTS_TASK_ID
+    },
+    DISASTER_TASK_ID: {
+        "kind": "single_label_classification",
+        "target_width": 2,
+        "target_encoding": "categorical_index",
+    },
 }
 MLEBENCH_SIZE_HINT_SOURCE_URL = (
     "https://github.com/openai/mle-bench/blob/"
@@ -343,27 +371,38 @@ class TaskRegistry:
             raise TaskRegistryError("archive checksums must be resolved during materialization")
         speech_v2 = PROFILE.uses_speech_v2
         expected_tasks = (
-            NONVISION_TASKS
+            DISASTER_V2_TASKS
+            if PROFILE.uses_disaster_v2
+            else NONVISION_TASKS
             if PROFILE.is_nonvision_4gpu
             else SPEECH_V2_TASKS
             if speech_v2
             else FROZEN_TASKS
         )
         expected_sizes = (
-            NONVISION_COMPRESSED_SIZE_HINTS
+            DISASTER_V2_COMPRESSED_SIZE_HINTS
+            if PROFILE.uses_disaster_v2
+            else NONVISION_COMPRESSED_SIZE_HINTS
             if PROFILE.is_nonvision_4gpu
             else SPEECH_V2_COMPRESSED_SIZE_HINTS
             if speech_v2
             else FROZEN_COMPRESSED_SIZE_HINTS
         )
         expected_schemas = (
-            NONVISION_TASK_SCHEMAS
+            DISASTER_V2_TASK_SCHEMAS
+            if PROFILE.uses_disaster_v2
+            else NONVISION_TASK_SCHEMAS
             if PROFILE.is_nonvision_4gpu
             else SPEECH_V2_TASK_SCHEMAS
             if speech_v2
             else FROZEN_TASK_SCHEMAS
         )
         substitution = load_speech_substitution_contract() if speech_v2 else None
+        disaster = (
+            load_disaster_substitution_contract()
+            if PROFILE.uses_disaster_v2
+            else None
+        )
         identities = tuple((entry.task_id, entry.kaggle_slug, entry.modality) for entry in self.entries)
         if identities != expected_tasks:
             raise TaskRegistryError("task IDs/slugs/modalities differ from the frozen MLE-bench mapping")
@@ -392,6 +431,12 @@ class TaskRegistry:
                 expected_revision += (
                     "@prepared_view:binary_yes_no_v2"
                     f"@substitution:{substitution.sha256}"
+                )
+            if PROFILE.uses_disaster_v2 and entry.task_id == DISASTER_TASK_ID:
+                assert disaster is not None
+                expected_revision += (
+                    "@prepared_view:disaster_tweets_csv_v1"
+                    f"@substitution:{disaster.sha256}"
                 )
             if entry.dataset_revision != expected_revision:
                 raise TaskRegistryError("task dataset revision is not pinned to its source metadata")
@@ -428,6 +473,20 @@ class TaskRegistry:
                     "selection": "sha256_relative_path_then_relative_path_v1",
                     "ignore_mlebench_test_split": True,
                     "substitution_contract_sha256": substitution.sha256,
+                }
+            if PROFILE.uses_disaster_v2 and entry.task_id == DISASTER_TASK_ID:
+                assert disaster is not None
+                expected_view_recipe = {
+                    "kind": "perfseer_disaster_tweets_csv_v1",
+                    "atomic_publish": True,
+                    "expected_train_examples": entry.expected_train_examples,
+                    "require_exact_prepared_count": True,
+                    "columns": ["id", "keyword", "location", "text", "target"],
+                    "input_columns": ["keyword", "location", "text"],
+                    "target_values": [0, 1],
+                    "source_row_count": 7_613,
+                    "selection": "sha256_order_then_deterministic_cycle_v1",
+                    "substitution_contract_sha256": disaster.sha256,
                 }
             if entry.prepared_view_recipe != expected_view_recipe:
                 raise TaskRegistryError("prepared-view exact-count contract drifted")
@@ -466,6 +525,23 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
                 entry for entry in root["entries"] if entry.get("modality") != "vision"
             ],
         }
+    if PROFILE.uses_disaster_v2 and default_source:
+        disaster = load_disaster_substitution_contract()
+        source_entries = list(root["entries"])
+        ordinal = int(disaster.payload["new_task"]["nonvision_ordinal"])
+        expected_old = {
+            "task_id": HISTORICAL_INSULTS_TASK_ID,
+            "kaggle_slug": "detecting-insults-in-social-commentary",
+            "modality": "nlp",
+            "compressed_size_hint_bytes": 2_000_000,
+        }
+        if canonical_value(source_entries[ordinal]) != canonical_value(expected_old):
+            raise TaskRegistryError("non-vision V1 insults task drifted")
+        source_entries[ordinal] = {
+            key: disaster.payload["new_task"][key]
+            for key in _SOURCE_ENTRY_KEYS
+        }
+        root = {**root, "entries": source_entries}
     if root["version"] != TASK_REGISTRY_VERSION:
         raise TaskRegistryError("task registry source version mismatch")
     entries = root["entries"]
@@ -530,8 +606,33 @@ def load_task_registry(path: str | Path = DEFAULT_TASK_REGISTRY_PATH) -> TaskReg
                 "ignore_mlebench_test_split": True,
                 "substitution_contract_sha256": substitution.sha256,
             }
+        if PROFILE.uses_disaster_v2 and task_id == DISASTER_TASK_ID:
+            disaster = load_disaster_substitution_contract()
+            dataset_revision += (
+                "@prepared_view:disaster_tweets_csv_v1"
+                f"@substitution:{disaster.sha256}"
+            )
+            split_recipe = {
+                "kind": "perfseer_disaster_tweets_csv_v1",
+                "seed": 0,
+                "substitution_contract_sha256": disaster.sha256,
+            }
+            prepared_view_recipe = {
+                "kind": "perfseer_disaster_tweets_csv_v1",
+                "atomic_publish": True,
+                "expected_train_examples": expected_train_examples,
+                "require_exact_prepared_count": True,
+                "columns": ["id", "keyword", "location", "text", "target"],
+                "input_columns": ["keyword", "location", "text"],
+                "target_values": [0, 1],
+                "source_row_count": 7_613,
+                "selection": "sha256_order_then_deterministic_cycle_v1",
+                "substitution_contract_sha256": disaster.sha256,
+            }
         schemas = (
-            NONVISION_TASK_SCHEMAS
+            DISASTER_V2_TASK_SCHEMAS
+            if PROFILE.uses_disaster_v2
+            else NONVISION_TASK_SCHEMAS
             if PROFILE.is_nonvision_4gpu
             else SPEECH_V2_TASK_SCHEMAS
             if PROFILE.uses_speech_v2
@@ -601,6 +702,9 @@ __all__ = [
     "NONVISION_COMPRESSED_SIZE_HINTS",
     "NONVISION_TASK_SCHEMAS",
     "NONVISION_TASKS",
+    "DISASTER_V2_COMPRESSED_SIZE_HINTS",
+    "DISASTER_V2_TASK_SCHEMAS",
+    "DISASTER_V2_TASKS",
     "TaskRegistry",
     "TaskRegistryError",
     "load_task_registry",
