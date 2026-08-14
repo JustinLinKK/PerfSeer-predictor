@@ -8,34 +8,27 @@ version = "0.1.0"
 description = "PerfSeer V3 non-vision Disaster V2 four-A10 labeling workflow"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "torch==2.10.0",
-    "torch_geometric==2.7.0",
-    "ogb",
-    "networkx",
-    "numpy",
-    "Pillow",
-    "soundfile",
-    "nvidia-ml-py",
-    "scikit-learn",
-    "tqdm",
-    "pyyaml",
-    "matplotlib",
-    "onnx",
-    "onnxscript",
-    "onnxruntime",
-    "openvino",
-]
-
-[project.optional-dependencies]
-labeler = [
-    "appdirs>=1.4.4",
+    "appdirs==1.4.4",
     "kaggle==2.2.2",
-    "pandas>=2.2",
-    "py7zr>=0.21",
-    "tensorflow-cpu>=2.16",
-    "torchaudio==2.10.0",
-    "torchvision==0.25.0",
+    "networkx==3.6.1",
+    "numpy==2.4.1",
+    "nvidia-ml-py==13.590.48",
+    "ogb==1.3.6",
+    "pandas==2.3.3",
+    "Pillow==12.1.0",
+    "py7zr==1.0.0",
+    "pyyaml==6.0.3",
+    "pyzstd==0.19.1",
+    "scikit-learn==1.8.0",
+    "scipy==1.17.0",
+    "soundfile==0.13.1",
+    "tensorflow-cpu==2.20.0",
+    "torch==2.10.0+cu128",
+    "torch-geometric==2.7.0",
+    "torchaudio==2.10.0+cu128",
+    "torchvision==0.25.0+cu128",
     "transformers==5.7.0",
+    "tqdm==4.67.1",
 ]
 
 [tool.setuptools.package-dir]
