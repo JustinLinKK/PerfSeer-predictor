@@ -1,0 +1,75 @@
+{
+  "branch": "feature/perfseer-v3-nautilus-a10-nonvision-4gpu-disaster-v2",
+  "build": {
+    "dependency_lock_sha256": "fd935f7fd2bc42e469d07eb061487f2fa07654335f45fd78750b9e407b538cac",
+    "image_id": "sha256:4d22df3598ccd2689fb6c5b67d8bc3f0dacc2256d9c7e48f293bae2a7e643e7e",
+    "image_identity": "perfseer-v3-a10-nonvision-disaster-v2:eb972cd41",
+    "published": false,
+    "source_revision": "eb972cd415bd9d293e5633503cf2e89a35264e81",
+    "source_tree_sha256": "6d04ef43c9d5e2a76ad86f2a54ae34982de5bcc30fa4f5cfe39578a3fadbd930"
+  },
+  "cluster_commands_executed": false,
+  "contract": {
+    "candidate_count": 11200,
+    "crosswalk_counts": {
+      "dataset_substitution": 1075,
+      "nlp_registry_rebound": 1075,
+      "unchanged": 9050
+    },
+    "family_count": 22,
+    "manifest_sha256": "8de16ba359c99743107f25b41fad6999598d4e83a7ddeca9fad8da35e23d699f",
+    "measured_epoch_count": 33600,
+    "task_count": 12
+  },
+  "focused_regression_suite": {
+    "command": "PERFSEER_LABELER_PROFILE=native_a10_nonvision_disaster_v2 .venv/bin/python -m pytest -q tests/test_perfseer_v3_a10_disaster_v2.py",
+    "failed": 0,
+    "passed": 22
+  },
+  "image_preflight": {
+    "active_vision_count": 0,
+    "credential_files_found": 0,
+    "cuda_architectures_required_present": [
+      "sm_86",
+      "sm_120"
+    ],
+    "hardware_mode": "local-rtx5090",
+    "production_eligible": false,
+    "status": "passed",
+    "worker_count": 1
+  },
+  "observed_at": "2026-08-13T23:30:49-07:00",
+  "real_disaster_matrix": {
+    "dataset_fingerprint": "63b08af80f1a98f6078366c9ee44ea0bc22879bfd946b8179ed2e1a42ec22107",
+    "families": [
+      "bert_base",
+      "bilstm_crf",
+      "distilbert_distillation",
+      "fasttext_embeddingbag",
+      "mla_mini_transformer"
+    ],
+    "full_result_file_sha256": "6000136a512a4af5a15a397142132e54113c38b046d8c0d65deb60a3623f428e",
+    "internal_result_sha256": "e1844f04dcf1df7cdab48987be88fdd1adc2b4da455b9c7e688b7c37285408cb",
+    "precision_policies": [
+      "bf16",
+      "fp16_grad_scaler",
+      "fp32_tf32",
+      "mixed_structured"
+    ],
+    "prepared_row_count": 4096,
+    "production_eligible": false,
+    "remote_inventory_sha256": "c1d9ad5c3af3130823c5687d033a8ce4b3cd9961c859b8e17d6f39cc2302e847",
+    "source_archive_sha256": "95b0e2b687762de374b2b6901547fa22d764807e72d344c829640f3756f5a70f",
+    "substitution_contract_sha256": "28dafbec84490da1e9cbbe64d9e3a3e3a14df7b57a29c25168904b7d5d61853f",
+    "task_id": "disaster-tweets",
+    "update_count": 20,
+    "updates_failed": 0,
+    "updates_passed": 20
+  },
+  "scope": {
+    "broad_32_label_workflow_complete": false,
+    "broad_workflow_used_as_acceptance_evidence": false,
+    "reason": "Operator narrowed acceptance to the substituted dataset and affected model families."
+  },
+  "version": "perfseer_v3_a10_nonvision_disaster_v2_focused_verification_v1"
+}

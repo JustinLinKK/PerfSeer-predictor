@@ -11,6 +11,26 @@ The implementation did not execute any cluster command, publish an image, or cre
 Nautilus resources. Commands that change NRP state below are explicitly marked as
 future operator actions.
 
+## Implemented and focused verification status
+
+The Disaster replacement is complete in source revision
+`eb972cd415bd9d293e5633503cf2e89a35264e81`. The final local image is
+`perfseer-v3-a10-nonvision-disaster-v2:eb972cd41` with local image ID
+`sha256:4d22df3598ccd2689fb6c5b67d8bc3f0dacc2256d9c7e48f293bae2a7e643e7e`.
+It has not been pushed.
+
+Focused acceptance on August 13, 2026 passed the Disaster-specific regression suite
+(22 tests), image preflight, and 20 real GPU updates: BERT, MLA Mini Transformer,
+BiLSTM-CRF, FastText, and DistilBERT across TF32, BF16, FP16 with gradient scaling,
+and mixed-structured precision. The real prepared view contained the contracted
+4,096 rows and every update passed. Exact hashes and counts are recorded in
+[`record/a10-nonvision-disaster-v2-focused-verification-20260813.json`](../record/a10-nonvision-disaster-v2-focused-verification-20260813.json).
+
+At the operator's request, the broad 32-label test was stopped after its partial
+results had been preserved; it is not claimed as complete and is not used as
+evidence for the dataset substitution. The commands below retain that workflow as
+the later full-release gate before publishing or submitting production work.
+
 ## 1. Accept and prove all 12 Kaggle agreements
 
 Use the same account that issued the API token. Accept these rules:
@@ -97,7 +117,8 @@ docker run --rm --gpus '"device=0"' --read-only --shm-size=32g \
   --disaster-precision-matrix
 ```
 
-Finally run the frozen 32-label, five-real-epoch RTX 5090 workflow. It covers all 22
+For the later full-release gate, run the frozen 32-label, five-real-epoch RTX 5090
+workflow. It covers all 22
 families, all 12 tasks, all four precisions, both execution modes, all regimes,
 checkpointing on/off, and every effective batch in `{32,64,128,256,512}`:
 

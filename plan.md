@@ -52,7 +52,7 @@ Build and test locally only; execute no cluster or registry command.
   first, TensorFlow Speech Recognition second, and the other ten afterward.
   Require an actual smallest-file download for every competition.
 
-## Acceptance
+## Focused acceptance for this implementation
 
 - Verify exact corpus totals, affected allocations, batch totals, unique IDs,
   historical V1 hashes, and the 9,050/1,075/1,075 crosswalk.
@@ -60,16 +60,15 @@ Build and test locally only; execute no cluster or registry command.
   inventory, archive, count, and class failure.
 - Exercise all five affected families and four precision paths with real
   Disaster data when Kaggle access permits.
-- Re-run the 11,200-construction audit, 177-route fixture matrix, concurrency and
-  injected-failure tests, export reconstruction, dependency/image preflight,
-  secret scan, and local YAML verifier. The fixture matrix must execute the
-  declared eager or Inductor path and cover every retained generated lineage in
-  both execution modes, every realized lineage/precision pair, and every
-  generated optimizer/modality pair.
-- Rebuild after executable-source changes and run the 32-label, five-epoch RTX
-  5090 workflow only when all twelve real Kaggle download gates pass. If the
-  Disaster or Speech agreement remains blocked, record the external blocker and
-  do not substitute mirrors or synthetic evidence.
+- Rebuild after executable-source changes and run image preflight, a focused
+  Disaster regression suite, and the 20 real one-batch updates formed by five
+  affected families times four precision policies.
+- Preserve earlier broad construction/fixture evidence, but do not require a new
+  11,200-construction audit, 177-route fixture rerun, export reconstruction, or
+  complete 32-label campaign for this dataset-only replacement acceptance.
+- Keep the complete 32-label, five-epoch RTX 5090 workflow in the operator
+  runbook as the later full-release gate. A partially executed broad workflow is
+  not substitution acceptance evidence and must not be described as complete.
 - Run no `kubectl`, Nautilus, image-push, or other cluster command.
 
 ## Assumptions
