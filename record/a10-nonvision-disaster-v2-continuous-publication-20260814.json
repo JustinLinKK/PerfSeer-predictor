@@ -1,0 +1,33 @@
+{
+  "anonymous_pull_verified": true,
+  "architecture": "linux/amd64",
+  "build_provenance": false,
+  "config_digest": "sha256:09ceb7da0672da14a90aba0685d32bb0a7631c6ee16eb4a8e5a764b5d7dd5a1b",
+  "dependency_lock_sha256": "e8211e60e566285c0d37d9125fe94a9fbb9c1704892157ac6ab570cb4742bc39",
+  "final_job_yaml": ".local/disaster-v2-continuous-ecepxie.yaml",
+  "final_job_yaml_sha256": "4d0eef0729f2f037504e6903e3708a68ea68e3d0009c5d40a2988ea79ae4c8f7",
+  "image_digest": "sha256:9049486024b6ef8025b93262dcc4fa084c8b2e4308afda2c2fabffe72692428c",
+  "layer_count": 19,
+  "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+  "previous_image_digest": "sha256:a8b89892fb98c11e68963c1c7be41dc814ec7fad973d0454a1e8ed7a96a13522",
+  "published_at": "2026-08-14",
+  "registry": "gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling",
+  "source_revision": "278787447cd5469251ba3838aed9d49d97d27a89",
+  "source_tree_sha256": "7053dbed1410585fafb7037e16fe2c7b5556405e88c39de692559180ab04727f",
+  "tag": "278787447cd5469251ba3838aed9d49d97d27a89",
+  "verification": {
+    "analyze_candidate_count": 11200,
+    "analyze_family_count": 22,
+    "analyze_task_count": 12,
+    "cli_run_continuous_help": "passed",
+    "credential_files_found": 0,
+    "cuda_architectures_required": [
+      "sm_86",
+      "sm_120"
+    ],
+    "inactive_vision_count": 0,
+    "local_cuda_device": "NVIDIA GeForce RTX 5090",
+    "local_cuda_preflight": "passed_non_production",
+    "pip_check": "passed"
+  }
+}

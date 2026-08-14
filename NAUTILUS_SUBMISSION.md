@@ -68,9 +68,9 @@ The current continuous image is published under a full source-revision tag. The
 exact source revision and digest are recorded here after publication:
 
 ```bash
-export PERFSEER_SOURCE_REVISION=REPLACE_CONTINUOUS_SOURCE_REVISION
+export PERFSEER_SOURCE_REVISION=278787447cd5469251ba3838aed9d49d97d27a89
 export PERFSEER_REGISTRY=gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling
-export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:REPLACE_CONTINUOUS_DIGEST"
+export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:9049486024b6ef8025b93262dcc4fa084c8b2e4308afda2c2fabffe72692428c"
 docker buildx imagetools inspect "$PERFSEER_IMAGE_DIGEST"
 ```
 
@@ -265,7 +265,7 @@ transfer and again locally:
 ```bash
 sha256sum downloads/perfseer-v3-a10-nonvision-disaster-v2-complete-*.tar.zst
 docker run --rm --read-only --tmpfs /tmp:rw,size=16g \
-  -v "$PWD/downloads:/release:ro" "$PERFSEER_LOCAL_IMAGE" verify-export \
+  -v "$PWD/downloads:/release:ro" "$PERFSEER_IMAGE_DIGEST" verify-export \
   --archive /release/REPLACE_ARCHIVE.tar.zst
 ```
 
