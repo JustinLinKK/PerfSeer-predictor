@@ -62,11 +62,15 @@ export PERFSEER_SOURCE_REVISION=$(git rev-parse HEAD)
 export PERFSEER_LOCAL_IMAGE="perfseer-v3-a10-nonvision-disaster-v2:${PERFSEER_SOURCE_REVISION}"
 python scripts/create_a10_disaster_v2_build_manifest.py \
   --image-identity "$PERFSEER_LOCAL_IMAGE"
-docker buildx build --platform linux/amd64 --load \
+docker buildx build --platform linux/amd64 --provenance=false --load \
   -f containers/a10-nonvision-disaster-v2-labeler/Dockerfile \
   -t "$PERFSEER_LOCAL_IMAGE" .
 docker run --rm "$PERFSEER_LOCAL_IMAGE" analyze
 ```
+
+Keep `--provenance=false`. NRP's GitLab registry UI can display Buildx
+attestation indexes as `Invalid tag: missing manifest digest` with a false `0 B`
+size. A conventional single-platform manifest avoids that UI incompatibility.
 
 Run the immutable-image and Kaggle gates:
 
