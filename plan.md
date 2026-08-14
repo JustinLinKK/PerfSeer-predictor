@@ -1,57 +1,47 @@
-# PerfSeer V3 Continuous A10 Campaign Image
+# Harden the Downloadable Source-and-Label Release
 
 ## Objective
 
-Modify the current Disaster V2 branch and publish a new immutable image that needs
-one campaign Job submission. The image must run the canonical 32-label pilot,
-verify it, run production chunks 0 through 43 sequentially, verify all 11,200
-labels, create the final release archive, and verify that archive.
+Keep the continuous 11,200-label workflow and its reconstructable release format,
+while making archive verification strict enough to prove that every accepted label,
+candidate configuration, and content-addressed Python source bundle is complete,
+safe, and mutually consistent. Publish the verified change as a new immutable
+PyTorch CUDA image, but do not submit a Nautilus Job.
 
-## Continuous workflow
+## Implementation
 
-- Add a `run-continuous` CLI command that validates the embedded image identity and
-  runs the Kaggle gates once per Pod.
-- Require the verified pilot receipt before production begins.
-- Verify every chunk receipt before advancing and stop on the first failed phase.
-- Resume from atomic pilot/chunk/export receipts after the Job's one replacement
-  Pod without repeating completed work.
-- Emit structured progress to stdout and an atomic PVC progress record.
-- Write an immutable terminal receipt only after complete corpus verification and
-  successful release reconstruction.
-
-## Nautilus contract
-
-- Render one continuous Job in namespace `ecepxie` using PVC
-  `perfseer-panns-jingbin-260808-a0af09` and Secret
-  `perfseer-kaggle-disaster-v2`.
-- Request four `NVIDIA-A10` GPUs for four independent workers, 32 CPU, 128 GiB RAM,
-  32 GiB ephemeral storage, and 32 GiB `/dev/shm`, with equal requests and limits.
-- Use a seven-day whole-Job deadline, `backoffLimit: 1`, `restartPolicy: Never`, a
-  120-second termination grace period, read-only credentials, and a digest-only
-  image.
-- Update the durable monitor for replacement Pods and terminal-state exit.
-- Run no Kubernetes mutation during implementation; Nautilus access is query-only.
+1. Harden `a10_export.py` without changing the CLI or release schema/version:
+   require complete counts, unique candidate identities, contiguous label joins,
+   safe relative paths, exact configuration joins, recomputed bundle/file hashes,
+   exhaustive `SHA256SUMS`, and rejection of unsafe or forbidden members.
+2. Preserve deterministic atomic `.tar.zst` creation and its JSON checksum sidecar
+   under the PVC-backed campaign `releases/` directory.
+3. Preserve continuous orchestration ordering: export only after 11,200-label
+   verification, verify before writing the terminal receipt, and reverify on resume.
+4. Add focused integration and corruption tests for the real exporter/verifier and
+   retain the continuous orchestration tests.
+5. Update the operator handoff to document the terminal receipt, archive and sidecar,
+   NRP S3/rclone transfer, checksum comparison, and local reconstruction verification.
 
 ## Verification and publication
 
-- Test phase ordering, pilot gating, failure isolation, resume, terminal fast-exit,
-  export ordering, corrupt-state rejection, and the offline Job contract with fake
-  phase runners.
-- Run only short checks: focused unit tests, `pip check`, `analyze`, RTX 5090 CUDA
-  preflight without labeling, CLI startup, and credential/vision/source checks.
-- Do not run real five-epoch labels, the real 32-label pilot, production chunks, or
-  the 11,200-label campaign.
-- Commit the executable source on the current branch, regenerate its build manifest,
-  build `linux/amd64` with `--provenance=false`, and push a new full-revision tag to
-  `gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling`.
-- Preserve the previous tag and digest, never publish `latest`, anonymously verify
-  the new Docker V2 digest, and render the final continuous YAML locally.
+1. Run a verifier after each edit: focused tests, syntax/static checks, archive
+   round trips, broader Disaster V2 tests, and `git diff --check`.
+2. Commit the executable change, regenerate its build manifest, and build the pinned
+   `linux/amd64` PyTorch CUDA image with provenance disabled.
+3. Verify dependency health, campaign analysis, CLI startup, credential absence,
+   source/build hashes, CUDA architectures, and the non-labeling RTX 5090 preflight.
+4. Publish only a full-revision tag, anonymously resolve the immutable Docker V2
+   digest, record publication evidence, and render/verify the continuous Job for
+   namespace `ecepxie`, PVC `perfseer-panns-jingbin-260808-a0af09`, and Secret
+   `perfseer-kaggle-disaster-v2`.
+5. Do not run real labels and do not create, apply, patch, or delete any Kubernetes
+   resource.
 
-## Acceptance boundary
+## Fixed artifact contract
 
-- One operator Job submission includes pilot, production, complete verification,
-  and export.
-- The seven-day deadline includes the initial Pod and its single retry. If both Pods
-  fail or the deadline expires, durable PVC progress remains but the same manifest
-  must be submitted again.
-- Actual four-A10 behavior remains the operator-run production acceptance test.
+- Source form: deduplicated reconstructable Python factory/runtime bundles plus one
+  canonical JSON configuration and joined accepted label per model.
+- Destination: the campaign PVC under `<workspace>/releases/`.
+- Compression: deterministic content-hashed `.tar.zst` plus matching JSON sidecar.
+- Exclusions: no trained weights, checkpoints, automatic S3 upload, or credentials.

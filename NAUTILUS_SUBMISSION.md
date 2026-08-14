@@ -246,6 +246,20 @@ path and SHA-256. The archive is under:
 
 `/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/releases/`
 
+The content-hashed archive has a matching JSON checksum sidecar in the same
+directory:
+
+```text
+perfseer-v3-a10-nonvision-disaster-v2-complete-<release-hash>.tar.zst
+perfseer-v3-a10-nonvision-disaster-v2-complete-<release-hash>.tar.zst.json
+```
+
+The terminal receipt records the absolute PVC archive path, archive SHA-256,
+release SHA-256, 11,200 accepted labels, and all 44 completed chunks. A Job is not
+successful until that receipt exists and the container has re-extracted the archive,
+verified every checksum/source/configuration/label join, and reconstructed all
+11,200 model configurations.
+
 It contains:
 
 - `labels.jsonl` with measurements and provenance;
@@ -259,14 +273,21 @@ It contains:
 
 Move the large archive using NRP S3/rclone as described in the
 [NRP data-movement guide](https://nrp.ai/documentation/userdocs/storage/move-data/).
-Do not use `kubectl cp` for a large release. Verify the reported SHA-256 after each
-transfer and again locally:
+Transfer both the `.tar.zst` and its `.tar.zst.json` sidecar. Do not use `kubectl cp`
+for a large release. Compare the sidecar SHA-256 after each transfer and run the
+full local verifier:
 
 ```bash
-sha256sum downloads/perfseer-v3-a10-nonvision-disaster-v2-complete-*.tar.zst
+export PERFSEER_ARCHIVE=$(find downloads -maxdepth 1 -type f \
+  -name 'perfseer-v3-a10-nonvision-disaster-v2-complete-*.tar.zst' -print -quit)
+export PERFSEER_EXPECTED_SHA256=$(python -c \
+  'import json,sys; print(json.load(open(sys.argv[1]))["archive_sha256"])' \
+  "${PERFSEER_ARCHIVE}.json")
+test "$(sha256sum "$PERFSEER_ARCHIVE" | cut -d' ' -f1)" = \
+  "$PERFSEER_EXPECTED_SHA256"
 docker run --rm --read-only --tmpfs /tmp:rw,size=16g \
   -v "$PWD/downloads:/release:ro" "$PERFSEER_IMAGE_DIGEST" verify-export \
-  --archive /release/REPLACE_ARCHIVE.tar.zst
+  --archive "/release/$(basename "$PERFSEER_ARCHIVE")"
 ```
 
 ## 10. Recovery tools

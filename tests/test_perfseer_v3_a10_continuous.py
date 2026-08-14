@@ -240,6 +240,43 @@ def test_release_must_remain_inside_workspace(tmp_path: Path) -> None:
         )
 
 
+def test_failed_archive_verification_never_writes_terminal_receipt(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    fake = FakePhases(workspace)
+    dependencies = fake.dependencies()
+
+    def reject_archive(_: Path) -> dict[str, Any]:
+        fake.calls.append("verify-release")
+        raise RuntimeError("injected archive verification failure")
+
+    dependencies = ContinuousDependencies(
+        run_phase=dependencies.run_phase,
+        verify_campaign=dependencies.verify_campaign,
+        export_release=dependencies.export_release,
+        verify_release=reject_archive,
+    )
+    with pytest.raises(RuntimeError, match="archive verification failure"):
+        run_continuous_campaign(
+            workspace=workspace,
+            repository_root=ROOT,
+            mlebench_checkout=ROOT,
+            repository_revision=REVISION,
+            image_digest=DIGEST,
+            output_directory=workspace / "releases",
+            preflight=fake.preflight,
+            dependencies=dependencies,
+            event_sink=None,
+        )
+
+    assert fake.calls[-2:] == ["export", "verify-release"]
+    assert not continuous_receipt_path(workspace).exists()
+    progress = json.loads(continuous_progress_path(workspace).read_text())
+    assert progress["event"] == "campaign_failed"
+    assert progress["phase"] == "export"
+
+
 def test_continuous_job_contract_and_monitor_terminal_following(
     tmp_path: Path,
 ) -> None:
