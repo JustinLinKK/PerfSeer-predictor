@@ -26,15 +26,9 @@ page before doing anything on Nautilus:
 11. [Tabular Playground December 2021](https://www.kaggle.com/competitions/tabular-playground-series-dec-2021/rules)
 12. [Tabular Playground May 2022](https://www.kaggle.com/competitions/tabular-playground-series-may-2022/rules)
 
-Keep `kaggle.json` outside the repository and set it to mode `0600`. Prove access by
-downloading a real smallest file, not merely listing files:
-
-```bash
-docker run --rm \
-  -v "$HOME/.kaggle:/run/secrets/kaggle:ro" \
-  PERFSEER_LOCAL_IMAGE \
-  image-preflight --verify-kaggle-access
-```
+Keep `kaggle.json` outside the repository and set it to mode `0600`. The actual
+smallest-file download gate runs immediately after the image is built in section 3;
+listing competition files is not sufficient evidence.
 
 The Speech Recognition gate specifically requires the advertised 50-byte
 `link_to_gcp_credits_form.txt`. A 403 means the rules are still not accepted; stop
@@ -71,6 +65,16 @@ docker run --rm --read-only --tmpfs /tmp:rw,size=8g \
   -v "$PWD/.local/nonvision-construction:/workspace:rw" \
   "$PERFSEER_LOCAL_IMAGE" smoke-local \
   --workspace /workspace --construction-audit
+```
+
+Now prove all 12 agreements with real smallest-file downloads. Stop before image
+publication if any one fails:
+
+```bash
+docker run --rm --read-only --tmpfs /tmp:rw,size=8g \
+  -v "$HOME/.kaggle:/run/secrets/kaggle:ro" \
+  "$PERFSEER_LOCAL_IMAGE" \
+  image-preflight --verify-kaggle-access
 ```
 
 Verify imports, hashes, CUDA kernels, the read-only runtime, and the actual local RTX
@@ -253,25 +257,42 @@ failed chunk with the same index and workspace after diagnosing/correcting the c
 Candidate-local OOM/errors continue through repair/quarantine; global integrity
 failures exit nonzero.
 
-## 11. Export the result on the PVC
+## 11. Export and verify the result on the PVC
 
 The final release deliberately excludes checkpoints and weights. It contains
 `labels.jsonl`, one exact configuration per candidate, content-addressed source,
 factory entrypoints, index joins, repair/failure ledgers, receipts, manifests, and
 `SHA256SUMS`:
 
+Render a CPU-only, digest-pinned export Job that mounts the same PVC. Its `export
+--complete --verify-archive` command fails unless all 11,200 labels are present,
+checks every archive hash, and reconstructs every indexed model offline:
+
 ```bash
-# These are the container args for a digest-pinned utility Job mounting the same PVC:
-docker run --rm --read-only --tmpfs /tmp:rw,size=16g \
-  -v "$PWD/.local/nonvision-production:/workspace:rw" \
-  "$PERFSEER_LOCAL_IMAGE" export \
-  --workspace /workspace/perfseer-v3-native-a10-nonvision-11200-v1 \
-  --output-directory /workspace/releases --complete --verify-archive
+python scripts/render_a10_nonvision_nautilus_job.py \
+  --output .local/a10-nonvision-export.yaml \
+  --namespace "$PERFSEER_NAMESPACE" \
+  --image "$PERFSEER_IMAGE_DIGEST" \
+  --source-revision "$PERFSEER_SOURCE_REVISION" \
+  --mode export
+kubectl create --dry-run=client --validate=false \
+  -f .local/a10-nonvision-export.yaml
+# Explicit operator action only after inspection:
+kubectl apply -f .local/a10-nonvision-export.yaml
+export PERFSEER_JOB=perfseer-v3-a10-nonvision-export
+kubectl get job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE" -o wide
+kubectl get pod --namespace "$PERFSEER_NAMESPACE" \
+  -l "job-name=$PERFSEER_JOB" -o wide
+export PERFSEER_POD=$(kubectl get pod --namespace "$PERFSEER_NAMESPACE" \
+  -l "job-name=$PERFSEER_JOB" -o jsonpath='{.items[0].metadata.name}')
+kubectl describe pod "$PERFSEER_POD" --namespace "$PERFSEER_NAMESPACE"
+kubectl logs "$PERFSEER_POD" --namespace "$PERFSEER_NAMESPACE"
+kubectl get events --namespace "$PERFSEER_NAMESPACE" \
+  --sort-by=.lastTimestamp | tail -100
 ```
 
-Run `verify-export --archive ARCHIVE.tar.zst` in a clean offline image. This verifies
-all checksums and reconstructs every indexed model from bundled source without a
-network connection.
+The exporter logs the PVC archive path and SHA-256. Do not start transfer until this
+Job is complete and the embedded verification reports success.
 
 ## 12. Transfer through NRP S3/rclone and verify again
 

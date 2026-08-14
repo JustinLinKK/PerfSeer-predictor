@@ -309,10 +309,13 @@ def test_digest_only_four_a10_yaml_and_pvc(tmp_path: Path) -> None:
     revision = "a" * 40
     pilot = tmp_path / "pilot.yaml"
     final = tmp_path / "chunk43.yaml"
+    export = tmp_path / "export.yaml"
     assert module.main(["--output", str(pilot), "--namespace", "test-ns", "--image", image, "--source-revision", revision, "--mode", "pilot"]) == 0
     assert module.main(["--output", str(final), "--namespace", "test-ns", "--image", image, "--source-revision", revision, "--mode", "chunk", "--chunk-index", "43"]) == 0
+    assert module.main(["--output", str(export), "--namespace", "test-ns", "--image", image, "--source-revision", revision, "--mode", "export"]) == 0
     module.verify_job(yaml.safe_load(pilot.read_text()), mode="pilot")
     module.verify_job(yaml.safe_load(final.read_text()), mode="chunk", chunk_index=43)
+    module.verify_job(yaml.safe_load(export.read_text()), mode="export")
     pvc = yaml.safe_load((ROOT / "k8s/a10-nonvision-4gpu-labeler-pvc.yaml").read_text())
     assert pvc["spec"]["accessModes"] == ["ReadWriteMany"]
     assert pvc["spec"]["resources"]["requests"]["storage"] == "700Gi"

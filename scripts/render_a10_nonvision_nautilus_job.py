@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render and offline-verify a digest-only four-A10 non-vision Job."""
+"""Render and offline-verify digest-only non-vision campaign/export Jobs."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ ZERO_DIGEST = "sha256:" + "0" * 64
 WORKSPACE = "/workspace/perfseer-v3-native-a10-nonvision-11200-v1"
 PROFILE = "native_a10_nonvision_4gpu_v1"
 CHUNK_COUNT = 44
+EXPORT_TEMPLATE = Path("k8s/a10-nonvision-export-job.yaml")
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -42,6 +43,9 @@ def verify_job(
 ) -> None:
     if value.get("apiVersion") != "batch/v1" or value.get("kind") != "Job":
         raise ValueError("rendered object is not a batch/v1 Job")
+    if mode == "export":
+        _verify_export_job(value)
+        return
     job_spec = value["spec"]
     pod_spec = job_spec["template"]["spec"]
     if (
@@ -133,6 +137,51 @@ def verify_job(
         raise ValueError("Kaggle Secret mode is not 0400")
 
 
+def _verify_export_job(value: Mapping[str, Any]) -> None:
+    job_spec = value["spec"]
+    pod_spec = job_spec["template"]["spec"]
+    if (
+        job_spec.get("backoffLimit") != 0
+        or job_spec.get("activeDeadlineSeconds") != 21600
+        or pod_spec.get("restartPolicy") != "Never"
+    ):
+        raise ValueError("export Job retry/deadline policy differs from the contract")
+    containers = pod_spec.get("containers", [])
+    if len(containers) != 1:
+        raise ValueError("export Job must contain one container")
+    container = containers[0]
+    image = str(container.get("image", ""))
+    if not IMAGE_RE.fullmatch(image) or ZERO_DIGEST in image:
+        raise ValueError("export image must be a non-placeholder NRP registry digest")
+    if container.get("args") != [
+        "export",
+        "--workspace",
+        WORKSPACE,
+        "--output-directory",
+        f"{WORKSPACE}/releases",
+        "--complete",
+        "--verify-archive",
+    ]:
+        raise ValueError("export Job arguments differ from the complete verified release")
+    resources = container["resources"]
+    expected_resources = {
+        "cpu": "4",
+        "memory": "16Gi",
+        "ephemeral-storage": "16Gi",
+    }
+    if resources["requests"] != expected_resources or resources["limits"] != expected_resources:
+        raise ValueError("export Job must use equal request/limit resources")
+    if container.get("securityContext", {}).get("readOnlyRootFilesystem") is not True:
+        raise ValueError("export container root filesystem must be read-only")
+    if any("nvidia.com/gpu" in section for section in resources.values()):
+        raise ValueError("export Job must not reserve a GPU")
+    volumes = {row["name"]: row for row in pod_spec["volumes"]}
+    if volumes["temporary-files"]["emptyDir"] != {"sizeLimit": "16Gi"}:
+        raise ValueError("export temporary storage differs from 16 GiB")
+    if "persistentVolumeClaim" not in volumes["workspace"]:
+        raise ValueError("export Job must mount the campaign PVC")
+
+
 def render(arguments: argparse.Namespace) -> dict[str, Any]:
     if not IMAGE_RE.fullmatch(arguments.image) or ZERO_DIGEST in arguments.image:
         raise ValueError("--image must be a non-placeholder NRP registry digest")
@@ -150,10 +199,21 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
         or not 0 <= arguments.chunk_index < CHUNK_COUNT
     ):
         raise ValueError("chunk mode requires --chunk-index in [0, 43]")
-    if arguments.mode == "pilot" and arguments.chunk_index is not None:
-        raise ValueError("pilot mode does not accept --chunk-index")
-    result = _load(arguments.template)
-    suffix = "pilot" if arguments.mode == "pilot" else f"chunk-{arguments.chunk_index:02d}"
+    if arguments.mode in {"pilot", "export"} and arguments.chunk_index is not None:
+        raise ValueError(f"{arguments.mode} mode does not accept --chunk-index")
+    template = arguments.template or (
+        EXPORT_TEMPLATE
+        if arguments.mode == "export"
+        else Path("k8s/a10-nonvision-4gpu-labeler-job.yaml")
+    )
+    result = _load(template)
+    suffix = (
+        "pilot"
+        if arguments.mode == "pilot"
+        else "export"
+        if arguments.mode == "export"
+        else f"chunk-{arguments.chunk_index:02d}"
+    )
     result["metadata"]["name"] = f"perfseer-v3-a10-nonvision-{suffix}"
     result["metadata"]["namespace"] = arguments.namespace
     result["metadata"]["annotations"][
@@ -162,8 +222,9 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
     pod_spec = result["spec"]["template"]["spec"]
     container = pod_spec["containers"][0]
     container["image"] = arguments.image
-    _replace_argument(container["args"], "--repository-revision", arguments.source_revision)
-    _replace_argument(container["args"], "--image-digest", arguments.image)
+    if arguments.mode != "export":
+        _replace_argument(container["args"], "--repository-revision", arguments.source_revision)
+        _replace_argument(container["args"], "--image-digest", arguments.image)
     if arguments.mode == "chunk":
         container["args"].remove("--pilot")
         container["args"].extend(
@@ -183,7 +244,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--template",
         type=Path,
-        default=Path("k8s/a10-nonvision-4gpu-labeler-job.yaml"),
+        default=None,
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--namespace", required=True)
@@ -191,7 +252,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--pvc", default="perfseer-v3-a10-nonvision-labels")
     parser.add_argument("--secret", default="perfseer-kaggle-nonvision")
-    parser.add_argument("--mode", choices=("pilot", "chunk"), required=True)
+    parser.add_argument("--mode", choices=("pilot", "chunk", "export"), required=True)
     parser.add_argument("--chunk-index", type=int)
     return parser
 
