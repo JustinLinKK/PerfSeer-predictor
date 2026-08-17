@@ -25,6 +25,22 @@ CAMPAIGN_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-labeler-job.yaml")
 CONTINUOUS_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-continuous-job.yaml")
 JOB_PREFIX = "perfseer-v3-a10-nonvision-disaster-v2"
 CAMPAIGN_LABEL = "native-a10-nonvision-disaster-11200-v2"
+KAGGLE_CONFIG_DIRECTORY = "/run/secrets/kaggle"
+KAGGLE_SOURCE_DIRECTORY = "/run/secrets/kaggle-source"
+KAGGLE_STAGE_SCRIPT = (
+    "umask 077\n"
+    "install -m 0400 /run/secrets/kaggle-source/kaggle.json "
+    "/run/secrets/kaggle/kaggle.json\n"
+    "test -s /run/secrets/kaggle/kaggle.json\n"
+    "test \"$(stat -c '%a' /run/secrets/kaggle/kaggle.json)\" = 400\n"
+    "cmp -s /run/secrets/kaggle-source/kaggle.json "
+    "/run/secrets/kaggle/kaggle.json\n"
+)
+KAGGLE_STAGER_RESOURCES = {
+    "cpu": "100m",
+    "memory": "64Mi",
+    "ephemeral-storage": "16Mi",
+}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -135,6 +151,44 @@ def verify_job(
     ]
     if terms != expected_terms:
         raise ValueError("required NVIDIA-A10 affinity differs")
+    if pod_spec.get("securityContext", {}).get("fsGroup") != 1000:
+        raise ValueError("campaign PVC fsGroup differs")
+    init_containers = pod_spec.get("initContainers", [])
+    if len(init_containers) != 1:
+        raise ValueError("Job must contain one Kaggle credential stager")
+    credential_stager = init_containers[0]
+    if (
+        credential_stager.get("name") != "stage-kaggle-credential"
+        or credential_stager.get("image") != image
+        or credential_stager.get("imagePullPolicy") != "IfNotPresent"
+        or credential_stager.get("command") != ["/bin/sh", "-ceu"]
+        or credential_stager.get("args") != [KAGGLE_STAGE_SCRIPT]
+    ):
+        raise ValueError("Kaggle credential stager command/image differs")
+    stager_resources = credential_stager.get("resources", {})
+    if (
+        stager_resources.get("requests") != KAGGLE_STAGER_RESOURCES
+        or stager_resources.get("limits") != KAGGLE_STAGER_RESOURCES
+    ):
+        raise ValueError("Kaggle credential stager resources differ")
+    if credential_stager.get("securityContext") != {
+        "allowPrivilegeEscalation": False,
+        "readOnlyRootFilesystem": True,
+        "capabilities": {"drop": ["ALL"]},
+    }:
+        raise ValueError("Kaggle credential stager security context differs")
+    if credential_stager.get("volumeMounts") != [
+        {
+            "name": "kaggle-credential-source",
+            "mountPath": KAGGLE_SOURCE_DIRECTORY,
+            "readOnly": True,
+        },
+        {
+            "name": "kaggle-credential-private",
+            "mountPath": KAGGLE_CONFIG_DIRECTORY,
+        },
+    ]:
+        raise ValueError("Kaggle credential stager mounts differ")
     profiles = {
         row["name"]: row["value"]
         for row in container.get("env", [])
@@ -145,8 +199,22 @@ def verify_job(
         "PERFSEER_LABELER_PROFILE": PROFILE,
     }:
         raise ValueError("Job does not bake/select the non-vision profile")
+    environment = {
+        row["name"]: row.get("value") for row in container.get("env", [])
+    }
+    if environment.get("KAGGLE_CONFIG_DIR") != KAGGLE_CONFIG_DIRECTORY:
+        raise ValueError("main container Kaggle directory differs")
     if container.get("securityContext", {}).get("readOnlyRootFilesystem") is not True:
         raise ValueError("container root filesystem must be read-only")
+    main_mounts = {row["name"]: row for row in container.get("volumeMounts", [])}
+    if "kaggle-credential-source" in main_mounts or main_mounts.get(
+        "kaggle-credential-private"
+    ) != {
+        "name": "kaggle-credential-private",
+        "mountPath": KAGGLE_CONFIG_DIRECTORY,
+        "readOnly": True,
+    }:
+        raise ValueError("main container must mount only the private credential read-only")
     volumes = {row["name"]: row for row in pod_spec["volumes"]}
     if volumes["shared-memory"]["emptyDir"] != {
         "medium": "Memory",
@@ -155,8 +223,19 @@ def verify_job(
         raise ValueError("/dev/shm differs from 32 GiB")
     if volumes["temporary-files"]["emptyDir"] != {"sizeLimit": "32Gi"}:
         raise ValueError("temporary storage volume differs from 32 GiB")
-    if volumes["kaggle-credential"]["secret"].get("defaultMode") != 0o400:
-        raise ValueError("Kaggle Secret mode is not 0400")
+    source_secret = volumes.get("kaggle-credential-source", {}).get("secret", {})
+    if (
+        source_secret.get("defaultMode") != 0o400
+        or source_secret.get("items")
+        != [{"key": "kaggle.json", "path": "kaggle.json", "mode": 0o400}]
+        or not DNS_LABEL_RE.fullmatch(str(source_secret.get("secretName", "")))
+    ):
+        raise ValueError("Kaggle source Secret projection differs")
+    if volumes.get("kaggle-credential-private", {}).get("emptyDir") != {
+        "medium": "Memory",
+        "sizeLimit": "1Mi",
+    }:
+        raise ValueError("private Kaggle credential volume differs")
 
 
 def _verify_export_job(value: Mapping[str, Any]) -> None:
@@ -254,6 +333,8 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
     )["perfseer.ai/campaign"] = CAMPAIGN_LABEL
     container = pod_spec["containers"][0]
     container["image"] = arguments.image
+    if arguments.mode != "export":
+        pod_spec["initContainers"][0]["image"] = arguments.image
     _replace_argument(container["args"], "--workspace", WORKSPACE)
     if arguments.mode == "export":
         _replace_argument(
@@ -276,7 +357,7 @@ def render(arguments: argparse.Namespace) -> dict[str, Any]:
     for volume in pod_spec["volumes"]:
         if volume["name"] == "workspace":
             volume["persistentVolumeClaim"]["claimName"] = arguments.pvc
-        elif volume["name"] == "kaggle-credential":
+        elif volume["name"] == "kaggle-credential-source":
             volume["secret"]["secretName"] = arguments.secret
     verify_job(result, mode=arguments.mode, chunk_index=arguments.chunk_index)
     return result

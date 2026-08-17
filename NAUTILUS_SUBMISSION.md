@@ -138,7 +138,7 @@ Query first:
 
 ```bash
 kubectl get secret "$PERFSEER_KAGGLE_SECRET" \
-  --namespace "$PERFSEER_NAMESPACE"
+  --namespace "$PERFSEER_NAMESPACE" -o name
 ```
 
 If it is absent, create it. This is a namespace mutation and must be run by you:
@@ -148,11 +148,15 @@ kubectl create secret generic "$PERFSEER_KAGGLE_SECRET" \
   --namespace "$PERFSEER_NAMESPACE" \
   --from-file=kaggle.json="$HOME/.kaggle/kaggle.json"
 kubectl get secret "$PERFSEER_KAGGLE_SECRET" \
-  --namespace "$PERFSEER_NAMESPACE"
+  --namespace "$PERFSEER_NAMESPACE" -o name
 ```
 
-The Job mounts this Secret read-only with file mode `0400`. Do not apply a new PVC;
-the renderer below uses the existing approved claim.
+Never print the Secret as YAML/JSON or request its `.data` field. The source Secret
+is visible only to an init container. Because pod `fsGroup` can widen projected
+volume permissions, that init container copies only `kaggle.json` into a 1 MiB
+memory-backed private volume, sets and verifies actual mode `0400`, and exits. The
+main labeler mounts only the private copy read-only. Do not apply a new PVC; the
+renderer below uses the existing approved claim.
 
 ## 6. Render and inspect the single continuous Job locally
 
@@ -180,7 +184,10 @@ The renderer fails unless the Job has all of these properties:
 - required `nvidia.com/gpu.product: NVIDIA-A10` affinity;
 - equal requests/limits of 32 CPU, 128 GiB RAM, and 32 GiB ephemeral storage;
 - 32 GiB `/dev/shm`;
-- read-only root filesystem and Kaggle Secret;
+- read-only root filesystems and a bounded init container that stages only
+  `kaggle.json` at verified mode `0400`;
+- no direct Secret mount in the main labeler and a read-only private credential
+  mount backed by a 1 MiB memory `emptyDir`;
 - the existing 700 GiB RWX PVC;
 - `backoffLimit: 1`, seven-day deadline, and 120-second termination grace.
 

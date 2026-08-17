@@ -766,10 +766,16 @@ def test_pilot_lineage_workspace_and_offline_job_contract(tmp_path: Path) -> Non
         "kaggle-disaster", "--mode", "pilot",
     ]) == 0
     value = yaml.safe_load(output.read_text())
-    container = value["spec"]["template"]["spec"]["containers"][0]
+    pod = value["spec"]["template"]["spec"]
+    container = pod["containers"][0]
     assert value["metadata"]["name"] == "perfseer-v3-a10-nonvision-disaster-v2-pilot"
     assert container["resources"]["requests"]["nvidia.com/gpu"] == "4"
     assert container["args"][container["args"].index("--workspace") + 1].endswith("disaster-v2")
+    assert pod["initContainers"][0]["name"] == "stage-kaggle-credential"
+    assert pod["initContainers"][0]["image"] == image
+    volumes = {row["name"]: row for row in pod["volumes"]}
+    assert volumes["kaggle-credential-source"]["secret"]["secretName"] == "kaggle-disaster"
+    assert volumes["kaggle-credential-private"]["emptyDir"]["medium"] == "Memory"
 
 
 def test_image_gate_order_and_active_runbook() -> None:

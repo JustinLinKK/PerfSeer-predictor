@@ -311,9 +311,62 @@ def test_continuous_job_contract_and_monitor_terminal_following(
     assert container["resources"]["limits"] == container["resources"]["requests"]
     assert container["resources"]["limits"]["nvidia.com/gpu"] == "4"
     assert container["securityContext"]["readOnlyRootFilesystem"] is True
+    credential_stager = pod["initContainers"][0]
+    assert credential_stager["name"] == "stage-kaggle-credential"
+    assert credential_stager["image"] == arguments.image
+    assert credential_stager["command"] == ["/bin/sh", "-ceu"]
+    assert "install -m 0400" in credential_stager["args"][0]
+    assert credential_stager["resources"]["limits"] == credential_stager["resources"][
+        "requests"
+    ]
+    assert credential_stager["securityContext"]["readOnlyRootFilesystem"] is True
     volumes = {row["name"]: row for row in pod["volumes"]}
     assert volumes["workspace"]["persistentVolumeClaim"]["claimName"] == arguments.pvc
-    assert volumes["kaggle-credential"]["secret"]["secretName"] == arguments.secret
+    source = volumes["kaggle-credential-source"]["secret"]
+    assert source["secretName"] == arguments.secret
+    assert source["items"] == [
+        {"key": "kaggle.json", "path": "kaggle.json", "mode": 0o400}
+    ]
+    assert volumes["kaggle-credential-private"]["emptyDir"] == {
+        "medium": "Memory",
+        "sizeLimit": "1Mi",
+    }
+    main_mounts = {row["name"]: row for row in container["volumeMounts"]}
+    assert "kaggle-credential-source" not in main_mounts
+    assert main_mounts["kaggle-credential-private"]["readOnly"] is True
+
+    missing_stager = yaml.safe_load(yaml.safe_dump(rendered))
+    missing_stager["spec"]["template"]["spec"].pop("initContainers")
+    with pytest.raises(ValueError, match="credential stager"):
+        module.verify_job(missing_stager, mode="continuous")
+
+    unsafe_copy = yaml.safe_load(yaml.safe_dump(rendered))
+    unsafe_copy["spec"]["template"]["spec"]["initContainers"][0]["args"][0] = (
+        unsafe_copy["spec"]["template"]["spec"]["initContainers"][0]["args"][0]
+        .replace("install -m 0400", "install -m 0440")
+    )
+    with pytest.raises(ValueError, match="stager command"):
+        module.verify_job(unsafe_copy, mode="continuous")
+
+    writable_main_mount = yaml.safe_load(yaml.safe_dump(rendered))
+    writable_main_mount["spec"]["template"]["spec"]["containers"][0][
+        "volumeMounts"
+    ][1]["readOnly"] = False
+    with pytest.raises(ValueError, match="private credential read-only"):
+        module.verify_job(writable_main_mount, mode="continuous")
+
+    direct_secret_mount = yaml.safe_load(yaml.safe_dump(rendered))
+    direct_secret_mount["spec"]["template"]["spec"]["containers"][0][
+        "volumeMounts"
+    ].append(
+        {
+            "name": "kaggle-credential-source",
+            "mountPath": "/run/secrets/kaggle-source",
+            "readOnly": True,
+        }
+    )
+    with pytest.raises(ValueError, match="private credential read-only"):
+        module.verify_job(direct_secret_mount, mode="continuous")
 
     monitor = (ROOT / "scripts/monitor_a10_nonvision_job.sh").read_text()
     assert "monitor_pods=" in monitor

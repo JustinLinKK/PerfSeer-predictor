@@ -30,6 +30,38 @@ spec:
                     operator: In
                     values:
                       - NVIDIA-A10
+      initContainers:
+        - name: stage-kaggle-credential
+          image: gitlab-registry.nrp-nautilus.io/REPLACE_GROUP/perfseer-a10-nonvision-disaster-v2@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ceu
+          args:
+            - |
+              umask 077
+              install -m 0400 /run/secrets/kaggle-source/kaggle.json /run/secrets/kaggle/kaggle.json
+              test -s /run/secrets/kaggle/kaggle.json
+              test "$(stat -c '%a' /run/secrets/kaggle/kaggle.json)" = 400
+              cmp -s /run/secrets/kaggle-source/kaggle.json /run/secrets/kaggle/kaggle.json
+          resources:
+            requests: &credential_stager_resources
+              cpu: 100m
+              memory: 64Mi
+              ephemeral-storage: 16Mi
+            limits: *credential_stager_resources
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: kaggle-credential-source
+              mountPath: /run/secrets/kaggle-source
+              readOnly: true
+            - name: kaggle-credential-private
+              mountPath: /run/secrets/kaggle
       containers:
         - name: labeler
           image: gitlab-registry.nrp-nautilus.io/REPLACE_GROUP/perfseer-a10-nonvision-disaster-v2@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -64,7 +96,7 @@ spec:
           volumeMounts:
             - name: workspace
               mountPath: /workspace
-            - name: kaggle-credential
+            - name: kaggle-credential-private
               mountPath: /run/secrets/kaggle
               readOnly: true
             - name: shared-memory
@@ -75,10 +107,18 @@ spec:
         - name: workspace
           persistentVolumeClaim:
             claimName: perfseer-panns-jingbin-260808-a0af09
-        - name: kaggle-credential
+        - name: kaggle-credential-source
           secret:
             secretName: perfseer-kaggle-disaster-v2
             defaultMode: 256
+            items:
+              - key: kaggle.json
+                path: kaggle.json
+                mode: 256
+        - name: kaggle-credential-private
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
         - name: shared-memory
           emptyDir:
             medium: Memory
