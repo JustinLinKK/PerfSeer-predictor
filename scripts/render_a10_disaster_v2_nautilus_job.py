@@ -17,13 +17,15 @@ IMAGE_RE = re.compile(
 REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
 ZERO_DIGEST = "sha256:" + "0" * 64
-WORKSPACE = "/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2"
+WORKSPACE = (
+    "/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1"
+)
 PROFILE = "native_a10_nonvision_disaster_v2"
 CHUNK_COUNT = 44
 EXPORT_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-export-job.yaml")
 CAMPAIGN_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-labeler-job.yaml")
 CONTINUOUS_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-continuous-job.yaml")
-JOB_PREFIX = "perfseer-v3-a10-nonvision-disaster-v2"
+JOB_PREFIX = "perfseer-v3-a10-nonvision-disaster-v2-nvml-v1"
 CAMPAIGN_LABEL = "native-a10-nonvision-disaster-11200-v2"
 KAGGLE_CONFIG_DIRECTORY = "/run/secrets/kaggle"
 KAGGLE_SOURCE_DIRECTORY = "/run/secrets/kaggle-source"
@@ -63,6 +65,17 @@ def verify_job(
 ) -> None:
     if value.get("apiVersion") != "batch/v1" or value.get("kind") != "Job":
         raise ValueError("rendered object is not a batch/v1 Job")
+    suffix = (
+        "pilot"
+        if mode == "pilot"
+        else "continuous"
+        if mode == "continuous"
+        else "export"
+        if mode == "export"
+        else f"chunk-{chunk_index:02d}"
+    )
+    if value.get("metadata", {}).get("name") != f"{JOB_PREFIX}-{suffix}":
+        raise ValueError("rendered Job name differs from the recovery generation")
     if mode == "export":
         _verify_export_job(value)
         return

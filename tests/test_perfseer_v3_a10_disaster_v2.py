@@ -536,7 +536,10 @@ def test_lingering_child_group_is_killed_and_rechecked() -> None:
 def test_worker_diagnostic_is_bounded_and_redacted(monkeypatch: pytest.MonkeyPatch) -> None:
     from perfseer_v3.dataset_pack.label_worker import _diagnostic_message
     from perfseer_v3.dataset_pack.fingerprints import canonical_sha256
-    from perfseer_v3.dataset_pack.supervisor import build_worker_failure_diagnostic
+    from perfseer_v3.dataset_pack.supervisor import (
+        build_worker_failure_diagnostic,
+        worker_failure_summary,
+    )
 
     monkeypatch.setenv("KAGGLE_KEY", "private-value")
     message = _diagnostic_message(
@@ -562,6 +565,136 @@ def test_worker_diagnostic_is_bounded_and_redacted(monkeypatch: pytest.MonkeyPat
     declared = unhashed.pop("diagnostic_sha256")
     assert declared == canonical_sha256(unhashed)
     assert diagnostic["reason_message"] == message
+    code, summary = worker_failure_summary(
+        {
+            "reason_code": "builtins.ValueError",
+            "reason_message": "NVML token=public-leak private-value",
+        }
+    )
+    assert code == "builtins.ValueError"
+    assert "private-value" not in summary
+    assert "public-leak" not in summary
+    assert summary == "NVML token=<redacted> <redacted>"
+
+
+def test_four_gpu_child_assignments_bind_cuda_nvml_uuid_and_processes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack.supervisor import child_gpu_environment
+    from perfseer_v3.dataset_pack.v100_runner import NvmlTelemetryBackend
+    import perfseer_v3.dataset_pack.v100_runner as runner
+
+    uuids = tuple(f"GPU-00000000-0000-0000-0000-{index:012d}" for index in range(4))
+    handles: list[int] = []
+
+    def handle_by_index(index: int) -> int:
+        handles.append(index)
+        return index
+
+    fake_nvml = SimpleNamespace(
+        nvmlInit=lambda: None,
+        nvmlDeviceGetHandleByIndex=handle_by_index,
+        nvmlDeviceGetName=lambda _handle: "NVIDIA A10",
+        nvmlDeviceGetMemoryInfo=lambda handle: SimpleNamespace(
+            total=24 * 1024**3,
+            used=(handle + 1) * 1024**2,
+        ),
+        nvmlDeviceGetUUID=lambda handle: uuids[handle],
+        nvmlDeviceGetUtilizationRates=lambda handle: SimpleNamespace(
+            gpu=10 + handle,
+            memory=20 + handle,
+        ),
+        nvmlDeviceGetCurrentClocksThrottleReasons=lambda _handle: 0,
+        nvmlDeviceGetComputeRunningProcesses=lambda handle: (
+            SimpleNamespace(pid=10_000 + handle),
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "pynvml", fake_nvml)
+    monkeypatch.setattr(runner.torch.cuda, "device_count", lambda: 1)
+    monkeypatch.setattr(
+        runner.torch.cuda,
+        "get_device_properties",
+        lambda _index: SimpleNamespace(major=8, minor=6),
+    )
+
+    fingerprints = []
+    for index, gpu_uuid in enumerate(uuids):
+        probe = SimpleNamespace(physical_index=index, gpu_uuid=gpu_uuid)
+        environment = child_gpu_environment(probe)
+        assert environment == {
+            "CUDA_VISIBLE_DEVICES": str(index),
+            "PERFSEER_ASSIGNED_GPU_UUID": gpu_uuid,
+        }
+        backend = NvmlTelemetryBackend(index, expected_gpu_uuid=gpu_uuid)
+        reading = backend.read()
+        assert backend.gpu_uuid == gpu_uuid
+        assert reading.compute_process_ids == (10_000 + index,)
+        assert reading.device_used_vram_mib == float(index + 1)
+        fingerprints.append(backend.hardware_fingerprint)
+
+    assert handles == [0, 1, 2, 3]
+    assert len(set(fingerprints)) == 4
+
+
+def test_child_gpu_assignment_rejects_missing_malformed_and_mismatched_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack.label_worker import (
+        LabelWorkerError,
+        _physical_assignment,
+    )
+    from perfseer_v3.dataset_pack.supervisor import SupervisorError, child_gpu_environment
+    from perfseer_v3.dataset_pack.v100_runner import NvmlTelemetryBackend, V100RunError
+    import perfseer_v3.dataset_pack.v100_runner as runner
+
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.delenv("PERFSEER_ASSIGNED_GPU_UUID", raising=False)
+    with pytest.raises(LabelWorkerError, match="numeric CUDA_VISIBLE_DEVICES"):
+        _physical_assignment()
+    for value in ("0,1", "GPU-fixture", "-1", " 1"):
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES", value)
+        with pytest.raises(LabelWorkerError, match="numeric CUDA_VISIBLE_DEVICES"):
+            _physical_assignment()
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "3")
+    with pytest.raises(LabelWorkerError, match="physical GPU UUID"):
+        _physical_assignment()
+    monkeypatch.setenv("PERFSEER_ASSIGNED_GPU_UUID", "GPU-fixture-3")
+    assert _physical_assignment() == (3, "GPU-fixture-3")
+
+    with pytest.raises(SupervisorError, match="index"):
+        child_gpu_environment(SimpleNamespace(physical_index=-1, gpu_uuid="GPU-fixture"))
+    with pytest.raises(SupervisorError, match="UUID"):
+        child_gpu_environment(SimpleNamespace(physical_index=0, gpu_uuid="bad uuid"))
+
+    fake_nvml = SimpleNamespace(
+        nvmlInit=lambda: None,
+        nvmlDeviceGetHandleByIndex=lambda index: index,
+        nvmlDeviceGetName=lambda _handle: "NVIDIA A10",
+        nvmlDeviceGetMemoryInfo=lambda _handle: SimpleNamespace(total=24 * 1024**3),
+        nvmlDeviceGetUUID=lambda _handle: "GPU-observed",
+    )
+    monkeypatch.setitem(sys.modules, "pynvml", fake_nvml)
+    monkeypatch.setattr(runner.torch.cuda, "device_count", lambda: 1)
+    with pytest.raises(V100RunError, match="UUID differs"):
+        NvmlTelemetryBackend(2, expected_gpu_uuid="GPU-assigned")
+    monkeypatch.setattr(runner.torch.cuda, "device_count", lambda: 4)
+    with pytest.raises(V100RunError, match="exactly one CUDA-visible"):
+        NvmlTelemetryBackend(2, expected_gpu_uuid="GPU-observed")
+
+
+def test_four_gpu_batch_rejects_duplicate_probe_assignments() -> None:
+    from perfseer_v3.dataset_pack.a10_campaign import (
+        A10CampaignError,
+        run_isolated_worker_batch,
+    )
+
+    roots = tuple(SimpleNamespace(candidate_id=str(index)) for index in range(2))
+    probes = (
+        SimpleNamespace(gpu_uuid="GPU-duplicate"),
+        SimpleNamespace(gpu_uuid="GPU-duplicate"),
+    )
+    with pytest.raises(A10CampaignError, match="more than once"):
+        run_isolated_worker_batch(roots, probes, lambda _root, _probe: None)
 
 
 def test_nomad_geometry_decoder_accepts_conventional_and_ase_forms() -> None:
@@ -768,9 +901,14 @@ def test_pilot_lineage_workspace_and_offline_job_contract(tmp_path: Path) -> Non
     value = yaml.safe_load(output.read_text())
     pod = value["spec"]["template"]["spec"]
     container = pod["containers"][0]
-    assert value["metadata"]["name"] == "perfseer-v3-a10-nonvision-disaster-v2-pilot"
+    assert (
+        value["metadata"]["name"]
+        == "perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-pilot"
+    )
     assert container["resources"]["requests"]["nvidia.com/gpu"] == "4"
-    assert container["args"][container["args"].index("--workspace") + 1].endswith("disaster-v2")
+    assert container["args"][container["args"].index("--workspace") + 1].endswith(
+        "disaster-v2-nvml-v1"
+    )
     assert pod["initContainers"][0]["name"] == "stage-kaggle-credential"
     assert pod["initContainers"][0]["image"] == image
     volumes = {row["name"]: row for row in pod["volumes"]}

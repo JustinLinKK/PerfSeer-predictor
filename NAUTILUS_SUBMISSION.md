@@ -13,6 +13,21 @@ Only the operator should run the Kubernetes mutation commands below. Building an
 publishing this repository did not create, change, submit, execute into, or copy
 from any Nautilus resource.
 
+## Why this uses a fresh NVML V1 workspace
+
+The previous continuous Job passed private credential staging and all 12 Kaggle
+access probes, then failed during the pilot. Its child processes restricted CUDA
+to the parent-assigned A10 but opened NVML physical GPU zero unconditionally.
+Workers assigned A10s 1--3 therefore sampled A10 zero and rejected its labeling
+process as foreign. The corrected image carries the assigned physical index and
+UUID together, verifies both before training, and exposes a bounded redacted
+failure message in controller logs.
+
+Run identity is frozen to the source revision and image digest. Consequently, the
+corrected image uses a new workspace and Job name on the same PVC instead of
+rewriting or deleting the failed run. Archive filenames and release contents are
+unchanged.
+
 ## 1. Understand the active datasets
 
 The active non-vision corpus has 11,200 labels, 12 Kaggle tasks, 22 model families,
@@ -127,10 +142,11 @@ kubectl get pvc "$PERFSEER_PVC" --namespace "$PERFSEER_NAMESPACE" -o wide
 kubectl describe pvc "$PERFSEER_PVC" --namespace "$PERFSEER_NAMESPACE"
 ```
 
-The campaign writes only below
-`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2` and uses both a
-continuous-controller lock and atomic phase state. Do not run another campaign
-against that workspace concurrently.
+The corrected campaign writes only below the fresh workspace
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1` and uses
+both a continuous-controller lock and atomic phase state. The earlier
+`.../disaster-v2` workspace is evidence from the failed image and must remain
+untouched. Do not run another campaign against either workspace concurrently.
 
 ## 5. Create the dedicated Kaggle Secret once — operator action
 
@@ -201,7 +217,7 @@ This is the only normal campaign submission:
 
 ```bash
 kubectl apply -f .local/disaster-v2-continuous-ecepxie.yaml
-export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-continuous
+export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-continuous
 kubectl get job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE" -o wide
 kubectl get pod --namespace "$PERFSEER_NAMESPACE" \
   -l "job-name=$PERFSEER_JOB" -o wide
@@ -236,12 +252,12 @@ Pod, polls every 60 seconds for the first five minutes and every 20 minutes
 afterward, and stops only after recording a `Complete` or `Failed` Job condition.
 The container also writes structured progress to stdout and atomically updates:
 
-`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/state/continuous_campaign_progress.json`
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1/state/continuous_campaign_progress.json`
 
 Progress records identify the phase, completed chunks, accepted-label count,
 failure details, and final archive hash. The terminal receipt is:
 
-`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/state/continuous_campaign_receipt.json`
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1/state/continuous_campaign_receipt.json`
 
 If the Job fails, immediately collect the failed Pod name, exit code, relevant log
 tail, and recent events before deciding on a correction.
@@ -251,7 +267,7 @@ tail, and recent events before deciding on a correction.
 Successful Job logs end with a `campaign_complete` event containing the archive
 path and SHA-256. The archive is under:
 
-`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/releases/`
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1/releases/`
 
 The content-hashed archive has a matching JSON checksum sidecar in the same
 directory:
@@ -339,6 +355,7 @@ python scripts/render_a10_disaster_v2_nautilus_job.py \
   --secret "$PERFSEER_KAGGLE_SECRET" --mode export
 ```
 
-The active workspace is exactly
-`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2`. Never migrate a
-V1, Speech-only, V100, AWS A10G, or pre-Disaster receipt into it.
+The active recovery workspace is exactly
+`/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1`. Never
+migrate the failed image's `.../disaster-v2` state, a V1, Speech-only, V100, AWS
+A10G, or pre-Disaster receipt into it.

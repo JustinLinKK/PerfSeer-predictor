@@ -73,12 +73,17 @@ class NvmlTelemetryBackend:
         self,
         physical_gpu_index: int,
         *,
+        expected_gpu_uuid: str | None = None,
         expected_hardware_profile: HardwareProfileV3 | None = None,
     ) -> None:
         try:
             import pynvml
 
             pynvml.nvmlInit()
+            if torch.cuda.device_count() != 1:
+                raise V100RunError(
+                    "label worker requires exactly one CUDA-visible device"
+                )
             self._pynvml = pynvml
             self._handle = pynvml.nvmlDeviceGetHandleByIndex(physical_gpu_index)
             name = pynvml.nvmlDeviceGetName(self._handle)
@@ -88,6 +93,10 @@ class NvmlTelemetryBackend:
             self._uuid = pynvml.nvmlDeviceGetUUID(self._handle)
             if isinstance(self._uuid, bytes):
                 self._uuid = self._uuid.decode("utf-8")
+            if expected_gpu_uuid is not None and self._uuid != expected_gpu_uuid:
+                raise V100RunError(
+                    "NVML GPU UUID differs from the assigned physical GPU"
+                )
             properties = torch.cuda.get_device_properties(0)
             if expected_hardware_profile is None:
                 normalized_name = "".join(

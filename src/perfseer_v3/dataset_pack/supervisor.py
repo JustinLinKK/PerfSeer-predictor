@@ -29,7 +29,11 @@ from .contracts import (
     PRODUCTION_RETAINED_EPOCH_SPREAD_LIMIT,
 )
 from .fingerprints import canonical_sha256
-from .label_worker import WORKER_ENVELOPE_VERSION
+from .label_worker import (
+    ASSIGNED_GPU_UUID_ENV,
+    WORKER_ENVELOPE_VERSION,
+    _diagnostic_message,
+)
 from .labeler_profile import PROFILE
 from .a10_crosswalk import (
     REFERENCE_MANIFEST_SHA256,
@@ -921,6 +925,38 @@ def build_worker_failure_diagnostic(
     }
 
 
+def worker_failure_summary(worker_diagnostic: Mapping[str, Any]) -> tuple[str, str]:
+    """Return a bounded, redacted controller-visible worker failure summary."""
+
+    reason_code = str(worker_diagnostic.get("reason_code") or "unknown_error")
+    raw_message = worker_diagnostic.get("reason_message")
+    reason_message = _diagnostic_message(
+        RuntimeError(
+            raw_message
+            if isinstance(raw_message, str) and raw_message
+            else "worker supplied no diagnostic message"
+        )
+    )
+    return reason_code, reason_message
+
+
+def child_gpu_environment(probe: GpuProbe) -> Mapping[str, str]:
+    """Bind a child to one parent-qualified physical GPU."""
+
+    if type(probe.physical_index) is not int or probe.physical_index < 0:
+        raise SupervisorError("assigned physical GPU index is invalid")
+    if (
+        not isinstance(probe.gpu_uuid, str)
+        or not probe.gpu_uuid.startswith("GPU-")
+        or any(character.isspace() for character in probe.gpu_uuid)
+    ):
+        raise SupervisorError("assigned physical GPU UUID is invalid")
+    return {
+        "CUDA_VISIBLE_DEVICES": str(probe.physical_index),
+        ASSIGNED_GPU_UUID_ENV: probe.gpu_uuid,
+    }
+
+
 def terminate_lingering_process_group(
     process_group_id: int,
     *,
@@ -1062,7 +1098,7 @@ class AttemptSupervisor:
             shutil.rmtree(compiler_cache_directory)
         compiler_cache_directory.mkdir(parents=True)
         environment["KAGGLE_CONFIG_DIR"] = str(credential_directory)
-        environment["CUDA_VISIBLE_DEVICES"] = str(probe.physical_index)
+        environment.update(child_gpu_environment(probe))
         environment["PERFSEER_HARDWARE_MODE"] = (
             "production-a10" if self.production_eligible else "local-rtx5090"
         )
@@ -1280,11 +1316,11 @@ class AttemptSupervisor:
                 },
             )
         if envelope["status"] != "success" or process.returncode != 0:
-            reason_code = str(envelope["payload"].get("reason_code", ""))
+            reason_code, reason_message = worker_failure_summary(envelope["payload"])
             if envelope["payload"].get("global_integrity_failure") is True:
                 raise SupervisorError(
                     f"label child reported global integrity failure "
-                    f"{reason_code or 'unknown_error'}; child log: {log_path}"
+                    f"{reason_code}: {reason_message}; child log: {log_path}"
                 )
             if envelope["status"] != "oom":
                 if not PROFILE.is_nonvision_4gpu:
@@ -1432,6 +1468,7 @@ __all__ = [
     "await_worker_futures",
     "build_accepted_label_record",
     "build_failed_label_record",
+    "child_gpu_environment",
     "discover_v100_probes",
     "discover_a10_probe",
     "discover_a10_probes",
@@ -1442,4 +1479,5 @@ __all__ = [
     "validate_a10_gpu_identity",
     "validate_rtx5090_gpu_identity",
     "validate_v100_gpu_identity",
+    "worker_failure_summary",
 ]

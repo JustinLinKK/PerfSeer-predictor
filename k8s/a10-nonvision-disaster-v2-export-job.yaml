@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: perfseer-v3-a10-nonvision-disaster-v2-export
+  name: perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-export
   namespace: REPLACE_NAMESPACE
   labels:
     app.kubernetes.io/name: perfseer-v3-a10-nonvision-disaster-v2-exporter
@@ -27,9 +27,9 @@ spec:
           args:
             - export
             - --workspace
-            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2
+            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1
             - --output-directory
-            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/releases
+            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1/releases
             - --complete
             - --verify-archive
           env:

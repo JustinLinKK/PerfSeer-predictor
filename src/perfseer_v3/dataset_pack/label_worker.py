@@ -29,6 +29,7 @@ from .transfer_labeling import (
 
 
 WORKER_ENVELOPE_VERSION = "perfseer_v3_v100_label_worker_envelope_v1"
+ASSIGNED_GPU_UUID_ENV = "PERFSEER_ASSIGNED_GPU_UUID"
 
 
 class LabelWorkerError(RuntimeError):
@@ -153,14 +154,18 @@ def resolve_transfer_inputs(
     return matches[0], targets
 
 
-def _physical_index() -> int:
+def _physical_assignment() -> tuple[int, str]:
     visible = os.environ.get("CUDA_VISIBLE_DEVICES", "")
-    if not visible or "," in visible:
+    if not visible or not visible.isascii() or not visible.isdecimal():
         raise LabelWorkerError(
-            "label worker requires exactly one CUDA_VISIBLE_DEVICES token"
+            "label worker requires exactly one numeric CUDA_VISIBLE_DEVICES token"
         )
-    # CUDA remaps a single visible physical device to logical device zero.
-    return 0
+    assigned_uuid = os.environ.get(ASSIGNED_GPU_UUID_ENV, "")
+    if re.fullmatch(r"GPU-[A-Za-z0-9-]+", assigned_uuid) is None:
+        raise LabelWorkerError("label worker requires one assigned physical GPU UUID")
+    # CUDA addresses this one visible physical device as logical device zero,
+    # while NVML continues to use the physical index supplied by the parent.
+    return int(visible), assigned_uuid
 
 
 def _start_heartbeat(path: Path | None) -> tuple[threading.Event, threading.Thread | None]:
@@ -200,8 +205,10 @@ def run_worker(arguments: argparse.Namespace) -> int:
             expected_hash = profile_payload.get("hardware_profile_sha256")
             if expected_hash is not None and expected_hash != expected_profile.sha256:
                 raise LabelWorkerError("target hardware profile content hash mismatch")
+        physical_gpu_index, assigned_gpu_uuid = _physical_assignment()
         backend = NvmlTelemetryBackend(
-            _physical_index(),
+            physical_gpu_index,
+            expected_gpu_uuid=assigned_gpu_uuid,
             expected_hardware_profile=expected_profile,
         )
         if arguments.transfer_subset is not None:
@@ -354,8 +361,10 @@ if __name__ == "__main__":
 
 __all__ = [
     "LabelWorkerError",
+    "ASSIGNED_GPU_UUID_ENV",
     "WORKER_ENVELOPE_VERSION",
     "_diagnostic_message",
+    "_physical_assignment",
     "main",
     "resolve_transfer_inputs",
     "run_worker",

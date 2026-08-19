@@ -304,10 +304,16 @@ def test_continuous_job_contract_and_monitor_terminal_following(
     pod = spec_value["template"]["spec"]
     container = pod["containers"][0]
     assert value["metadata"]["namespace"] == "ecepxie"
+    assert (
+        value["metadata"]["name"]
+        == "perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-continuous"
+    )
     assert spec_value["backoffLimit"] == 1
     assert spec_value["activeDeadlineSeconds"] == 604_800
     assert pod["terminationGracePeriodSeconds"] == 120
     assert container["args"][0] == "run-continuous"
+    workspace_index = container["args"].index("--workspace") + 1
+    assert container["args"][workspace_index].endswith("disaster-v2-nvml-v1")
     assert container["resources"]["limits"] == container["resources"]["requests"]
     assert container["resources"]["limits"]["nvidia.com/gpu"] == "4"
     assert container["securityContext"]["readOnlyRootFilesystem"] is True
@@ -367,6 +373,13 @@ def test_continuous_job_contract_and_monitor_terminal_following(
     )
     with pytest.raises(ValueError, match="private credential read-only"):
         module.verify_job(direct_secret_mount, mode="continuous")
+
+    old_generation = yaml.safe_load(yaml.safe_dump(rendered))
+    old_generation["metadata"]["name"] = (
+        "perfseer-v3-a10-nonvision-disaster-v2-continuous"
+    )
+    with pytest.raises(ValueError, match="recovery generation"):
+        module.verify_job(old_generation, mode="continuous")
 
     monitor = (ROOT / "scripts/monitor_a10_nonvision_job.sh").read_text()
     assert "monitor_pods=" in monitor

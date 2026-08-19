@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: perfseer-v3-a10-nonvision-disaster-v2-continuous
+  name: perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-continuous
   namespace: REPLACE_NAMESPACE
   labels:
     app.kubernetes.io/name: perfseer-v3-a10-nonvision-disaster-v2-labeler
@@ -69,13 +69,13 @@ spec:
           args:
             - run-continuous
             - --workspace
-            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2
+            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1
             - --repository-revision
             - "0000000000000000000000000000000000000000"
             - --image-digest
             - gitlab-registry.nrp-nautilus.io/REPLACE_GROUP/perfseer-a10-nonvision-disaster-v2@sha256:0000000000000000000000000000000000000000000000000000000000000000
             - --output-directory
-            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2/releases
+            - /workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1/releases
           env:
             - name: KAGGLE_CONFIG_DIR
               value: /run/secrets/kaggle
