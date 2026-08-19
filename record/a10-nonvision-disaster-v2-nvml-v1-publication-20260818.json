@@ -1,0 +1,62 @@
+{
+  "anonymous_pull_verified": true,
+  "architecture": "linux/amd64",
+  "build_manifest_sha256": "998dae83a375c9ec594e08bf372caa3dba95ad2375901fa1fe48939cf83beb6d",
+  "build_provenance": false,
+  "config_digest": "sha256:5d7a17d741fe903bdd5cdaaa095d88f70a61e7cefc67314a11d032fe0084606b",
+  "dependency_lock_sha256": "e8211e60e566285c0d37d9125fe94a9fbb9c1704892157ac6ab570cb4742bc39",
+  "failure_correction": {
+    "cause": "label children always opened NVML physical GPU index zero instead of the parent-assigned physical A10",
+    "controller_diagnostic": "bounded and credential-redacted reason messages are now retained",
+    "gpu_assignment_contract": "numeric CUDA_VISIBLE_DEVICES plus independently verified parent GPU UUID",
+    "previous_image_digest": "sha256:7551c71cd10a7f089357797b469db5dae4eccac9bf31f736b573bb20d5424ad9",
+    "previous_source_revision": "81a24dc920d3bf02762da3de2e2bddcaba0e7dd4"
+  },
+  "final_job": {
+    "job_name": "perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-continuous",
+    "namespace": "ecepxie",
+    "path": ".local/disaster-v2-nvml-v1-continuous-ecepxie.yaml",
+    "pvc": "perfseer-panns-jingbin-260808-a0af09",
+    "secret": "perfseer-kaggle-disaster-v2",
+    "workspace": "/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1",
+    "yaml_sha256": "4ceb711120c55e8e1c80cbb7c332c337595e40a0a723273b493ff479182fa128"
+  },
+  "image_digest": "sha256:f2a68ea4ab1a3fb65b836fb5ef76d57c7537b87a155726e77fd93c7af049752a",
+  "layer_count": 19,
+  "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+  "published_at": "2026-08-18",
+  "registry": "gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling",
+  "source_files": {
+    "label_worker_sha256": "3b4dd6e30c28e82255d9780e0ffe745c471538dab76e860aa4b10f8d269b532f",
+    "supervisor_sha256": "ab6df9fd732a6fb91b0faf03553b63898abcb5f0a68e59875573fe6a08869275",
+    "v100_runner_sha256": "1c5b4933ddb36fa24c6ddb08daf163332f947e9b6d230b62b518d2a7ec503eca"
+  },
+  "source_revision": "d8255c521ed37f47ba09096b1c98fadebeb51864",
+  "source_tree_sha256": "dd8d63ee41449293ee17b6c5d3be774afc373ee95f76d1edfc379620159bc7aa",
+  "tag": "d8255c521ed37f47ba09096b1c98fadebeb51864",
+  "verification": {
+    "analyze_candidate_count": 11200,
+    "analyze_family_count": 22,
+    "analyze_task_count": 12,
+    "cli_run_continuous_help": "passed",
+    "cli_verify_export_help": "passed",
+    "credential_files_found": 0,
+    "cuda_architectures_required": [
+      "sm_86",
+      "sm_120"
+    ],
+    "embedded_build_manifest": "matched_checkout",
+    "fixture_matrix_candidate_count": 177,
+    "fixture_matrix_result_sha256": "dd7ff84ee02a3feeffdd7b8180c94e26e2973695cef4de990bd3320fb4a068ac",
+    "focused_and_full_tests": "45 passed",
+    "manifest_construction_audit_result_sha256": "cfe77a383eeb895a381d89dab6e6b58aeaf3ff03119a543355ff366418441cc3",
+    "manifest_construction_candidate_count": 11200,
+    "multi_gpu_mocked_bindings": "indices 0-3 passed",
+    "no_cluster_mutation": true,
+    "pip_check": "passed",
+    "python_shell_yaml_syntax": "passed",
+    "real_rtx5090_cuda_nvml_uuid_binding": "passed",
+    "source_and_build_hashes": "matched_checkout",
+    "tracked_credentials_or_weights": 0
+  }
+}

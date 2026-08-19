@@ -83,9 +83,9 @@ The current continuous image is published under a full source-revision tag. The
 exact source revision and digest are recorded here after publication:
 
 ```bash
-export PERFSEER_SOURCE_REVISION=81a24dc920d3bf02762da3de2e2bddcaba0e7dd4
+export PERFSEER_SOURCE_REVISION=d8255c521ed37f47ba09096b1c98fadebeb51864
 export PERFSEER_REGISTRY=gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling
-export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:7551c71cd10a7f089357797b469db5dae4eccac9bf31f736b573bb20d5424ad9"
+export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:f2a68ea4ab1a3fb65b836fb5ef76d57c7537b87a155726e77fd93c7af049752a"
 docker buildx imagetools inspect "$PERFSEER_IMAGE_DIGEST"
 ```
 
@@ -93,10 +93,11 @@ The GitLab project must remain public for anonymous Nautilus pulls without an
 image-pull Secret. Never replace this with a tag-only reference and never use
 `latest`.
 
-The previous continuous image remains a rollback artifact only:
+The previous image contains the four-GPU NVML binding defect and must not be used
+for labeling. It remains an investigation artifact only:
 
-- Source: `278787447cd5469251ba3838aed9d49d97d27a89`
-- Digest: `sha256:9049486024b6ef8025b93262dcc4fa084c8b2e4308afda2c2fabffe72692428c`
+- Source: `81a24dc920d3bf02762da3de2e2bddcaba0e7dd4`
+- Digest: `sha256:7551c71cd10a7f089357797b469db5dae4eccac9bf31f736b573bb20d5424ad9`
 
 ### Rebuild and publish a future source revision
 
@@ -181,14 +182,14 @@ Rendering only parses and verifies YAML locally; it does not contact the cluster
 ```bash
 mkdir -p .local
 python scripts/render_a10_disaster_v2_nautilus_job.py \
-  --output .local/disaster-v2-continuous-ecepxie.yaml \
+  --output .local/disaster-v2-nvml-v1-continuous-ecepxie.yaml \
   --namespace "$PERFSEER_NAMESPACE" \
   --image "$PERFSEER_IMAGE_DIGEST" \
   --source-revision "$PERFSEER_SOURCE_REVISION" \
   --pvc "$PERFSEER_PVC" \
   --secret "$PERFSEER_KAGGLE_SECRET" \
   --mode continuous
-sed -n '1,260p' .local/disaster-v2-continuous-ecepxie.yaml
+sed -n '1,260p' .local/disaster-v2-nvml-v1-continuous-ecepxie.yaml
 ```
 
 The renderer fails unless the Job has all of these properties:
@@ -216,7 +217,7 @@ documents product affinity and the reserved-node behavior for multi-GPU requests
 This is the only normal campaign submission:
 
 ```bash
-kubectl apply -f .local/disaster-v2-continuous-ecepxie.yaml
+kubectl apply -f .local/disaster-v2-nvml-v1-continuous-ecepxie.yaml
 export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-continuous
 kubectl get job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE" -o wide
 kubectl get pod --namespace "$PERFSEER_NAMESPACE" \
@@ -325,7 +326,7 @@ manifest again; do not delete the PVC or workspace:
 
 ```bash
 kubectl delete job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE"
-kubectl apply -f .local/disaster-v2-continuous-ecepxie.yaml
+kubectl apply -f .local/disaster-v2-nvml-v1-continuous-ecepxie.yaml
 ```
 
 The older single-phase renderer modes remain emergency tools. Use them only after
