@@ -13,20 +13,23 @@ Only the operator should run the Kubernetes mutation commands below. Building an
 publishing this repository did not create, change, submit, execute into, or copy
 from any Nautilus resource.
 
-## Why this uses a fresh NVML V1 workspace
+## Why this resumes the NVML V1 workspace
 
-The previous continuous Job passed private credential staging and all 12 Kaggle
-access probes, then failed during the pilot. Its child processes restricted CUDA
-to the parent-assigned A10 but opened NVML physical GPU zero unconditionally.
-Workers assigned A10s 1--3 therefore sampled A10 zero and rejected its labeling
-process as foreign. The corrected image carries the assigned physical index and
-UUID together, verifies both before training, and exposes a bounded redacted
-failure message in controller logs.
+The NVML-corrected continuous Job passed credential staging, all 12 Kaggle access
+probes, the pilot, and chunks 0--3. It durably accepted 1,056 labels before
+`chunk-04` exposed a deterministic planner defect: fastText replacement generation
+could change `sparse_gradients` without rebinding the preserved optimizer. The
+resulting optimizer/parameter mismatch raised a candidate-planning exception that
+escaped the worker batch and stopped the controller.
 
-Run identity is frozen to the source revision and image digest. Consequently, the
-corrected image uses a new workspace and Job name on the same PVC instead of
-rewriting or deleting the failed run. Archive filenames and release contents are
-unchanged.
+The corrected image binds this parameter contract before validation and exhaustively
+validates every deterministic replacement proposal. Candidate-local execution and
+planning failures are now recorded and isolated so sibling rows and later four-GPU
+batches continue; a failed row never counts toward the required 11,200 accepted
+labels. The existing NVML V1 workspace remains immutable at its origin identity.
+An explicit, content-hashed recovery transition authorizes only that exact origin,
+preserves its 1,056 labels and provenance, and records the corrected build/environment
+without rewriting old records. Archive filenames and release contents are unchanged.
 
 ## 1. Understand the active datasets
 
@@ -83,9 +86,9 @@ The current continuous image is published under a full source-revision tag. The
 exact source revision and digest are recorded here after publication:
 
 ```bash
-export PERFSEER_SOURCE_REVISION=d8255c521ed37f47ba09096b1c98fadebeb51864
+export PERFSEER_SOURCE_REVISION=6e8dd3f470f733007bb7f44df2261b08d0ea0f0f
 export PERFSEER_REGISTRY=gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling
-export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:f2a68ea4ab1a3fb65b836fb5ef76d57c7537b87a155726e77fd93c7af049752a"
+export PERFSEER_IMAGE_DIGEST="$PERFSEER_REGISTRY@sha256:7c87aeeb886f174d00ba8f6071714dce77bbd0fd6890527257299346c562c8bc"
 docker buildx imagetools inspect "$PERFSEER_IMAGE_DIGEST"
 ```
 
@@ -93,8 +96,14 @@ The GitLab project must remain public for anonymous Nautilus pulls without an
 image-pull Secret. Never replace this with a tag-only reference and never use
 `latest`.
 
-The previous image contains the four-GPU NVML binding defect and must not be used
-for labeling. It remains an investigation artifact only:
+The immediately previous image contains the replacement optimizer-contract defect
+and must not be used for labeling. It remains an investigation artifact only:
+
+- Source: `d8255c521ed37f47ba09096b1c98fadebeb51864`
+- Digest: `sha256:f2a68ea4ab1a3fb65b836fb5ef76d57c7537b87a155726e77fd93c7af049752a`
+
+The still older image contains the four-GPU NVML binding defect and is also an
+investigation artifact only:
 
 - Source: `81a24dc920d3bf02762da3de2e2bddcaba0e7dd4`
 - Digest: `sha256:7551c71cd10a7f089357797b469db5dae4eccac9bf31f736b573bb20d5424ad9`
@@ -143,10 +152,12 @@ kubectl get pvc "$PERFSEER_PVC" --namespace "$PERFSEER_NAMESPACE" -o wide
 kubectl describe pvc "$PERFSEER_PVC" --namespace "$PERFSEER_NAMESPACE"
 ```
 
-The corrected campaign writes only below the fresh workspace
+The corrected campaign resumes only
 `/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1` and uses
-both a continuous-controller lock and atomic phase state. The earlier
-`.../disaster-v2` workspace is evidence from the failed image and must remain
+both a continuous-controller lock and atomic phase state. Its explicit recovery
+authorization is pinned to origin identity
+`5bc98b7c0f8697d30323e39d4e645b4e8a249fdb9ad01120c1c2db3bdd2ad4fb`.
+The earlier `.../disaster-v2` workspace is separate evidence and must remain
 untouched. Do not run another campaign against either workspace concurrently.
 
 ## 5. Create the dedicated Kaggle Secret once — operator action
@@ -182,20 +193,21 @@ Rendering only parses and verifies YAML locally; it does not contact the cluster
 ```bash
 mkdir -p .local
 python scripts/render_a10_disaster_v2_nautilus_job.py \
-  --output .local/disaster-v2-nvml-v1-continuous-ecepxie.yaml \
+  --output .local/disaster-v2-repair-v1-continuous-ecepxie.yaml \
   --namespace "$PERFSEER_NAMESPACE" \
   --image "$PERFSEER_IMAGE_DIGEST" \
   --source-revision "$PERFSEER_SOURCE_REVISION" \
   --pvc "$PERFSEER_PVC" \
   --secret "$PERFSEER_KAGGLE_SECRET" \
   --mode continuous
-sed -n '1,260p' .local/disaster-v2-nvml-v1-continuous-ecepxie.yaml
+sed -n '1,260p' .local/disaster-v2-repair-v1-continuous-ecepxie.yaml
 ```
 
 The renderer fails unless the Job has all of these properties:
 
 - digest-only public NRP GitLab image;
 - command `run-continuous` and the exact Disaster V2 workspace;
+- the exact frozen origin-identity recovery authorization;
 - one Pod/controller with four independent workers;
 - four `nvidia.com/gpu` requests and limits;
 - required `nvidia.com/gpu.product: NVIDIA-A10` affinity;
@@ -217,8 +229,8 @@ documents product affinity and the reserved-node behavior for multi-GPU requests
 This is the only normal campaign submission:
 
 ```bash
-kubectl apply -f .local/disaster-v2-nvml-v1-continuous-ecepxie.yaml
-export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-continuous
+kubectl apply -f .local/disaster-v2-repair-v1-continuous-ecepxie.yaml
+export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-repair-v1-continuous
 kubectl get job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE" -o wide
 kubectl get pod --namespace "$PERFSEER_NAMESPACE" \
   -l "job-name=$PERFSEER_JOB" -o wide
@@ -232,10 +244,12 @@ kubectl get events --namespace "$PERFSEER_NAMESPACE" \
   --sort-by=.lastTimestamp | tail -100
 ```
 
-Do not submit separate pilot/chunk/export Jobs while the continuous Job exists. It
-will stop immediately if the pilot fails, and it will never start a later chunk
-after a failed chunk or global-integrity failure. Candidate-local failures use the
-existing bounded retry/quarantine/replacement rules before a phase can succeed.
+Do not submit separate pilot/chunk/export Jobs while the continuous Job exists.
+Candidate-local failures are durably marked failed, quarantined/replaced, and do
+not stop sibling rows or later batches. The controller stops only for shared-state,
+credential, hardware/provenance, or cleanup integrity failures, or after a quota
+slot exhausts all bounded replacements. It never emits a terminal receipt or
+archive with fewer than 11,200 accepted rows.
 
 ## 8. Start the durable replacement-Pod-aware monitor
 
@@ -326,7 +340,7 @@ manifest again; do not delete the PVC or workspace:
 
 ```bash
 kubectl delete job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE"
-kubectl apply -f .local/disaster-v2-nvml-v1-continuous-ecepxie.yaml
+kubectl apply -f .local/disaster-v2-repair-v1-continuous-ecepxie.yaml
 ```
 
 The older single-phase renderer modes remain emergency tools. Use them only after
@@ -358,5 +372,6 @@ python scripts/render_a10_disaster_v2_nautilus_job.py \
 
 The active recovery workspace is exactly
 `/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1`. Never
-migrate the failed image's `.../disaster-v2` state, a V1, Speech-only, V100, AWS
-A10G, or pre-Disaster receipt into it.
+migrate the separate `.../disaster-v2` state, a V1, Speech-only, V100, AWS A10G,
+or pre-Disaster receipt into it. The renderer's recovery hash must not be changed
+or reused for another workspace.

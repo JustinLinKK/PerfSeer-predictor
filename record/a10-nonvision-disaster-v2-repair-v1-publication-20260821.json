@@ -1,0 +1,71 @@
+{
+  "anonymous_pull_verified": true,
+  "architecture": "linux/amd64",
+  "build_manifest_sha256": "53c30a958f42106b72871f32c5c74b7c8af6fdbd481b46585a533be4a21fa6c1",
+  "build_provenance": false,
+  "config_digest": "sha256:e305d93e67b1bb0e172b9bc71a2c5a01b35841af1b9337c0fbe6ae5f8b918a51",
+  "dependency_lock_sha256": "e8211e60e566285c0d37d9125fe94a9fbb9c1704892157ac6ab570cb4742bc39",
+  "failure_correction": {
+    "accepted_labels_preserved": 1056,
+    "candidate_failure_behavior": "candidate-local failures are durably recorded and isolated; bounded deterministic replacement continues while unrelated rows and later batches execute",
+    "cause": "fastText quota replacement changed sparse_gradients without rebinding the preserved optimizer, producing optimizer_parameter_contract_invalid in chunk-04",
+    "controller_integrity_boundary": "shared-state, credential, GPU cleanup, hardware/provenance corruption, or exhausted quota slots still fail closed and cannot emit a complete release",
+    "previous_image_digest": "sha256:f2a68ea4ab1a3fb65b836fb5ef76d57c7537b87a155726e77fd93c7af049752a",
+    "previous_source_revision": "d8255c521ed37f47ba09096b1c98fadebeb51864",
+    "recovery_from_identity_sha256": "5bc98b7c0f8697d30323e39d4e645b4e8a249fdb9ad01120c1c2db3bdd2ad4fb",
+    "recovery_transition": "explicit, content-hashed, append-only, and bound to an unchanged campaign/crosswalk contract"
+  },
+  "final_job": {
+    "job_name": "perfseer-v3-a10-nonvision-disaster-v2-repair-v1-continuous",
+    "namespace": "ecepxie",
+    "path": ".local/disaster-v2-repair-v1-continuous-ecepxie.yaml",
+    "pvc": "perfseer-panns-jingbin-260808-a0af09",
+    "secret": "perfseer-kaggle-disaster-v2",
+    "workspace": "/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1",
+    "yaml_sha256": "3ff3d562e39a424fbdf51d466b4a910ee18c15158e7c68226c349ec8aa5f1083"
+  },
+  "image_digest": "sha256:7c87aeeb886f174d00ba8f6071714dce77bbd0fd6890527257299346c562c8bc",
+  "layer_count": 19,
+  "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+  "published_at": "2026-08-21",
+  "registry": "gitlab-registry.nrp-nautilus.io/justinlinkk/prefseer-predictor-labeling",
+  "source_files": {
+    "a10_campaign_sha256": "b1b9ac67eb39f63eae988d795cee70b10f4bffefcc258ec3ffa3631c766b9c81",
+    "repair_sha256": "d7c1d137062ac6d4c052514e07882835bd0972781bca6ae31e60be4a7aa849c1",
+    "renderer_sha256": "d8ceda74cfa444a406a3c59ecf13ae9872adb8df05ffa8c47f4f55d30c84606d",
+    "sampler_sha256": "9bc7cdf81b2c6a0c3e95e9c32b893d90662824fac1a01eebe546a49f3d6fa79a",
+    "supervisor_sha256": "7ed82a651af454e0ca488874993e43a81f286991122b33020100b00cd7c97c41"
+  },
+  "source_revision": "6e8dd3f470f733007bb7f44df2261b08d0ea0f0f",
+  "source_tree_sha256": "7ea1c98b43435633b37166d190573d934a30b934f3c6e3c4545f0b157485d0d1",
+  "tag": "6e8dd3f470f733007bb7f44df2261b08d0ea0f0f",
+  "verification": {
+    "analyze_candidate_count": 11200,
+    "analyze_family_count": 22,
+    "analyze_task_count": 12,
+    "candidate_failure_isolation": "planning failure in one row did not stop sibling workers or the next four-GPU batch",
+    "cli_export_help": "passed",
+    "cli_run_continuous_help": "passed",
+    "cli_verify_export_help": "passed",
+    "credential_files_found": 0,
+    "cuda_architectures_required": [
+      "sm_86",
+      "sm_120"
+    ],
+    "embedded_build_manifest": "matched_checkout",
+    "fixture_matrix_candidate_count": 177,
+    "fixture_matrix_result_sha256": "dd7ff84ee02a3feeffdd7b8180c94e26e2973695cef4de990bd3320fb4a068ac",
+    "focused_and_full_tests": "50 passed",
+    "manifest_construction_audit_result_sha256": "cfe77a383eeb895a381d89dab6e6b58aeaf3ff03119a543355ff366418441cc3",
+    "manifest_construction_candidate_count": 11200,
+    "no_cluster_mutation": true,
+    "pip_check": "passed",
+    "python_shell_yaml_syntax": "passed",
+    "real_rtx5090_cuda_nvml_uuid_binding": "passed",
+    "recovery_identity_environment_tests": "passed",
+    "replacement_audit_count": 33600,
+    "replacement_audit_set_sha256": "527680b0102e79056a7bfdf56ff3125e5eaf12fe3f4ddb0458dee2ff1229106a",
+    "source_and_build_hashes": "matched_checkout",
+    "tracked_credentials_or_weights": 0
+  }
+}
