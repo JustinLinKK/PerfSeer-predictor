@@ -16,10 +16,11 @@ from .sampler import (
     TargetManifest,
     _architecture_parameters,
     _batch_plan,
+    _bind_optimizer_parameter_contract,
     _input_signature,
     target_candidate_from_dict,
 )
-from .compatibility import CompatibilityRequest
+from .compatibility import CompatibilityRequest, evaluate_compatibility
 from .generated_lineages import build_generated_lineage_registry
 from .labeler_profile import PROFILE
 
@@ -545,7 +546,7 @@ def make_quota_replacement(
         "replacement_index": replacement_index,
         "target_candidate_id": target.candidate_id,
     }
-    replacement_ordinal = 18_001 + target.ordinal * 1_000 + replacement_index
+    replacement_ordinal_base = 18_001 + target.ordinal * 1_000 + replacement_index
     generated_lineage = None
     if target.family_id == "independent_generated":
         generated_lineage = next(
@@ -558,25 +559,64 @@ def make_quota_replacement(
         )
         if generated_lineage is None:
             raise RepairError("generated replacement root lineage is unregistered")
-    architecture = _architecture_parameters(
-        target.family_id,
-        replacement_ordinal,
-        target.regime,
-        defaults=target.architecture_parameters,
-        generated_lineage=generated_lineage,
-    )
-    input_signature = _input_signature(
-        target.source_modality,
-        architecture,
-        replacement_ordinal,
-        target.regime,
-        target_width=target.target_width,
-    )
     requested_effective_batch = (
         target.microbatch_size * target.gradient_accumulation_steps
         if PROFILE.is_nonvision_4gpu
         else None
     )
+    optimizer_id = str(target.optimizer["name"])
+    replacement_stride = 3 if PROFILE.is_nonvision_4gpu else 100
+    maximum_proposals = 8
+    rejected_reason_codes: list[tuple[str, ...]] = []
+    for proposal_index in range(maximum_proposals):
+        replacement_ordinal = (
+            replacement_ordinal_base + proposal_index * replacement_stride
+        )
+        architecture = _architecture_parameters(
+            target.family_id,
+            replacement_ordinal,
+            target.regime,
+            defaults=target.architecture_parameters,
+            generated_lineage=generated_lineage,
+        )
+        architecture = _bind_optimizer_parameter_contract(
+            target.family_id,
+            architecture,
+            optimizer_id,
+        )
+        input_signature = _input_signature(
+            target.source_modality,
+            architecture,
+            replacement_ordinal,
+            target.regime,
+            target_width=target.target_width,
+        )
+        request = CompatibilityRequest(
+            family_id=target.family_id,
+            modality=target.source_modality,
+            architecture_parameters=architecture,
+            input_signature=input_signature,
+            precision_id=str(target.precision_policy["policy_id"]),
+            optimizer_id=optimizer_id,
+            scheduler_id=str(target.scheduler["name"]),
+            execution_mode=str(target.execution["mode"]),
+            backend_id=str(target.execution["backend_id"]),
+        )
+        decision = evaluate_compatibility(request)
+        if decision.compatible:
+            break
+        rejected_reason_codes.append(decision.reason_codes)
+    else:
+        raise RepairError(
+            "quota replacement exhausted deterministic compatible proposals: "
+            f"{tuple(rejected_reason_codes)}"
+        )
+    if proposal_index:
+        mutation["quota_replacement"] = {
+            **mutation["quota_replacement"],
+            "proposal_index": proposal_index,
+            "proposal_ordinal": replacement_ordinal,
+        }
     batch_plan = _batch_plan(
         target.family_id,
         architecture,
@@ -584,20 +624,9 @@ def make_quota_replacement(
         replacement_ordinal,
         str(target.precision_policy["policy_id"]),
         bool(target.activation_checkpointing["enabled"]),
-        str(target.optimizer["name"]),
+        optimizer_id,
         target.batch_plan.expected_train_examples,
         requested_effective_batch=requested_effective_batch,
-    )
-    request = CompatibilityRequest(
-        family_id=target.family_id,
-        modality=target.source_modality,
-        architecture_parameters=architecture,
-        input_signature=input_signature,
-        precision_id=str(target.precision_policy["policy_id"]),
-        optimizer_id=str(target.optimizer["name"]),
-        scheduler_id=str(target.scheduler["name"]),
-        execution_mode=str(target.execution["mode"]),
-        backend_id=str(target.execution["backend_id"]),
     )
     candidate = _rehash(
         replace(

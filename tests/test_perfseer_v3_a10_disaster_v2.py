@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import importlib.util
 import io
 import json
@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -78,6 +79,32 @@ def _raw_source(path: Path, **train_options: object) -> Path:
     return path
 
 
+def _replacement_audit_quarantine(target: Any) -> Any:
+    from perfseer_v3.dataset_pack.contracts import FailureStage
+    from perfseer_v3.dataset_pack.fingerprints import canonical_sha256
+    from perfseer_v3.dataset_pack.repair import QUARANTINE_VERSION, QuarantineRecord
+
+    draft = QuarantineRecord(
+        version=QUARANTINE_VERSION,
+        quarantine_id="0" * 64,
+        root_candidate_id=target.candidate_id,
+        terminal_candidate_id=target.candidate_id,
+        terminal_failure_record_sha256="1" * 64,
+        oom_repair_attempt_ids=(),
+        failure_stage=FailureStage.FORWARD.value,
+        reason_code="replacement_contract_audit",
+        family_id=target.family_id,
+        task_id=target.task_id,
+        regime=target.regime,
+        coverage_cell_ids=target.coverage_cell_ids,
+        batch_one_exhausted=False,
+    )
+    return replace(
+        draft,
+        quarantine_id=canonical_sha256(draft.unhashed_payload()),
+    )
+
+
 def test_manifest_crosswalk_and_historical_v1_identities() -> None:
     from perfseer_v3.dataset_pack.a10_disaster_crosswalk import build_crosswalk
     from perfseer_v3.dataset_pack.sampler import build_target_manifest
@@ -129,6 +156,87 @@ def test_manifest_crosswalk_and_historical_v1_identities() -> None:
         "dddc68689d6fa3e59426ea7f9cccd37a5787a633112492e1903cfad7bc60e298",
         "9953e4d249688f244ddbb9cf9475b988476144ffed2e4e2870df36056b18f513",
     ]
+
+
+def test_fasttext_replacements_rebind_sparse_optimizer_contract() -> None:
+    from perfseer_v3.dataset_pack.compatibility import DEPLOYMENT_OPTIMIZERS
+    from perfseer_v3.dataset_pack.repair import make_quota_replacement
+    from perfseer_v3.dataset_pack.sampler import build_target_manifest
+
+    targets = tuple(
+        row
+        for row in build_target_manifest().candidates
+        if row.family_id == "fasttext_embeddingbag"
+    )
+    replacements = []
+    for target in targets:
+        quarantine = _replacement_audit_quarantine(target)
+        for replacement_index in range(3):
+            replacement = make_quota_replacement(
+                target,
+                quarantine,
+                replacement_index=replacement_index,
+            )
+            assert replacement.candidate.optimizer == target.optimizer
+            assert replacement.candidate.architecture_parameters["sparse_gradients"] is (
+                target.optimizer["name"] == "sparse_adam"
+            )
+            replacements.append(replacement)
+
+    assert len(targets) == 250
+    assert len(replacements) == 750
+    assert len({row.candidate.candidate_id for row in replacements}) == 750
+    assert {row.candidate.optimizer["name"] for row in replacements} == set(
+        DEPLOYMENT_OPTIMIZERS
+    )
+
+
+def test_quota_replacement_skips_an_incompatible_proposal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack import repair
+    from perfseer_v3.dataset_pack.compatibility import (
+        COMPATIBILITY_VERSION,
+        CompatibilityDecision,
+    )
+    from perfseer_v3.dataset_pack.sampler import build_target_manifest
+
+    target = next(
+        row
+        for row in build_target_manifest().candidates
+        if row.family_id != "fasttext_embeddingbag"
+    )
+    quarantine = _replacement_audit_quarantine(target)
+    evaluate_compatibility = repair.evaluate_compatibility
+    requests = []
+
+    def reject_first_proposal(request: Any) -> CompatibilityDecision:
+        requests.append(request)
+        if len(requests) == 1:
+            return CompatibilityDecision(
+                version=COMPATIBILITY_VERSION,
+                request_sha256=request.sha256,
+                compatible=False,
+                reason_codes=("optimizer_parameter_contract_invalid",),
+            )
+        return evaluate_compatibility(request)
+
+    monkeypatch.setattr(repair, "evaluate_compatibility", reject_first_proposal)
+    replacement = repair.make_quota_replacement(
+        target,
+        quarantine,
+        replacement_index=0,
+    )
+
+    assert len(requests) == 2
+    assert replacement.candidate.ordinal == 18_001 + target.ordinal * 1_000 + 3
+    assert replacement.candidate.mutation_specification["quota_replacement"] == {
+        "quarantine_id": quarantine.quarantine_id,
+        "replacement_index": 0,
+        "target_candidate_id": target.candidate_id,
+        "proposal_index": 1,
+        "proposal_ordinal": replacement.candidate.ordinal,
+    }
 
 
 def test_fixture_smoke_executes_the_declared_compiled_training_path(

@@ -852,6 +852,19 @@ def _architecture_parameters(
     return canonical_value(values)
 
 
+def _bind_optimizer_parameter_contract(
+    family_id: str,
+    architecture_parameters: Mapping[str, Any],
+    optimizer_id: str,
+) -> dict[str, Any]:
+    """Bind mutable architecture flags that determine optimizer eligibility."""
+
+    values = deepcopy(dict(architecture_parameters))
+    if family_id == "fasttext_embeddingbag":
+        values["sparse_gradients"] = optimizer_id == "sparse_adam"
+    return canonical_value(values)
+
+
 def _input_signature(
     modality: str,
     parameters: Mapping[str, Any],
@@ -1229,9 +1242,11 @@ def build_target_manifest() -> TargetManifest:
                 optimizer = "adamw"
             if optimizer == "muon" and cell.family_id in MUON_MATRIX_FREE_FAMILIES:
                 optimizer = "adamw"
-            if cell.family_id == "fasttext_embeddingbag":
-                architecture = dict(architecture)
-                architecture["sparse_gradients"] = optimizer == "sparse_adam"
+            architecture = _bind_optimizer_parameter_contract(
+                cell.family_id,
+                architecture,
+                optimizer,
+            )
             if optimizer == "lbfgs":
                 precision = "fp32_tf32" if PROFILE.is_a10 else "fp32_ieee"
             if cell.family_id == "switch_moe" and precision == "fp16_grad_scaler":
