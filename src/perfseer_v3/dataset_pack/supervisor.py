@@ -65,6 +65,9 @@ CAMPAIGN_ENVIRONMENT_VERSION = (
     if PROFILE.uses_disaster_v2
     else "perfseer_v3_v100_campaign_environment_v1"
 )
+CAMPAIGN_ENVIRONMENT_RECOVERY_VERSION = (
+    "perfseer_v3_nrp_a10_nonvision_disaster_campaign_environment_recovery_v1"
+)
 PRODUCTION_CLEANUP_RELEASE_TOLERANCE_MIB = 64.0
 LOCAL_VALIDATION_CLEANUP_RELEASE_TOLERANCE_MIB = 4_096.0
 _CAMPAIGN_PACKAGES = (
@@ -382,8 +385,12 @@ def environment_provenance() -> Mapping[str, Any]:
     }
 
 
-def lock_campaign_environment(workspace: str | Path) -> Mapping[str, Any]:
-    """Freeze one software/driver identity for every accepted campaign row."""
+def lock_campaign_environment(
+    workspace: str | Path,
+    *,
+    recovery_identity: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any]:
+    """Freeze the origin environment or an authorized recovery environment."""
 
     environment = environment_provenance()
     value = {
@@ -398,7 +405,111 @@ def lock_campaign_environment(workspace: str | Path) -> Mapping[str, Any]:
         except (OSError, json.JSONDecodeError) as error:
             raise SupervisorError("campaign environment lock is unreadable") from error
         if stored != value:
-            raise SupervisorError("campaign environment changed since collection started")
+            if (
+                not PROFILE.uses_disaster_v2
+                or recovery_identity is None
+                or not isinstance(stored, Mapping)
+                or set(stored) != {"version", "environment", "environment_sha256"}
+                or stored.get("version") != CAMPAIGN_ENVIRONMENT_VERSION
+                or not isinstance(stored.get("environment"), Mapping)
+                or stored.get("environment_sha256")
+                != canonical_sha256(stored.get("environment"))
+            ):
+                raise SupervisorError(
+                    "campaign environment changed since collection started"
+                )
+            identity_sha256 = recovery_identity.get("identity_sha256")
+            if (
+                not isinstance(identity_sha256, str)
+                or len(identity_sha256) != 64
+                or environment.get("source_revision")
+                != recovery_identity.get("repository_revision")
+                or environment.get("container_digest")
+                != recovery_identity.get("image_digest")
+            ):
+                raise SupervisorError(
+                    "recovery environment differs from its active run identity"
+                )
+            recovery: dict[str, Any] = {
+                "version": CAMPAIGN_ENVIRONMENT_RECOVERY_VERSION,
+                "run_identity_sha256": identity_sha256,
+                "origin_environment_sha256": stored["environment_sha256"],
+                "environment": environment,
+                "environment_sha256": value["environment_sha256"],
+            }
+            recovery["recovery_sha256"] = canonical_sha256(recovery)
+            directory = (
+                path.parent
+                / "campaign_environment_recoveries"
+                / identity_sha256
+            )
+            if directory.exists() and (
+                directory.is_symlink() or not directory.is_dir()
+            ):
+                raise SupervisorError("campaign environment recovery path is unsafe")
+            for existing_path in directory.iterdir() if directory.is_dir() else ():
+                if (
+                    existing_path.is_symlink()
+                    or not existing_path.is_file()
+                    or existing_path.suffix != ".json"
+                ):
+                    raise SupervisorError(
+                        "campaign environment recovery history is unsafe"
+                    )
+                try:
+                    existing = json.loads(existing_path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as error:
+                    raise SupervisorError(
+                        "campaign environment recovery history is unreadable"
+                    ) from error
+                if not isinstance(existing, Mapping):
+                    raise SupervisorError(
+                        "campaign environment recovery history differs"
+                    )
+                existing_payload = dict(existing)
+                claimed = existing_payload.pop("recovery_sha256", None)
+                if (
+                    set(existing)
+                    != {
+                        "version",
+                        "run_identity_sha256",
+                        "origin_environment_sha256",
+                        "environment",
+                        "environment_sha256",
+                        "recovery_sha256",
+                    }
+                    or not isinstance(existing.get("environment"), Mapping)
+                    or existing_path.stem != existing.get("environment_sha256")
+                    or existing.get("version")
+                    != CAMPAIGN_ENVIRONMENT_RECOVERY_VERSION
+                    or existing.get("run_identity_sha256") != identity_sha256
+                    or existing.get("origin_environment_sha256")
+                    != stored["environment_sha256"]
+                    or existing.get("environment_sha256")
+                    != canonical_sha256(existing.get("environment"))
+                    or claimed != canonical_sha256(existing_payload)
+                ):
+                    raise SupervisorError(
+                        "campaign environment recovery history differs"
+                    )
+            recovery_path = directory / f"{value['environment_sha256']}.json"
+            if recovery_path.is_file():
+                try:
+                    existing_recovery = json.loads(
+                        recovery_path.read_text(encoding="utf-8")
+                    )
+                except (OSError, json.JSONDecodeError) as error:
+                    raise SupervisorError(
+                        "campaign environment recovery is unreadable"
+                    ) from error
+                if existing_recovery != recovery:
+                    raise SupervisorError("campaign environment recovery differs")
+            elif recovery_path.exists() or recovery_path.is_symlink():
+                raise SupervisorError(
+                    "campaign environment recovery path is not a regular file"
+                )
+            else:
+                atomic_write_json(recovery_path, recovery)
     elif path.exists() or path.is_symlink():
         raise SupervisorError("campaign environment lock path is not a regular file")
     else:

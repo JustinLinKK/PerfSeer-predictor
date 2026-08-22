@@ -805,6 +805,204 @@ def test_four_gpu_batch_rejects_duplicate_probe_assignments() -> None:
         run_isolated_worker_batch(roots, probes, lambda _root, _probe: None)
 
 
+def test_candidate_planning_failure_does_not_stop_later_four_gpu_batches(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack import (
+        a10_campaign,
+        materialization,
+        substitution_preparer,
+        task_registry,
+        workflow,
+    )
+    from perfseer_v3.dataset_pack.sampler import CandidatePlanningError
+
+    roots = tuple(
+        SimpleNamespace(candidate_id=f"{index:064x}", task_id="fixture-task")
+        for index in range(8)
+    )
+    probes = tuple(
+        SimpleNamespace(gpu_uuid=f"GPU-fixture-{index}") for index in range(4)
+    )
+    visited: list[str] = []
+    failed_id = roots[1].candidate_id
+
+    class FakeMaterializer:
+        def __init__(self, **_: object) -> None:
+            self.task_cache = tmp_path / "absent-task-cache"
+
+        def materialize(self, _: object) -> object:
+            return SimpleNamespace(
+                view_manifest=SimpleNamespace(dataset_fingerprint="a" * 64),
+                public=tmp_path,
+                prepared_view=tmp_path,
+                inventory=SimpleNamespace(archive_sha256="b" * 64),
+            )
+
+        def _delete_task_cache(self) -> None:
+            return None
+
+    def load_slot(_: Path, root: object) -> object:
+        visited.append(root.candidate_id)
+        return SimpleNamespace(current_candidate=root)
+
+    def record_indexes(_: Path) -> tuple[dict[str, object], dict[str, tuple[object, ...]]]:
+        accepted = {
+            root.candidate_id: object()
+            for root in roots
+            if root.candidate_id != failed_id
+        }
+        return accepted, {failed_id: (object(),)}
+
+    def advance(*_: object) -> object:
+        raise CandidatePlanningError("fixture replacement is incompatible")
+
+    monkeypatch.setattr(a10_campaign, "_load_record_for_root", lambda *_: None)
+    monkeypatch.setattr(materialization, "TaskMaterializer", FakeMaterializer)
+    monkeypatch.setattr(materialization, "seal_worker_inputs", lambda _: None)
+    monkeypatch.setattr(substitution_preparer, "SubstitutionAwarePreparer", lambda _: object())
+    monkeypatch.setattr(
+        task_registry,
+        "load_task_registry",
+        lambda: SimpleNamespace(entries=(SimpleNamespace(task_id="fixture-task"),)),
+    )
+    monkeypatch.setattr(workflow, "_load_slot", load_slot)
+    monkeypatch.setattr(workflow, "_record_indexes", record_indexes)
+    monkeypatch.setattr(workflow, "_advance_failed_slot", advance)
+
+    exhausted = a10_campaign._execute_candidates(
+        workspace=tmp_path,
+        repository_root=tmp_path,
+        mlebench_checkout=tmp_path,
+        candidates=roots,
+        kaggle_executable="kaggle",
+        probes=probes,
+        production_eligible=True,
+    )
+
+    assert exhausted == (
+        {
+            "root_candidate_id": failed_id,
+            "task_id": "fixture-task",
+            "reason": "fixture replacement is incompatible",
+        },
+    )
+    assert {root.candidate_id for root in roots[4:]} <= set(visited)
+    partial = json.loads(
+        (
+            tmp_path
+            / "state/nonvision_disaster_partial_task_receipts/fixture-task.json"
+        ).read_text()
+    )
+    assert partial["unresolved_root_candidate_ids"] == [
+        root.candidate_id for root in roots
+    ]
+
+
+def test_explicit_recovery_identity_preserves_origin_and_freezes_transition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack import a10_campaign
+    from perfseer_v3.dataset_pack.fingerprints import canonical_sha256
+
+    state = tmp_path / "state"
+    state.mkdir()
+
+    def identity(revision: str, digest: str) -> dict[str, object]:
+        value: dict[str, object] = {
+            "version": a10_campaign.A10_RUN_IDENTITY_VERSION,
+            "repository_revision": revision,
+            "image_digest": digest,
+            "campaign_contract_sha256": "c" * 64,
+            "crosswalk_sha256": "d" * 64,
+        }
+        value["identity_sha256"] = canonical_sha256(value)
+        return value
+
+    origin = identity("1" * 40, "registry/image@sha256:" + "2" * 64)
+    corrected = identity("3" * 40, "registry/image@sha256:" + "4" * 64)
+    (state / "run_identity.json").write_text(json.dumps(origin))
+
+    with pytest.raises(a10_campaign.A10CampaignError, match="not authorized"):
+        a10_campaign._freeze_run_identity(tmp_path, corrected)
+    monkeypatch.setenv(
+        a10_campaign.RECOVERY_FROM_IDENTITY_ENV,
+        str(origin["identity_sha256"]),
+    )
+    recovery = a10_campaign._freeze_run_identity(tmp_path, corrected)
+    assert recovery is not None
+    assert json.loads((state / "run_identity.json").read_text()) == origin
+    recovery_path = (
+        state
+        / "run_identity_recoveries"
+        / f"{corrected['identity_sha256']}.json"
+    )
+    assert json.loads(recovery_path.read_text()) == recovery
+    assert a10_campaign._freeze_run_identity(tmp_path, corrected) == recovery
+
+    branched = identity("5" * 40, "registry/image@sha256:" + "6" * 64)
+    with pytest.raises(a10_campaign.A10CampaignError, match="history differs"):
+        a10_campaign._freeze_run_identity(tmp_path, branched)
+
+
+def test_recovery_environment_is_content_addressed_and_build_bound(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack import supervisor
+    from perfseer_v3.dataset_pack.fingerprints import canonical_sha256
+
+    origin_environment = {"source_revision": "1" * 40, "driver": "old"}
+    current_environment = {
+        "source_revision": "3" * 40,
+        "container_digest": "registry/image@sha256:" + "4" * 64,
+        "driver": "new",
+    }
+    state = tmp_path / "state"
+    state.mkdir()
+    origin_lock = {
+        "version": supervisor.CAMPAIGN_ENVIRONMENT_VERSION,
+        "environment": origin_environment,
+        "environment_sha256": canonical_sha256(origin_environment),
+    }
+    (state / "campaign_environment.json").write_text(json.dumps(origin_lock))
+    monkeypatch.setattr(
+        supervisor, "environment_provenance", lambda: current_environment
+    )
+    active_identity = {
+        "identity_sha256": "5" * 64,
+        "repository_revision": current_environment["source_revision"],
+        "image_digest": current_environment["container_digest"],
+    }
+
+    with pytest.raises(supervisor.SupervisorError, match="changed"):
+        supervisor.lock_campaign_environment(tmp_path)
+    assert supervisor.lock_campaign_environment(
+        tmp_path, recovery_identity=active_identity
+    )["environment"] == current_environment
+    environment_sha256 = canonical_sha256(current_environment)
+    recovery_path = (
+        state
+        / "campaign_environment_recoveries"
+        / str(active_identity["identity_sha256"])
+        / f"{environment_sha256}.json"
+    )
+    recovery = json.loads(recovery_path.read_text())
+    assert recovery["environment_sha256"] == environment_sha256
+    assert json.loads((state / "campaign_environment.json").read_text()) == origin_lock
+    supervisor.lock_campaign_environment(
+        tmp_path, recovery_identity=active_identity
+    )
+
+    bad_identity = {**active_identity, "repository_revision": "9" * 40}
+    with pytest.raises(supervisor.SupervisorError, match="active run identity"):
+        supervisor.lock_campaign_environment(
+            tmp_path, recovery_identity=bad_identity
+        )
+
+
 def test_nomad_geometry_decoder_accepts_conventional_and_ase_forms() -> None:
     from perfseer_v3.dataset_pack.real_data import (
         RealPreparedDataError,
@@ -1011,7 +1209,7 @@ def test_pilot_lineage_workspace_and_offline_job_contract(tmp_path: Path) -> Non
     container = pod["containers"][0]
     assert (
         value["metadata"]["name"]
-        == "perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-pilot"
+        == "perfseer-v3-a10-nonvision-disaster-v2-repair-v1-pilot"
     )
     assert container["resources"]["requests"]["nvidia.com/gpu"] == "4"
     assert container["args"][container["args"].index("--workspace") + 1].endswith(

@@ -306,7 +306,7 @@ def test_continuous_job_contract_and_monitor_terminal_following(
     assert value["metadata"]["namespace"] == "ecepxie"
     assert (
         value["metadata"]["name"]
-        == "perfseer-v3-a10-nonvision-disaster-v2-nvml-v1-continuous"
+        == "perfseer-v3-a10-nonvision-disaster-v2-repair-v1-continuous"
     )
     assert spec_value["backoffLimit"] == 1
     assert spec_value["activeDeadlineSeconds"] == 604_800
@@ -314,6 +314,10 @@ def test_continuous_job_contract_and_monitor_terminal_following(
     assert container["args"][0] == "run-continuous"
     workspace_index = container["args"].index("--workspace") + 1
     assert container["args"][workspace_index].endswith("disaster-v2-nvml-v1")
+    environment = {row["name"]: row["value"] for row in container["env"]}
+    assert environment["PERFSEER_RECOVERY_FROM_IDENTITY_SHA256"] == (
+        "5bc98b7c0f8697d30323e39d4e645b4e8a249fdb9ad01120c1c2db3bdd2ad4fb"
+    )
     assert container["resources"]["limits"] == container["resources"]["requests"]
     assert container["resources"]["limits"]["nvidia.com/gpu"] == "4"
     assert container["securityContext"]["readOnlyRootFilesystem"] is True

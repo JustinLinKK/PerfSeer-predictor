@@ -25,8 +25,11 @@ CHUNK_COUNT = 44
 EXPORT_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-export-job.yaml")
 CAMPAIGN_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-labeler-job.yaml")
 CONTINUOUS_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-continuous-job.yaml")
-JOB_PREFIX = "perfseer-v3-a10-nonvision-disaster-v2-nvml-v1"
+JOB_PREFIX = "perfseer-v3-a10-nonvision-disaster-v2-repair-v1"
 CAMPAIGN_LABEL = "native-a10-nonvision-disaster-11200-v2"
+RECOVERY_FROM_IDENTITY_SHA256 = (
+    "5bc98b7c0f8697d30323e39d4e645b4e8a249fdb9ad01120c1c2db3bdd2ad4fb"
+)
 KAGGLE_CONFIG_DIRECTORY = "/run/secrets/kaggle"
 KAGGLE_SOURCE_DIRECTORY = "/run/secrets/kaggle-source"
 KAGGLE_STAGE_SCRIPT = (
@@ -217,6 +220,11 @@ def verify_job(
     }
     if environment.get("KAGGLE_CONFIG_DIR") != KAGGLE_CONFIG_DIRECTORY:
         raise ValueError("main container Kaggle directory differs")
+    if (
+        environment.get("PERFSEER_RECOVERY_FROM_IDENTITY_SHA256")
+        != RECOVERY_FROM_IDENTITY_SHA256
+    ):
+        raise ValueError("Job does not authorize the exact frozen recovery identity")
     if container.get("securityContext", {}).get("readOnlyRootFilesystem") is not True:
         raise ValueError("container root filesystem must be read-only")
     main_mounts = {row["name"]: row for row in container.get("volumeMounts", [])}

@@ -41,6 +41,10 @@ A10_RUN_IDENTITY_VERSION = (
     if _SPEECH_V2
     else "perfseer_v3_nrp_a10_run_identity_v1"
 )
+A10_RECOVERY_IDENTITY_VERSION = (
+    "perfseer_v3_nrp_a10_nonvision_disaster_recovery_identity_v1"
+)
+RECOVERY_FROM_IDENTITY_ENV = "PERFSEER_RECOVERY_FROM_IDENTITY_SHA256"
 A10_PILOT_RECEIPT_VERSION = (
     "perfseer_v3_nrp_a10_nonvision_disaster_32_pilot_receipt_v2"
     if _DISASTER_V2
@@ -569,6 +573,83 @@ def _freeze_json(path: Path, expected: Mapping[str, Any], *, context: str) -> Ma
     return expected
 
 
+def _freeze_run_identity(
+    root: Path,
+    expected: Mapping[str, Any],
+) -> Mapping[str, Any] | None:
+    """Freeze the origin identity or one explicitly authorized recovery transition."""
+
+    path = root / "state" / "run_identity.json"
+    if not path.exists():
+        _freeze_json(path, expected, context="run identity")
+        return None
+    if not path.is_file() or path.is_symlink():
+        raise A10CampaignError("run identity path is not a regular file")
+    try:
+        origin = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise A10CampaignError("run identity is unreadable") from error
+    identity_keys = {
+        "version",
+        "repository_revision",
+        "image_digest",
+        "campaign_contract_sha256",
+        "crosswalk_sha256",
+        "identity_sha256",
+    }
+    if not isinstance(origin, Mapping) or set(origin) != identity_keys:
+        raise A10CampaignError("run identity schema differs")
+    origin_payload = dict(origin)
+    claimed_origin_sha256 = origin_payload.pop("identity_sha256", None)
+    if (
+        not isinstance(claimed_origin_sha256, str)
+        or canonical_sha256(origin_payload) != claimed_origin_sha256
+    ):
+        raise A10CampaignError("run identity hash differs")
+    if origin == expected:
+        return None
+    if not _DISASTER_V2:
+        raise A10CampaignError("run identity differs from the frozen workspace")
+    authorization = os.environ.get(RECOVERY_FROM_IDENTITY_ENV, "")
+    if authorization != claimed_origin_sha256:
+        raise A10CampaignError(
+            "run identity recovery is not authorized for the frozen workspace"
+        )
+    if (
+        origin.get("version") != expected.get("version")
+        or origin.get("campaign_contract_sha256")
+        != expected.get("campaign_contract_sha256")
+        or origin.get("crosswalk_sha256") != expected.get("crosswalk_sha256")
+    ):
+        raise A10CampaignError("run identity recovery changes the campaign contract")
+    expected_sha256 = expected.get("identity_sha256")
+    if not isinstance(expected_sha256, str) or canonical_sha256(
+        {key: value for key, value in expected.items() if key != "identity_sha256"}
+    ) != expected_sha256:
+        raise A10CampaignError("recovery run identity hash differs")
+    recovery: dict[str, Any] = {
+        "version": A10_RECOVERY_IDENTITY_VERSION,
+        "from_identity_sha256": claimed_origin_sha256,
+        "to_identity": dict(expected),
+    }
+    recovery["recovery_sha256"] = canonical_sha256(recovery)
+    directory = root / "state" / "run_identity_recoveries"
+    if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
+        raise A10CampaignError("run identity recovery path is unsafe")
+    existing = tuple(directory.iterdir()) if directory.is_dir() else ()
+    if any(
+        row.is_symlink()
+        or not row.is_file()
+        or row.suffix != ".json"
+        or row.stem != expected_sha256
+        for row in existing
+    ):
+        raise A10CampaignError("run identity recovery history differs")
+    recovery_path = directory / f"{expected_sha256}.json"
+    _freeze_json(recovery_path, recovery, context="run identity recovery")
+    return canonical_value(recovery)
+
+
 def freeze_campaign_state(
     workspace: str | Path,
     *,
@@ -595,8 +676,11 @@ def freeze_campaign_state(
         "crosswalk_sha256": crosswalk.summary["crosswalk_sha256"],
     }
     identity["identity_sha256"] = canonical_sha256(identity)
-    _freeze_json(root / "state" / "run_identity.json", identity, context="run identity")
-    lock_campaign_environment(root)
+    recovery = _freeze_run_identity(root, identity)
+    lock_campaign_environment(
+        root,
+        recovery_identity=identity if recovery is not None else None,
+    )
     return contract
 
 
@@ -861,6 +945,7 @@ def _execute_candidates(
 ) -> tuple[Mapping[str, Any], ...]:
     from .kaggle import KaggleCliClient
     from .materialization import TaskMaterializer, seal_worker_inputs
+    from .sampler import CandidatePlanningError
     from .substitution_preparer import SubstitutionAwarePreparer
     from .supervisor import AttemptSupervisor
     from .task_registry import load_task_registry
@@ -927,7 +1012,7 @@ def _execute_candidates(
                     batch,
                     probes,
                     process_root,
-                    isolated_exceptions=(SlotExhaustedError,),
+                    isolated_exceptions=(SlotExhaustedError, CandidatePlanningError),
                 )
                 exhausted.extend(
                     {

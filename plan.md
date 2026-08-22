@@ -20,6 +20,18 @@ PyTorch CUDA image without mutating or resubmitting a Nautilus Job.
    search instead of allowing one proposal to abort the global four-GPU campaign.
 5. Add regression tests for the exact production failure and every optimizer/family
    combination, including all production replacement indices.
+6. Add a fail-closed, append-only recovery identity transition for the exact failed
+   image so the corrected image can revalidate and retain its 1,056 accepted records.
+   Require an explicit environment authorization containing the frozen prior identity
+   hash, an unchanged campaign/crosswalk contract, and exact old/new identity chains.
+7. Preserve each accepted record's original build/environment fingerprints and store
+   every recovery environment as a content-addressed provenance sidecar; do not rewrite
+   the frozen origin identity or any accepted label.
+8. Isolate candidate-scoped planning and execution failures: durably mark the failed
+   attempt, continue unrelated candidate rows, and route the unresolved quota slot
+   through deterministic replacement. Reserve controller termination for corrupted
+   shared state, invalid global provenance, or a slot that exhausts its bounded repair
+   budget; never count a failed row as one of the 11,200 accepted labels.
 
 ## Verification
 
@@ -31,6 +43,13 @@ PyTorch CUDA image without mutating or resubmitting a Nautilus Job.
    Disaster V2 plan, optimizer/family combinations, and supported replacement indices.
 4. Re-run the 177-case RTX 5090 fixture matrix and the available non-labeling GPU
    preflight to ensure the repair does not regress hardware binding or telemetry.
+5. Test recovery against a realistic frozen workspace: correct authorization resumes,
+   missing/wrong authorization fails before training, altered contracts and malformed
+   histories fail closed, and repeated resumes cannot append or reorder identities.
+6. Inject candidate-local planning and execution failures into multi-row batches and
+   prove later rows execute, failure artifacts remain durable, replacement fills the
+   original quota slot, and no terminal receipt/archive is emitted while any slot is
+   unresolved.
 
 ## Publication
 
