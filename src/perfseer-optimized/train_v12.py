@@ -287,6 +287,7 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=800)
     parser.add_argument("--local-batch", type=int, default=12)
     parser.add_argument("--max-batch-nodes", type=int, default=32_000)
+    parser.add_argument("--empty-cache-every", type=int, default=1)
     parser.add_argument("--gradient-accumulation", type=int, default=1)
     parser.add_argument("--patience", type=int, default=60)
     parser.add_argument("--limit", type=int, default=0,
@@ -364,6 +365,9 @@ def main() -> None:
                 optimizer.zero_grad(set_to_none=True)
             loss_sum += loss.detach() * batch.num_graphs
             count += batch.num_graphs
+            del batch, prediction, loss
+            if batch_index % args.empty_cache_every == 0:
+                torch.cuda.empty_cache()
         if world_size > 1:
             dist.all_reduce(loss_sum)
             dist.all_reduce(count)
