@@ -287,7 +287,11 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=800)
     parser.add_argument("--local-batch", type=int, default=12)
     parser.add_argument("--max-batch-nodes", type=int, default=16_000)
-    parser.add_argument("--empty-cache-every", type=int, default=1)
+    parser.add_argument("--empty-cache-every", type=int, default=0,
+                        help="Release cached CUDA blocks every N batches; zero disables periodic release.")
+    parser.add_argument("--max-reserved-mib", type=int, default=60_000,
+                        help="Release cached CUDA blocks when reserved memory reaches this ceiling.")
+    parser.add_argument("--loader-workers", type=int, default=4)
     parser.add_argument("--gradient-accumulation", type=int, default=1)
     parser.add_argument("--patience", type=int, default=60)
     parser.add_argument("--limit", type=int, default=0,
@@ -322,7 +326,10 @@ def main() -> None:
         rank,
         world_size,
     )
-    train_loader = DataLoader(datasets["train"], batch_sampler=train_sampler, num_workers=0)
+    loader_options = {"num_workers": args.loader_workers}
+    if args.loader_workers:
+        loader_options.update(persistent_workers=True, prefetch_factor=2)
+    train_loader = DataLoader(datasets["train"], batch_sampler=train_sampler, **loader_options)
     if rank == 0:
         validation_sampler = NodeBudgetBatchSampler(
             [datasets["validation"].node_count(row["input_sha256"]) for row in splits["validation"]],
@@ -331,7 +338,7 @@ def main() -> None:
             rank,
             world_size,
         )
-        val_loader = DataLoader(datasets["validation"], batch_sampler=validation_sampler, num_workers=0)
+        val_loader = DataLoader(datasets["validation"], batch_sampler=validation_sampler, **loader_options)
         test_loader = None
         if not args.skip_test:
             test_sampler = NodeBudgetBatchSampler(
@@ -341,7 +348,7 @@ def main() -> None:
                 rank,
                 world_size,
             )
-            test_loader = DataLoader(datasets["test"], batch_sampler=test_sampler, num_workers=0)
+            test_loader = DataLoader(datasets["test"], batch_sampler=test_sampler, **loader_options)
         args.output.mkdir(parents=True, exist_ok=True)
         atomic_json(args.output / "manifest.json", {
             "architecture": "latest_perfseer_optimized_six_metric_head_extension",
@@ -382,7 +389,9 @@ def main() -> None:
             loss_sum += loss.detach() * batch.num_graphs
             count += batch.num_graphs
             del batch, prediction, loss
-            if batch_index % args.empty_cache_every == 0:
+            over_reserved_limit = torch.cuda.memory_reserved(device) >= args.max_reserved_mib * 1024**2
+            periodic_release = args.empty_cache_every and batch_index % args.empty_cache_every == 0
+            if periodic_release or over_reserved_limit:
                 torch.cuda.empty_cache()
         if world_size > 1:
             dist.all_reduce(loss_sum)
