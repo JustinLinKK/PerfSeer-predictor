@@ -324,8 +324,22 @@ def main() -> None:
     )
     train_loader = DataLoader(datasets["train"], batch_sampler=train_sampler, num_workers=0)
     if rank == 0:
-        val_loader = DataLoader(datasets["validation"], batch_size=args.local_batch, shuffle=False, num_workers=0)
-        test_loader = DataLoader(datasets["test"], batch_size=args.local_batch, shuffle=False, num_workers=0)
+        validation_sampler = NodeBudgetBatchSampler(
+            [datasets["validation"].node_count(row["input_sha256"]) for row in splits["validation"]],
+            args.local_batch,
+            args.max_batch_nodes,
+            rank,
+            world_size,
+        )
+        test_sampler = NodeBudgetBatchSampler(
+            [datasets["test"].node_count(row["input_sha256"]) for row in splits["test"]],
+            args.local_batch,
+            args.max_batch_nodes,
+            rank,
+            world_size,
+        )
+        val_loader = DataLoader(datasets["validation"], batch_sampler=validation_sampler, num_workers=0)
+        test_loader = DataLoader(datasets["test"], batch_sampler=test_sampler, num_workers=0)
         args.output.mkdir(parents=True, exist_ok=True)
         atomic_json(args.output / "manifest.json", {
             "architecture": "latest_perfseer_optimized_six_metric_head_extension",
