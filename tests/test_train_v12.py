@@ -4,6 +4,7 @@ from torch_geometric.data import Data
 from perfseer_optimized.model import SeerNetConfig
 from perfseer_optimized.train_v12 import (
     METRIC_HEAD_WIDTHS,
+    NodeBudgetBatchSampler,
     SixMetricTwelveLabelSeerNet,
     TARGET_NAMES,
 )
@@ -33,3 +34,12 @@ def test_six_metric_heads_emit_twelve_labels():
     assert len(model.heads) == 6
     assert [head[-1].out_features for head in model.heads] == list(METRIC_HEAD_WIDTHS)
     assert model(data).shape == (1, len(TARGET_NAMES))
+
+
+def test_node_budget_sampler_limits_large_graph_batches():
+    node_counts = [11_964, 11_964, 11_964, 11_964, 128, 128]
+    sampler = NodeBudgetBatchSampler(node_counts, max_items=16, max_nodes=32_000, rank=0, world_size=1)
+    batches = list(sampler)
+
+    assert sorted(index for batch in batches for index in batch) == list(range(len(node_counts)))
+    assert all(sum(node_counts[index] for index in batch) <= 32_000 for batch in batches)

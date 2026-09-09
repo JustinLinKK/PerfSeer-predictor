@@ -21,7 +21,7 @@ from torch import nn
 from torch.nn.parallel import DistributedDataParallel
 from torch_geometric.data import Data, Dataset
 from torch_geometric.loader import DataLoader
-from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data import Sampler
 
 from perfseer_v3 import features as current_features
 from perfseer_v3.features import (
@@ -74,6 +74,44 @@ class SixMetricTwelveLabelSeerNet(nn.Module):
     def forward(self, data) -> torch.Tensor:
         embedding = self.trunk(data)
         return torch.cat([head(embedding) for head in self.heads], dim=-1)
+
+
+class NodeBudgetBatchSampler(Sampler[list[int]]):
+    """Shuffle samples while bounding the total graph nodes per batch."""
+
+    def __init__(self, node_counts: list[int], max_items: int, max_nodes: int,
+                 rank: int, world_size: int) -> None:
+        self.node_counts = node_counts
+        self.max_items = max_items
+        self.max_nodes = max_nodes
+        self.rank = rank
+        self.world_size = world_size
+        self.epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = epoch
+
+    def _batches(self, indices: list[int]):
+        batch: list[int] = []
+        node_total = 0
+        for index in indices:
+            nodes = self.node_counts[index]
+            if batch and (len(batch) >= self.max_items or node_total + nodes > self.max_nodes):
+                yield batch
+                batch, node_total = [], 0
+            batch.append(index)
+            node_total += nodes
+        if batch:
+            yield batch
+
+    def __iter__(self):
+        generator = torch.Generator()
+        generator.manual_seed(42 + self.epoch)
+        indices = torch.randperm(len(self.node_counts), generator=generator).tolist()
+        yield from self._batches(indices[self.rank::self.world_size])
+
+    def __len__(self) -> int:
+        return sum(1 for _ in self._batches(list(range(self.rank, len(self.node_counts), self.world_size))))
 
 
 def read_json(path: Path):
@@ -143,21 +181,32 @@ class PreparedTwelveLabelDataset(Dataset):
         self.target_mean = target_mean
         self.target_std = target_std
         self.cache: OrderedDict[str, object] = OrderedDict()
+        self.node_count_cache: dict[str, int] = {}
 
     def len(self) -> int:
         return len(self.rows)
 
+    def _feature_path(self, sha256: str) -> Path:
+        path = self.feature_cache / f"{sha256}.pt"
+        if path.exists():
+            return path
+        matches = sorted(self.feature_cache.parent.glob(f"rank-*/{sha256}.pt"))
+        if not matches:
+            raise FileNotFoundError(path)
+        return matches[0]
+
+    def node_count(self, sha256: str) -> int:
+        count = self.node_count_cache.get(sha256)
+        if count is None:
+            count = int(torch.load(self._feature_path(sha256), map_location="cpu", weights_only=False).x_cont.size(0))
+            self.node_count_cache[sha256] = count
+        return count
+
     def _feature(self, sha256: str):
         cached = self.cache.get(sha256)
         if cached is None:
-            path = self.feature_cache / f"{sha256}.pt"
-            if not path.exists():
-                matches = sorted(self.feature_cache.parent.glob(f"rank-*/{sha256}.pt"))
-                if not matches:
-                    raise FileNotFoundError(path)
-                path = matches[0]
             cached = apply_normalization(
-                torch.load(path, map_location="cpu", weights_only=False),
+                torch.load(self._feature_path(sha256), map_location="cpu", weights_only=False),
                 self.normalization,
             )
             self.cache[sha256] = cached
@@ -237,6 +286,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=800)
     parser.add_argument("--local-batch", type=int, default=12)
+    parser.add_argument("--max-batch-nodes", type=int, default=32_000)
     parser.add_argument("--gradient-accumulation", type=int, default=1)
     parser.add_argument("--patience", type=int, default=60)
     parser.add_argument("--limit", type=int, default=0,
@@ -264,8 +314,14 @@ def main() -> None:
         name: PreparedTwelveLabelDataset(rows, targets, args.feature_cache, normalization, target_mean, target_std)
         for name, rows in splits.items()
     }
-    train_sampler = DistributedSampler(datasets["train"], num_replicas=world_size, rank=rank, shuffle=True)
-    train_loader = DataLoader(datasets["train"], batch_size=args.local_batch, sampler=train_sampler, num_workers=0)
+    train_sampler = NodeBudgetBatchSampler(
+        [datasets["train"].node_count(row["input_sha256"]) for row in splits["train"]],
+        args.local_batch,
+        args.max_batch_nodes,
+        rank,
+        world_size,
+    )
+    train_loader = DataLoader(datasets["train"], batch_sampler=train_sampler, num_workers=0)
     if rank == 0:
         val_loader = DataLoader(datasets["validation"], batch_size=args.local_batch, shuffle=False, num_workers=0)
         test_loader = DataLoader(datasets["test"], batch_size=args.local_batch, shuffle=False, num_workers=0)
@@ -274,6 +330,7 @@ def main() -> None:
             "architecture": "latest_perfseer_optimized_six_metric_head_extension",
             "metric_heads": "separate", "head_count": len(METRIC_HEAD_WIDTHS),
             "head_widths": METRIC_HEAD_WIDTHS,
+            "max_batch_nodes": args.max_batch_nodes,
             "target_names": TARGET_NAMES, "rows": {name: len(rows) for name, rows in splits.items()},
             "source_targets": len(targets), "a10_bs_included": True,
         })
