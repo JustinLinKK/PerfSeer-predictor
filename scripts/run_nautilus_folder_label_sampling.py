@@ -518,7 +518,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profile-epochs", type=int, default=1)
     parser.add_argument("--batches-per-epoch", type=int, default=1)
     parser.add_argument("--sample-interval", type=float, default=0.01)
-    parser.add_argument("--optimizer", default="sgd", choices=("sgd", "adam", "adamw"))
+    parser.add_argument("--optimizer", default="adam", choices=("sgd", "adam", "adamw"))
     parser.add_argument("--sm-occupancy-source", default="nvml_proxy", choices=("ncu", "nvml_proxy"))
     parser.add_argument("--cpu", default="1")
     parser.add_argument("--cpu-limit", default="2")

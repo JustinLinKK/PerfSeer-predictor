@@ -12,7 +12,9 @@ import pickle
 import re
 import shutil
 import sys
+import tempfile
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -21,11 +23,23 @@ import networkx as nx
 import numpy as np
 import torch
 
+from perfseer.architecture_schema import FEATURE_SCHEMA_VERSION, NODE_TYPES as ARCH_NODE_TYPES
+from nrp_calibration_pack.profile.generated_model_runtime import GraphModel
+from nrp_calibration_pack.template_catalog import (
+    TE_LOW_PRECISION_TRANSFORMER_FAMILIES,
+    build_template_graph,
+    iter_template_specs,
+    template_family_counts,
+)
 
-SEED = 20260602
+
+SEED = 20260617
+DEFAULT_TEMPLATE_SEED = SEED
 DEFAULT_SUBSET_SIZE = 10000
 DEFAULT_PILOT_SUBSET_SIZE = 1000
 DEFAULT_PRECISION_SWEEP = ("fp32_ieee", "tf32", "bf16_amp", "fp16_amp", "fp8_te_hybrid")
+LOW_PRECISION_FOCUS_CHOICES = ("none", "te_transformer")
+LOW_PRECISION_FOCUS_PRECISIONS = ("fp8_te_hybrid", "nvfp4_te")
 PRECISION_ALIASES = {
     "fp32": "fp32_ieee",
     "float32": "fp32_ieee",
@@ -41,22 +55,12 @@ PRECISION_ALIASES = {
     "fp8_te_hybrid": "fp8_te_hybrid",
     "fp8_e4m3": "fp8_e4m3",
     "fp8_e5m2": "fp8_e5m2",
-    "nvfp4": "nvfp4",
-    "mxfp8": "mxfp8",
+    "fp4": "nvfp4_te",
+    "nvfp4": "nvfp4_te",
+    "nvfp4_te": "nvfp4_te",
 }
 BATCH_BUCKETS = (1, 2, 4, 8, 16, 32, 64, 128, 256)
-NODE_TYPES = (
-    "Conv",
-    "Relu",
-    "BatchNormalization",
-    "Concat",
-    "AveragePool",
-    "GlobalAveragePool",
-    "Flatten",
-    "Gemm",
-    "MaxPool",
-    "Add",
-)
+NODE_TYPES = ARCH_NODE_TYPES
 PURE_FAMILIES = ("mobilenet", "vggnet", "resnext", "densenet", "googlenet")
 RESERVE_FRACTION = 0.50
 PER_BATCH_RESERVE_FRACTION = 0.75
@@ -131,10 +135,32 @@ class GraphRecord:
         ]
 
 
+@dataclass(frozen=True)
+class GeneratedCandidate:
+    record: GraphRecord
+    input_shape: tuple[int, ...] | None = None
+    input_specs: list[dict[str, Any]] | None = None
+    node_specs: list[dict[str, Any]] | None = None
+    metadata: dict[str, Any] | None = None
+    error: str | None = None
+
+
+def default_generation_workers() -> int:
+    return max(1, os.cpu_count() or 1)
+
+
+def resolve_generation_workers(value: int | None) -> int:
+    if value is None:
+        return 1
+    if value < 0:
+        raise ValueError("--generation-workers must be >= 0")
+    return default_generation_workers() if value == 0 else value
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate NRP calibration model sources.")
-    parser.add_argument("--data-root", default="dataset")
     parser.add_argument("--out-dir", default="nrp_calibration_pack")
+    parser.add_argument("--catalog-mode", choices=("template",), default="template")
     parser.add_argument(
         "--profile-preset",
         choices=("full", "pilot"),
@@ -147,13 +173,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=",".join(DEFAULT_PRECISION_SWEEP),
         help="Comma-separated precision_config values to expand into manifest rows.",
     )
-    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--seed", type=int, default=None)
     parser.add_argument("--validation-mode", choices=("compile", "construct", "meta", "real", "none"), default="compile")
+    parser.add_argument(
+        "--low-precision-focus",
+        choices=LOW_PRECISION_FOCUS_CHOICES,
+        default="none",
+        help=(
+            "Restrict generated templates for low-precision profiling. "
+            "'te_transformer' emits non-embedding transformer rows that pass FP8 and NVFP4 TE gates."
+        ),
+    )
+    parser.add_argument(
+        "--generation-workers",
+        type=int,
+        default=0,
+        help="Parallel worker processes for graph loading, source generation, and validation. Use 1 for serial; 0 uses all CPUs.",
+    )
     parser.add_argument("--smoke-small", action="store_true", help="Prefer tiny CPU-friendly graphs for local smoke packs.")
     parser.add_argument("--force", action="store_true", help="Regenerate manifest/models/subset/report even if they already exist.")
     args = parser.parse_args(argv)
+    if args.seed is None:
+        args.seed = DEFAULT_TEMPLATE_SEED
     if args.subset_size is None:
         args.subset_size = DEFAULT_PILOT_SUBSET_SIZE if args.profile_preset == "pilot" else DEFAULT_SUBSET_SIZE
+    try:
+        args.generation_workers = resolve_generation_workers(args.generation_workers)
+    except ValueError as exc:
+        parser.error(str(exc))
     return args
 
 
@@ -178,28 +225,70 @@ def normalize_precision_config(value: str) -> str:
     key = value.strip().lower().replace("-", "_")
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
+    if key == "mxfp8":
+        raise ValueError("mxfp8 is out of scope for v1; use fp8_te_hybrid or nvfp4_te")
     if key not in PRECISION_ALIASES:
         allowed = ", ".join(sorted(PRECISION_ALIASES))
         raise ValueError(f"unknown precision_config {value!r}; expected one of: {allowed}")
     return PRECISION_ALIASES[key]
 
 
-def load_records(data_root: Path) -> list[GraphRecord]:
+def load_records(data_root: Path, generation_workers: int | None = 1) -> list[GraphRecord]:
     graph_dir = data_root / "cg" / "cg"
     label_dir = data_root / "label" / "label"
     if not graph_dir.exists() or not label_dir.exists():
         raise FileNotFoundError(f"expected dataset under {data_root}/cg/cg and {data_root}/label/label")
 
+    workers = resolve_generation_workers(generation_workers)
+    graph_label_paths = [
+        (graph_path, label_dir / f"{graph_path.stem}.txt")
+        for graph_path in sorted(graph_dir.glob("*.pkl"))
+        if (label_dir / f"{graph_path.stem}.txt").exists()
+    ]
+    if workers > 1:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            return list(executor.map(load_record_from_paths, graph_label_paths, chunksize=16))
+
     records: list[GraphRecord] = []
-    for graph_path in sorted(graph_dir.glob("*.pkl")):
-        label_path = label_dir / f"{graph_path.stem}.txt"
-        if not label_path.exists():
-            continue
-        with graph_path.open("rb") as fh:
-            graph = nx.DiGraph(pickle.load(fh))
-        labels = parse_label(label_path)
-        records.append(record_from_graph(graph_path, label_path, graph, labels))
+    for graph_path, label_path in graph_label_paths:
+        records.append(load_record_from_paths((graph_path, label_path)))
     return records
+
+
+def materialize_template_records(
+    out_dir: Path,
+    subset_size: int,
+    seed: int,
+    *,
+    force: bool = False,
+    families: Iterable[str] | None = None,
+) -> list[GraphRecord]:
+    catalog_root = out_dir / "template_catalog"
+    graph_dir = catalog_root / "cg" / "cg"
+    label_dir = catalog_root / "label" / "label"
+    if force and catalog_root.exists():
+        shutil.rmtree(catalog_root)
+    graph_dir.mkdir(parents=True, exist_ok=True)
+    label_dir.mkdir(parents=True, exist_ok=True)
+
+    records: list[GraphRecord] = []
+    for spec in iter_template_specs(subset_size, seed, families=families):
+        graph = build_template_graph(spec)
+        graph_path = graph_dir / f"{spec.model_stem}.pkl"
+        label_path = label_dir / f"{spec.model_stem}.txt"
+        with graph_path.open("wb") as fh:
+            pickle.dump(graph, fh)
+        label_path.write_text("{'train': '0|0|0|0|0|0|0', 'infer': '0|0|0|0|0|0|0'}\n")
+        records.append(record_from_template_graph(graph_path, label_path, graph))
+    return records
+
+
+def load_record_from_paths(paths: tuple[Path, Path]) -> GraphRecord:
+    graph_path, label_path = paths
+    with graph_path.open("rb") as fh:
+        graph = nx.DiGraph(pickle.load(fh))
+    labels = parse_label(label_path)
+    return record_from_graph(graph_path, label_path, graph, labels)
 
 
 def record_from_graph(graph_path: Path, label_path: Path, graph: nx.DiGraph, labels: dict[str, list[float]]) -> GraphRecord:
@@ -255,6 +344,67 @@ def record_from_graph(graph_path: Path, label_path: Path, graph: nx.DiGraph, lab
         infer_time=infer[0],
         op_counts=tuple(op_counter[op] for op in NODE_TYPES),
     )
+
+
+def record_from_template_graph(graph_path: Path, label_path: Path, graph: nx.DiGraph) -> GraphRecord:
+    op_counter = {op: 0 for op in NODE_TYPES}
+    total_flops = 0.0
+    total_memory = 0.0
+    total_params = 0.0
+    max_tensor_size = 0.0
+    batch_size = 0
+    for _node, data in graph.nodes(data=True):
+        feat = data.get("feature", {}) or {}
+        op = str(feat.get("type", ""))
+        if op in op_counter:
+            op_counter[op] += 1
+        mem = feat.get("memory_info", {}) or {}
+        total_flops += float_or_zero(feat.get("flops"))
+        total_memory += float_or_zero(mem.get("bytes"))
+        total_params += float_or_zero(mem.get("weight_size"))
+        max_tensor_size = max(max_tensor_size, float_or_zero(mem.get("output_size")), float_or_zero(mem.get("input_size")))
+        if not batch_size:
+            batch_size = int(float_or_zero(mem.get("batch_size")))
+    try:
+        longest = nx.dag_longest_path_length(graph) if graph.number_of_nodes() else 0
+    except Exception:
+        longest = 0
+    family = str((getattr(graph, "graph", {}) or {}).get("architecture_family", "unknown"))
+    return GraphRecord(
+        stem=graph_path.stem,
+        graph_path=str(graph_path),
+        label_path=str(label_path),
+        batch_size=max(1, int(batch_size)),
+        family_tuple=(family,),
+        node_count=int(graph.number_of_nodes()),
+        edge_count=int(graph.number_of_edges()),
+        dag_depth=int(longest),
+        branch_count=sum(1 for node in graph.nodes if graph.out_degree(node) > 1),
+        join_count=sum(1 for node in graph.nodes if graph.in_degree(node) > 1),
+        total_flops=total_flops,
+        total_memory=total_memory,
+        total_params=total_params,
+        max_tensor_size=max_tensor_size,
+        train_util=0.0,
+        train_mem=0.0,
+        train_time=max(total_flops / 1e9, 1e-6),
+        infer_util=0.0,
+        infer_mem=0.0,
+        infer_time=max(total_flops / 2e9, 1e-6),
+        op_counts=tuple(op_counter[op] for op in NODE_TYPES),
+    )
+
+
+def node_types_for_records(records: Iterable[GraphRecord]) -> tuple[str, ...]:
+    return NODE_TYPES
+
+
+def op_count(record: GraphRecord, op_idx: int) -> int:
+    return record.op_counts[op_idx] if op_idx < len(record.op_counts) else 0
+
+
+def record_op_count_map(record: GraphRecord) -> dict[str, int]:
+    return {op: op_count(record, idx) for idx, op in enumerate(NODE_TYPES)}
 
 
 def parse_label(path: Path) -> dict[str, list[float]]:
@@ -527,7 +677,8 @@ def ordered_coverage_groups(groups: dict[tuple[str, str], list[int]]) -> list[tu
 
 
 def structure_signature(record: GraphRecord) -> tuple[str, ...]:
-    op_presence = {op for op, count in zip(NODE_TYPES, record.op_counts) if count > 0}
+    counts = record_op_count_map(record)
+    op_presence = {op for op, count in counts.items() if count > 0}
     flags = []
     if "Add" in op_presence:
         flags.append("residual")
@@ -541,6 +692,12 @@ def structure_signature(record: GraphRecord) -> tuple[str, ...]:
         flags.append("avgpool")
     if "Gemm" in op_presence:
         flags.append("linear")
+    if "Attention" in op_presence or "MultiHeadAttention" in op_presence:
+        flags.append("attention")
+    if "GRU" in op_presence or "LSTM" in op_presence or "RNN" in op_presence:
+        flags.append("recurrent")
+    if "GraphMessage" in op_presence or "GraphAttention" in op_presence:
+        flags.append("graph_message")
     if not flags:
         flags.append("plain")
     return (
@@ -604,14 +761,23 @@ def skip_edge_bucket(record: GraphRecord) -> str:
 
 
 def op_mix_key(record: GraphRecord) -> str:
-    counts = {op: count for op, count in zip(NODE_TYPES, record.op_counts)}
+    counts = record_op_count_map(record)
     total = max(sum(counts.values()), 1)
-    conv = counts.get("Conv", 0) / total
+    conv = (counts.get("Conv", 0) + counts.get("DepthwiseConv", 0) + counts.get("ConvTranspose", 0)) / total
     gemm = counts.get("Gemm", 0) / total
+    attention = (counts.get("Attention", 0) + counts.get("MultiHeadAttention", 0)) / total
+    recurrent = (counts.get("RNN", 0) + counts.get("GRU", 0) + counts.get("LSTM", 0)) / total
+    graph_ops = (counts.get("GraphMessage", 0) + counts.get("GraphAttention", 0)) / total
     pool = (counts.get("AveragePool", 0) + counts.get("MaxPool", 0) + counts.get("GlobalAveragePool", 0)) / total
     join_ops = (counts.get("Concat", 0) + counts.get("Add", 0)) / total
     if conv >= 0.45:
         return "conv_heavy"
+    if attention >= 0.15:
+        return "attention_heavy"
+    if recurrent >= 0.15:
+        return "recurrent_heavy"
+    if graph_ops >= 0.15:
+        return "graph_message_heavy"
     if gemm >= 0.35:
         return "gemm_heavy"
     if pool >= 0.25:
@@ -724,7 +890,7 @@ def standardize(matrix: np.ndarray) -> np.ndarray:
     return (matrix - mean) / std
 
 
-def generate_model_source(model_id: str, record: GraphRecord, graph: nx.DiGraph) -> str:
+def model_source_parts(graph: nx.DiGraph) -> tuple[list[dict[str, Any]], tuple[int, ...], list[dict[str, Any]]]:
     topo = list(nx.topological_sort(graph))
     id_map = {node: idx for idx, node in enumerate(topo)}
     node_specs: list[dict[str, Any]] = []
@@ -737,10 +903,30 @@ def generate_model_source(model_id: str, record: GraphRecord, graph: nx.DiGraph)
                 "type": str(feat.get("type", "")),
                 "args": clean_json(feat.get("args", {}) or {}),
                 "memory_info": clean_json(feat.get("memory_info", {}) or {}),
+                "input_index": int((graph.nodes[node].get("input_index", 0) or 0)),
                 "preds": [id_map[pred] for pred in graph.predecessors(node)],
             }
         )
-    input_shape = infer_input_shape(graph)
+    input_specs = infer_input_specs(graph)
+    input_shape = tuple(int(dim) for dim in input_specs[0]["shape"])
+    return node_specs, input_shape, input_specs
+
+
+def generate_model_source(model_id: str, record: GraphRecord, graph: nx.DiGraph) -> str:
+    node_specs, input_shape, input_specs = model_source_parts(graph)
+    return render_model_source(model_id, record, input_shape, node_specs, input_specs)
+
+
+def render_model_source(
+    model_id: str,
+    record: GraphRecord,
+    input_shape: tuple[int, ...],
+    node_specs: list[dict[str, Any]],
+    input_specs: list[dict[str, Any]] | None = None,
+) -> str:
+    input_specs = input_specs or [{"name": "input0", "shape": list(input_shape), "dtype": "float32", "kind": "float"}]
+    forward_args = ", ".join(f"input{idx}: torch.Tensor" for idx, _spec in enumerate(input_specs))
+    forward_call = ", ".join(f"input{idx}" for idx, _spec in enumerate(input_specs))
     return "\n".join(
         [
             '"""Generated PerfSeer calibration model source."""',
@@ -769,12 +955,16 @@ def generate_model_source(model_id: str, record: GraphRecord, graph: nx.DiGraph)
             f"MODEL_ID = {model_id!r}",
             f"ORIGINAL_STEM = {record.stem!r}",
             f"INPUT_SHAPE = {tuple(input_shape)!r}",
+            f"INPUT_SPECS = {json.dumps(input_specs, sort_keys=True)}",
             f"NODE_SPECS = {json.dumps(node_specs, sort_keys=True)}",
             "",
             "",
             "class GeneratedModel(GraphModel):",
             "    def __init__(self) -> None:",
             "        super().__init__(NODE_SPECS)",
+            "",
+            f"    def forward(self, {forward_args}) -> torch.Tensor:",
+            f"        return super().forward({forward_call})",
             "",
             "",
             "def make_model() -> nn.Module:",
@@ -797,6 +987,32 @@ def infer_input_shape(graph: nx.DiGraph) -> tuple[int, int, int, int]:
     return batch, channels, height, width
 
 
+def infer_input_specs(graph: nx.DiGraph) -> list[dict[str, Any]]:
+    raw_specs = (getattr(graph, "graph", {}) or {}).get("input_specs")
+    if isinstance(raw_specs, list) and raw_specs:
+        return [normalize_input_spec(spec, idx) for idx, spec in enumerate(raw_specs)]
+    return [
+        {
+            "name": "input0",
+            "shape": list(infer_input_shape(graph)),
+            "dtype": "float32",
+            "kind": "float",
+        }
+    ]
+
+
+def normalize_input_spec(spec: dict[str, Any], index: int) -> dict[str, Any]:
+    shape = [int(dim) for dim in spec.get("shape", [])]
+    if not shape or any(dim <= 0 for dim in shape):
+        raise ValueError(f"invalid input spec shape at index {index}: {shape!r}")
+    return {
+        "name": str(spec.get("name", f"input{index}")),
+        "shape": shape,
+        "dtype": str(spec.get("dtype", "float32")),
+        "kind": str(spec.get("kind", "float")),
+    }
+
+
 def clean_json(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(k): clean_json(v) for k, v in value.items()}
@@ -817,8 +1033,12 @@ def write_pack(
     out_dir: Path,
     validation_mode: str,
     precision_sweep: Iterable[str] | str | None = None,
+    generation_workers: int | None = 1,
+    low_precision_focus: str = "none",
 ) -> tuple[int, int]:
     precision_configs = parse_precision_sweep(precision_sweep)
+    low_precision_focus = normalize_low_precision_focus(low_precision_focus)
+    workers = resolve_generation_workers(generation_workers)
     sync_runtime_files(out_dir)
     models_dir = out_dir / "models"
     manifest_dir = out_dir / "manifest"
@@ -839,47 +1059,49 @@ def write_pack(
         if record.stem not in selected_stems
     ]
     attempted: set[str] = set()
+    candidate_records: list[GraphRecord] = []
 
     for record in candidate_pool:
-        if len(model_rows) >= target_size:
-            break
         if record.stem in attempted:
             continue
         attempted.add(record.stem)
+        candidate_records.append(record)
+
+    for result in prepare_pack_candidates(candidate_records, validation_mode, workers, low_precision_focus):
+        if len(model_rows) >= target_size:
+            break
         model_id = f"calib_{len(model_rows):04d}"
-        with Path(record.graph_path).open("rb") as fh:
-            graph = nx.DiGraph(pickle.load(fh))
-        unsupported = unsupported_ops(graph)
-        if unsupported:
-            validation_failures.append({"stem": record.stem, "model_id": model_id, "error": f"unsupported ops: {', '.join(unsupported)}"})
+        if result.error is not None:
+            validation_failures.append({"stem": result.record.stem, "model_id": model_id, "error": result.error})
             continue
-        source = generate_model_source(model_id, record, graph)
+        if result.node_specs is None or result.input_shape is None or result.input_specs is None:
+            validation_failures.append({"stem": result.record.stem, "model_id": model_id, "error": "missing generated candidate payload"})
+            continue
+        source = render_model_source(model_id, result.record, result.input_shape, result.node_specs, result.input_specs)
         model_path = models_dir / f"{model_id}.py"
         subset_graph_path = subset_graph_dir / f"{model_id}.pkl"
         model_path.write_text(source)
-        shutil.copyfile(record.graph_path, subset_graph_path)
-        input_shape = infer_input_shape(graph)
-        if validation_mode != "none":
-            try:
-                validate_generated_model(model_path, input_shape, validation_mode)
-            except Exception as exc:
-                model_path.unlink(missing_ok=True)
-                subset_graph_path.unlink(missing_ok=True)
-                validation_failures.append({"stem": record.stem, "model_id": model_id, "error": repr(exc)})
-                continue
+        shutil.copyfile(result.record.graph_path, subset_graph_path)
+        metadata = result.metadata or {}
         row = {
-            **asdict(record),
+            **asdict(result.record),
             "graph_id": model_id,
             "hardware_id": None,
-            "original_stem": record.stem,
-            "original_graph_path": record.graph_path,
-            "original_label_path": record.label_path,
+            "original_stem": result.record.stem,
+            "original_graph_path": result.record.graph_path,
+            "original_label_path": result.record.label_path,
             "model_id": model_id,
             "model_file": f"models/{model_id}.py",
             "subset_graph_file": f"subset/cg/cg/{model_id}.pkl",
             "base_label_file": f"label/label/{model_id}.txt",
-            "input_shape": list(input_shape),
+            "input_shape": list(result.input_shape),
+            "input_specs": clean_json(result.input_specs),
+            "feature_schema_version": str(metadata.get("feature_schema_version", FEATURE_SCHEMA_VERSION)),
+            "architecture_family": str(metadata.get("architecture_family", family_key(result.record.family_tuple))),
+            "variant_kind": str(metadata.get("variant_kind", "source_dataset")),
+            "variant_signature": str(metadata.get("variant_signature", result.record.stem)),
             "precision_sweep": list(precision_configs),
+            "low_precision_focus": low_precision_focus,
         }
         model_rows.append(clean_json(row))
 
@@ -898,6 +1120,7 @@ def write_pack(
         [record_by_stem(all_records, row["original_stem"]) for row in model_rows],
         validation_failures,
         precision_configs,
+        low_precision_focus=low_precision_focus,
     )
     write_coverage_summary(
         out_dir / "coverage_summary.json",
@@ -905,8 +1128,91 @@ def write_pack(
         [record_by_stem(all_records, row["original_stem"]) for row in model_rows],
         validation_failures,
         precision_configs,
+        low_precision_focus=low_precision_focus,
     )
     return len(model_rows), len(validation_failures)
+
+
+def prepare_pack_candidates(
+    records: list[GraphRecord],
+    validation_mode: str,
+    generation_workers: int,
+    low_precision_focus: str = "none",
+) -> Iterable[GeneratedCandidate]:
+    low_precision_focus = normalize_low_precision_focus(low_precision_focus)
+    if generation_workers <= 1:
+        for record in records:
+            yield prepare_pack_candidate(record, validation_mode, low_precision_focus)
+        return
+
+    batch_size = max(32, generation_workers * 4)
+    executor = ProcessPoolExecutor(max_workers=generation_workers)
+    try:
+        for start in range(0, len(records), batch_size):
+            batch = records[start : start + batch_size]
+            yield from executor.map(
+                prepare_pack_candidate_for_pool,
+                [(record, validation_mode, low_precision_focus) for record in batch],
+                chunksize=1,
+            )
+    finally:
+        executor.shutdown(cancel_futures=True)
+
+
+def prepare_pack_candidate_for_pool(args: tuple[GraphRecord, str, str]) -> GeneratedCandidate:
+    record, validation_mode, low_precision_focus = args
+    return prepare_pack_candidate(record, validation_mode, low_precision_focus)
+
+
+def prepare_pack_candidate(record: GraphRecord, validation_mode: str, low_precision_focus: str = "none") -> GeneratedCandidate:
+    try:
+        with Path(record.graph_path).open("rb") as fh:
+            graph = nx.DiGraph(pickle.load(fh))
+        unsupported = unsupported_ops(graph)
+        if unsupported:
+            return GeneratedCandidate(record=record, error=f"unsupported ops: {', '.join(unsupported)}")
+        node_specs, input_shape, input_specs = model_source_parts(graph)
+        focus_reasons = low_precision_focus_reasons(node_specs, low_precision_focus)
+        if focus_reasons:
+            preview = "; ".join(focus_reasons[:8])
+            if len(focus_reasons) > 8:
+                preview += f"; {len(focus_reasons) - 8} more"
+            return GeneratedCandidate(record=record, error=f"low_precision_focus {low_precision_focus} rejected: {preview}")
+        if validation_mode != "none":
+            source = render_model_source("calib_validation", record, input_shape, node_specs, input_specs)
+            validate_generated_source(source, input_shape, validation_mode, input_specs)
+        metadata = dict((getattr(graph, "graph", {}) or {}))
+        return GeneratedCandidate(record=record, input_shape=input_shape, input_specs=input_specs, node_specs=node_specs, metadata=metadata)
+    except Exception as exc:
+        return GeneratedCandidate(record=record, error=repr(exc))
+
+
+def normalize_low_precision_focus(value: str | None) -> str:
+    focus = (value or "none").strip().lower().replace("-", "_")
+    if focus not in LOW_PRECISION_FOCUS_CHOICES:
+        allowed = ", ".join(LOW_PRECISION_FOCUS_CHOICES)
+        raise ValueError(f"unknown low-precision focus {value!r}; expected one of: {allowed}")
+    return focus
+
+
+def low_precision_focus_families(focus: str) -> tuple[str, ...] | None:
+    focus = normalize_low_precision_focus(focus)
+    if focus == "te_transformer":
+        return TE_LOW_PRECISION_TRANSFORMER_FAMILIES
+    return None
+
+
+def low_precision_focus_reasons(node_specs: list[dict[str, Any]], focus: str) -> list[str]:
+    focus = normalize_low_precision_focus(focus)
+    if focus == "none":
+        return []
+    if focus == "te_transformer" and not any(str(spec.get("type")) in {"Attention", "MultiHeadAttention"} for spec in node_specs):
+        return ["te_transformer focus requires generated Attention or MultiHeadAttention"]
+    model = GraphModel(node_specs)
+    reasons: list[str] = []
+    for precision_config in LOW_PRECISION_FOCUS_PRECISIONS:
+        reasons.extend(f"{precision_config}: {reason}" for reason in model.low_precision_unsupported_reasons(precision_config))
+    return reasons
 
 
 def expand_precision_rows(model_rows: Iterable[dict[str, Any]], precision_configs: Iterable[str]) -> list[dict[str, Any]]:
@@ -940,9 +1246,12 @@ def write_coverage_summary(
     selected: list[GraphRecord],
     validation_failures: list[dict[str, str]] | None = None,
     precision_sweep: Iterable[str] | None = None,
+    low_precision_focus: str = "none",
 ) -> None:
     validation_failures = validation_failures or []
     precision_configs = tuple(precision_sweep or DEFAULT_PRECISION_SWEEP)
+    low_precision_focus = normalize_low_precision_focus(low_precision_focus)
+    report_node_types = node_types_for_records([*all_records, *selected])
     summary = {
         "full_dataset_graphs": len(all_records),
         "selected_graphs": len(selected),
@@ -951,6 +1260,7 @@ def write_coverage_summary(
         "default_subset_size": DEFAULT_SUBSET_SIZE,
         "default_pilot_subset_size": DEFAULT_PILOT_SUBSET_SIZE,
         "precision_sweep": list(precision_configs),
+        "low_precision_focus": low_precision_focus,
         "validation_exclusions_replaced": len(validation_failures),
         "batch_size_coverage": {
             str(batch): {
@@ -961,10 +1271,10 @@ def write_coverage_summary(
         },
         "operator_coverage": {
             op: {
-                "full": sum(rec.op_counts[op_idx] for rec in all_records),
-                "selected": sum(rec.op_counts[op_idx] for rec in selected),
+                "full": sum(op_count(rec, op_idx) for rec in all_records),
+                "selected": sum(op_count(rec, op_idx) for rec in selected),
             }
-            for op_idx, op in enumerate(NODE_TYPES)
+            for op_idx, op in enumerate(report_node_types)
         },
         "family_coverage": coverage_counts(
             (family_key(rec.family_tuple) for rec in all_records),
@@ -1046,11 +1356,17 @@ def record_by_stem(records: list[GraphRecord], stem: str) -> GraphRecord:
     raise KeyError(stem)
 
 
-def validate_generated_model(model_path: Path, input_shape: tuple[int, ...], mode: str) -> None:
+def validate_generated_model(
+    model_path: Path,
+    input_shape: tuple[int, ...],
+    mode: str,
+    input_specs: list[dict[str, Any]] | None = None,
+) -> None:
     if mode == "compile":
         compile(model_path.read_text(), str(model_path), "exec")
         return
-    module_name = f"_nrp_validate_{model_path.stem}_{os.getpid()}"
+    module_token = re.sub(r"[^A-Za-z0-9_]+", "_", str(model_path.resolve()))
+    module_name = f"_nrp_validate_{model_path.stem}_{os.getpid()}_{module_token[-64:]}"
     spec = importlib.util.spec_from_file_location(module_name, model_path)
     if spec is None or spec.loader is None:
         raise ImportError(model_path)
@@ -1064,13 +1380,48 @@ def validate_generated_model(model_path: Path, input_shape: tuple[int, ...], mod
         model.eval()
         device = torch.device("meta" if mode == "meta" else "cpu")
         model = model.to(device)
-        x = torch.zeros(input_shape, device=device)
+        inputs = synthetic_inputs(input_specs or [{"shape": list(input_shape), "dtype": "float32", "kind": "float"}], device)
         with torch.no_grad():
-            out = model(x)
+            out = model(*inputs)
         if len(tuple(out.shape)) == 0:
             raise ValueError(f"{model_path} produced scalar output")
     finally:
         sys.modules.pop(module_name, None)
+
+
+def validate_generated_source(
+    source: str,
+    input_shape: tuple[int, ...],
+    mode: str,
+    input_specs: list[dict[str, Any]] | None = None,
+) -> None:
+    if mode == "compile":
+        compile(source, "<generated calibration model>", "exec")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_root = Path(tmp)
+        sync_runtime_files(tmp_root)
+        models_dir = tmp_root / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        model_path = models_dir / "calib_validation.py"
+        model_path.write_text(source)
+        validate_generated_model(model_path, input_shape, mode, input_specs)
+
+
+def synthetic_inputs(input_specs: list[dict[str, Any]], device: torch.device) -> tuple[torch.Tensor, ...]:
+    tensors: list[torch.Tensor] = []
+    for spec in input_specs:
+        shape = tuple(int(dim) for dim in spec.get("shape", []))
+        dtype = str(spec.get("dtype", "float32")).lower()
+        kind = str(spec.get("kind", "float")).lower()
+        if dtype in {"int64", "long"} or kind in {"tokens", "token_ids"}:
+            tensors.append(torch.zeros(shape, dtype=torch.long, device=device))
+        elif kind == "adjacency":
+            base = torch.eye(shape[-1], dtype=torch.float32, device=device)
+            tensors.append(base.expand(shape).clone())
+        else:
+            tensors.append(torch.zeros(shape, dtype=torch.float32, device=device))
+    return tuple(tensors)
 
 
 def write_report(
@@ -1079,9 +1430,12 @@ def write_report(
     selected: list[GraphRecord],
     validation_failures: list[dict[str, str]] | None = None,
     precision_sweep: Iterable[str] | None = None,
+    low_precision_focus: str = "none",
 ) -> None:
     validation_failures = validation_failures or []
     precision_configs = tuple(precision_sweep or DEFAULT_PRECISION_SWEEP)
+    low_precision_focus = normalize_low_precision_focus(low_precision_focus)
+    report_node_types = node_types_for_records([*all_records, *selected])
     lines = [
         "# NRP Calibration Subset Selection Report",
         "",
@@ -1092,6 +1446,7 @@ def write_report(
         f"- Default target size: {DEFAULT_SUBSET_SIZE}",
         f"- Default pilot target size: {DEFAULT_PILOT_SUBSET_SIZE}",
         f"- Precision sweep: {', '.join(precision_configs)}",
+        f"- Low-precision focus: {low_precision_focus}",
         f"- Validation exclusions replaced: {len(validation_failures)}",
         "",
         "## Selection Policy",
@@ -1138,8 +1493,8 @@ def write_report(
             f"{np.percentile(full_vals, 100):.4g} | {np.percentile(sel_vals, 100):.4g} |"
         )
     lines.extend(["", "## Operator Coverage", "", "| op | full count | selected count |", "|---|---:|---:|"])
-    for op_idx, op in enumerate(NODE_TYPES):
-        lines.append(f"| {op} | {sum(r.op_counts[op_idx] for r in all_records)} | {sum(r.op_counts[op_idx] for r in selected)} |")
+    for op_idx, op in enumerate(report_node_types):
+        lines.append(f"| {op} | {sum(op_count(r, op_idx) for r in all_records)} | {sum(op_count(r, op_idx) for r in selected)} |")
     lines.extend(["", "## Structure Coverage", "", "| topology signature | full | selected |", "|---|---:|---:|"])
     full_structures: dict[tuple[str, ...], int] = {}
     selected_structures: dict[tuple[str, ...], int] = {}
@@ -1208,10 +1563,21 @@ def main(argv: list[str] | None = None) -> None:
         generated_file.unlink(missing_ok=True)
 
     sync_runtime_files(out_dir)
-    records = load_records(Path(args.data_root))
-    selected = select_smoke_subset(records, args.subset_size) if args.smoke_small else select_subset(records, args.subset_size, args.seed)
+    print(f"generating with {args.generation_workers} worker(s)", flush=True)
+    low_precision_focus = normalize_low_precision_focus(args.low_precision_focus)
+    focus_families = low_precision_focus_families(low_precision_focus)
+    records = materialize_template_records(out_dir, args.subset_size, args.seed, force=args.force, families=focus_families)
+    selected = records
     precision_sweep = parse_precision_sweep(args.precision_sweep)
-    valid_count, failure_count = write_pack(selected, records, out_dir, args.validation_mode, precision_sweep)
+    valid_count, failure_count = write_pack(
+        selected,
+        records,
+        out_dir,
+        args.validation_mode,
+        precision_sweep,
+        generation_workers=args.generation_workers,
+        low_precision_focus=low_precision_focus,
+    )
     print(
         f"wrote {valid_count} generated models, {valid_count * len(precision_sweep)} manifest rows, "
         f"subset graphs, and coverage report to {out_dir} "

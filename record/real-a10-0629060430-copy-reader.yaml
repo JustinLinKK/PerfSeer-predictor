@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: perfseer-a10-copy-reader
+  labels:
+    app: perfseer-a10-copy-reader
+spec:
+  restartPolicy: Never
+  containers:
+    - name: reader
+      image: python:3.11-alpine
+      command: ["/bin/sh", "-lc", "sleep 7200"]
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "256Mi"
+        limits:
+          cpu: "1"
+          memory: "1Gi"
+      volumeMounts:
+        - name: output
+          mountPath: /mnt/output
+  volumes:
+    - name: output
+      persistentVolumeClaim:
+        claimName: perfseer-real-dataset-pvc

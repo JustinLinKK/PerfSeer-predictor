@@ -208,6 +208,31 @@ tempCodeRunnerFile.py
 
 # PyPI configuration file
 .pypirc
+kaggle.json
+.kaggle/
+
+# PerfSeer V3 A10G dataset-pack workspaces must remain external and local.
+/a10g_18k_workspace/
+/perfseer-a10g-18k/
+/.triton/
+/torchinductor_*/
+
+# Local RTX gate internals are deterministic and too large/noisy for review.
+# Keep only the canonical execution results and concise gate summary visible.
+/reports/a10g_18k_local_validation_plan*.json
+/reports/a10g_18k_local_validation_workers*.jsonl
+/reports/a10g_18k_local_execution_failures*.jsonl
+/reports/a10g_18k_local_execution_results_pre_*.jsonl
+/reports/a10g_18k_local_gate_summary_pre_*.json
+/reports/a10g_dataset_pack_phase*.md
+/reports/a10g_dataset_pack_phase*.json
+
+# Local real dataset bodies and prepared masks/profiles are large, regenerated,
+# and must stay outside git. Track approval docs under dataset_sources/ instead.
+datasets/raw/
+datasets/prepared/
+datasets/cache/
+datasets/tmp/
 
 # Marimo
 marimo/_static/
@@ -219,6 +244,27 @@ __marimo__/
 
 # dataset folder
 dataset/
+datasets/raw/
+datasets/prepared/**/artifacts/
+datasets/cache/
+nrp_calibration_pack/workload_specs/
+
+# Generated dataset-backed label/materialization outputs.
+/label/
+/by_profile_point/
+/dataset_precision*/
+/precision_dataset*/
+/index.jsonl
+/summary.json
+/workloads.jsonl
+/scheduler_resource_label.jsonl
+/label_v3.jsonl
+
+# Generated workload specs and validation/profile records.
+nrp_calibration_pack/workload_specs*/
+record/resource_label_validation_*/
+record/smoke_*/
+record/*_labeling*/
 
 # pdf files
 *.pdf
@@ -230,5 +276,21 @@ runs/
 nrp_calibration_pack/models/calib_*.py
 nrp_calibration_pack/manifest/
 nrp_calibration_pack/subset/
+nrp_calibration_pack/template_catalog/
+nrp_calibration_pack/profile_datasets/
 nrp_calibration_pack/selection_report.md
 nrp_calibration_pack/coverage_summary.json
+
+# Local calibration/profile smoke outputs.
+nrp_results_*/
+perfseer_*_source_labels.tar.gz
+*_source_labels.tar.gz
+perfseer_*_pack/
+perfseer_*_results/
+nrp_calibration_pack/template_catalog/*
+nrp_calibration_pack_*
+by_profile_point/*
+nrp_downloads/
+
+# GraphCode local workspace database, layouts, agent runs, and durable memory.
+.graphcode/

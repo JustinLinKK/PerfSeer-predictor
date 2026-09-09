@@ -6,12 +6,16 @@ build-backend = "setuptools.build_meta"
 name = "perfseer"
 version = "0.1.0"
 description = "Reproduction of PerfSeer (arXiv:2502.01206) SeerNet performance predictor"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.14"
 dependencies = [
-    "torch",
-    "torch_geometric",
+    "torch==2.11.0",
+    "torch_geometric==2.7.0",
+    "ogb",
     "networkx",
     "numpy",
+    "Pillow",
+    "soundfile",
+    "nvidia-ml-py",
     "scikit-learn",
     "tqdm",
     "pyyaml",
@@ -22,13 +26,55 @@ dependencies = [
     "openvino",
 ]
 
+[project.optional-dependencies]
+coverage = [
+    "torchvision==0.26.0",
+    "transformers==5.7.0",
+    "torchaudio==2.11.0",
+]
+a10g-dataset-pack = [
+    "appdirs>=1.4.4",
+    "kaggle==2.2.2",
+    "pandas>=2.2",
+    "py7zr>=0.21",
+    # Only used by the pinned SIIM-ISIC MLE-bench preparer to read TFRecord IDs.
+    "tensorflow-cpu>=2.16",
+    "torchaudio==2.11.0",
+    "torchvision==0.26.0",
+    "transformers==5.7.0",
+]
+
 [tool.setuptools.package-dir]
 perfseer = "src/perfseer"
 perfseer_optimized = "src/perfseer-optimized"
 perfseer_source_converter = "src/perfseer_source_converter"
+perfseer_student = "src/perfseer_student"
+perfseer_v3 = "src/perfseer_v3"
 
 [tool.setuptools]
-packages = ["perfseer", "perfseer_optimized", "perfseer_source_converter"]
+packages = [
+    "perfseer",
+    "perfseer_optimized",
+    "perfseer_source_converter",
+    "perfseer_student",
+    "perfseer_v3",
+    "perfseer_v3.coverage_corpus",
+    "perfseer_v3.dataset_pack",
+    "perfseer_v3.dataset_pack.adapters",
+    "perfseer_v3.dataset_pack.models",
+    "perfseer_v3.dataset_pack.operation_benchmarks",
+    "perfseer_v3.dataset_pack.composite_blocks",
+]
 
 [tool.setuptools.package-data]
 perfseer_optimized = ["configs/*.yaml", "configs/**/*.yaml"]
+perfseer_v3 = [
+    "*.md",
+    "*.yaml",
+    "*.json",
+    "schemas/*.json",
+    "configs/*.yaml",
+    "configs/**/*.yaml",
+    "registries/*.yaml",
+    "registries/*.json",
+]

@@ -1,0 +1,396 @@
+{
+  "registry_version": 2,
+  "tier_policy": {
+    "local": "Default local RTX 5090 development tier. Prefer datasets below roughly 30 GB after download and avoid sources that expand far beyond a workstation budget.",
+    "nautilus": "PVC-backed Nautilus tier for very large or archival reference candidates."
+  },
+  "subset_sizes": {
+    "tiny": 1024,
+    "small": 8192,
+    "medium": 32768,
+    "large": 131072,
+    "full": null
+  },
+  "datasets": [
+    {
+      "id": "cassava_leaf_disease",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_10_compressed",
+      "source_type": "kaggle_competition",
+      "slug": "cassava-leaf-disease-classification",
+      "task_family": "image_classification",
+      "modality": "image",
+      "approval_doc": "candidates/cassava_leaf_disease.md",
+      "model_families": [
+        "resnet_cnn",
+        "efficientnet_cnn",
+        "vgg_cnn",
+        "vit_encoder"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "cassava-leaf-disease-classification"
+      ],
+      "prepared_profile": "datasets/prepared/cassava_leaf_disease/dataset_profile.json"
+    },
+    {
+      "id": "imagenet_object_localization",
+      "status": "approved",
+      "target_tier": "nautilus",
+      "estimated_storage_gb": "150_plus_download; much_larger_extracted",
+      "local_replacement_id": "cassava_leaf_disease",
+      "source_type": "kaggle_competition",
+      "slug": "imagenet-object-localization-challenge",
+      "task_family": "image_classification",
+      "modality": "image",
+      "approval_doc": "candidates/imagenet_object_localization.md",
+      "model_families": [
+        "resnet_cnn",
+        "efficientnet_cnn",
+        "vgg_cnn",
+        "vit_encoder"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "imagenet-object-localization-challenge"
+      ]
+    },
+    {
+      "id": "siim_acr_pneumothorax",
+      "status": "approved",
+      "target_tier": "local",
+      "estimated_storage_gb": "low_single_digits_compressed",
+      "source_type": "kaggle_competition",
+      "slug": "siim-acr-pneumothorax-segmentation",
+      "task_family": "image_segmentation",
+      "modality": "image",
+      "approval_doc": "candidates/siim_acr_pneumothorax.md",
+      "model_families": [
+        "unet_encoder_decoder"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "siim-acr-pneumothorax-segmentation"
+      ]
+    },
+    {
+      "id": "pothole_image_segmentation",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_1_compressed",
+      "source_type": "kaggle_dataset",
+      "slug": "farzadnekouei/pothole-image-segmentation-dataset",
+      "task_family": "image_segmentation",
+      "modality": "image",
+      "approval_doc": "candidates/pothole_image_segmentation.md",
+      "model_families": [
+        "unet_encoder_decoder"
+      ],
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "farzadnekouei/pothole-image-segmentation-dataset"
+      ],
+      "prepared_profile": "datasets/prepared/pothole_image_segmentation/dataset_profile.json"
+    },
+    {
+      "id": "carvana_image_masking",
+      "status": "approved",
+      "target_tier": "nautilus",
+      "estimated_storage_gb": "30_plus_download; much_larger_extracted",
+      "local_replacement_id": "siim_acr_pneumothorax",
+      "source_type": "kaggle_competition",
+      "slug": "carvana-image-masking-challenge",
+      "task_family": "image_segmentation",
+      "modality": "image",
+      "approval_doc": "candidates/carvana_image_masking.md",
+      "model_families": [
+        "unet_encoder_decoder"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "carvana-image-masking-challenge"
+      ]
+    },
+    {
+      "id": "great_barrier_reef",
+      "status": "approved",
+      "target_tier": "local",
+      "estimated_storage_gb": "around_20_to_30_download",
+      "source_type": "kaggle_competition",
+      "slug": "tensorflow-great-barrier-reef",
+      "task_family": "object_detection",
+      "modality": "image",
+      "approval_doc": "candidates/great_barrier_reef.md",
+      "model_families": [
+        "yolo_detector"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "tensorflow-great-barrier-reef"
+      ]
+    },
+    {
+      "id": "taco_yolo_object_detection",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_1_compressed",
+      "source_type": "kaggle_dataset",
+      "slug": "vencerlanz09/taco-dataset-yolo-format",
+      "task_family": "object_detection",
+      "modality": "image",
+      "approval_doc": "candidates/taco_yolo_object_detection.md",
+      "model_families": [
+        "yolo_detector"
+      ],
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "vencerlanz09/taco-dataset-yolo-format"
+      ],
+      "prepared_profile": "datasets/prepared/taco_yolo_object_detection/dataset_profile.json"
+    },
+    {
+      "id": "global_wheat_detection",
+      "status": "approved",
+      "target_tier": "nautilus",
+      "estimated_storage_gb": "small_reference_candidate",
+      "local_replacement_id": "great_barrier_reef",
+      "source_type": "kaggle_competition",
+      "slug": "global-wheat-detection",
+      "task_family": "object_detection",
+      "modality": "image",
+      "approval_doc": "candidates/global_wheat_detection.md",
+      "model_families": [
+        "yolo_detector"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "global-wheat-detection"
+      ]
+    },
+    {
+      "id": "jigsaw_toxic_comment",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "well_under_10",
+      "source_type": "kaggle_competition",
+      "slug": "jigsaw-toxic-comment-classification-challenge",
+      "task_family": "text_classification",
+      "modality": "text",
+      "approval_doc": "candidates/jigsaw_toxic_comment.md",
+      "model_families": [
+        "bert_encoder"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "jigsaw-toxic-comment-classification-challenge"
+      ],
+      "prepared_profile": "datasets/prepared/jigsaw_toxic_comment/dataset_profile.json"
+    },
+    {
+      "id": "cnn_dailymail_summarization",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "well_under_10",
+      "source_type": "kaggle_dataset",
+      "slug": "gowrishankarp/newspaper-text-summarization-cnn-dailymail",
+      "task_family": "seq2seq_text",
+      "modality": "text",
+      "approval_doc": "candidates/cnn_dailymail_summarization.md",
+      "model_families": [
+        "t5_encoder_decoder"
+      ],
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "gowrishankarp/newspaper-text-summarization-cnn-dailymail"
+      ],
+      "prepared_profile": "datasets/prepared/cnn_dailymail_summarization/dataset_profile.json"
+    },
+    {
+      "id": "birdclef_2023",
+      "status": "approved",
+      "target_tier": "local",
+      "estimated_storage_gb": "single_digit_download; larger_prepared_features_possible",
+      "source_type": "kaggle_competition",
+      "slug": "birdclef-2023",
+      "task_family": "audio_classification",
+      "modality": "audio",
+      "approval_doc": "candidates/birdclef_2023.md",
+      "model_families": [
+        "ast_audio_transformer",
+        "wav2vec2_audio"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "birdclef-2023"
+      ]
+    },
+    {
+      "id": "animal_audio_classification",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_1_compressed",
+      "source_type": "kaggle_dataset",
+      "slug": "warcoder/cats-vs-dogs-vs-birds-audio-classification",
+      "task_family": "audio_classification",
+      "modality": "audio",
+      "approval_doc": "candidates/animal_audio_classification.md",
+      "model_families": [
+        "ast_audio_transformer",
+        "wav2vec2_audio"
+      ],
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "warcoder/cats-vs-dogs-vs-birds-audio-classification"
+      ],
+      "prepared_profile": "datasets/prepared/animal_audio_classification/dataset_profile.json"
+    },
+    {
+      "id": "birdclef_2024",
+      "status": "approved",
+      "target_tier": "nautilus",
+      "estimated_storage_gb": "40_plus_download_or_prepared",
+      "local_replacement_id": "birdclef_2023",
+      "source_type": "kaggle_competition",
+      "slug": "birdclef-2024",
+      "task_family": "audio_classification",
+      "modality": "audio",
+      "approval_doc": "candidates/birdclef_2024.md",
+      "model_families": [
+        "ast_audio_transformer",
+        "wav2vec2_audio"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "birdclef-2024"
+      ]
+    },
+    {
+      "id": "store_sales_time_series",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "well_under_10",
+      "source_type": "kaggle_competition",
+      "slug": "store-sales-time-series-forecasting",
+      "task_family": "time_series",
+      "modality": "time_series",
+      "approval_doc": "candidates/store_sales_time_series.md",
+      "model_families": [
+        "gru_temporal",
+        "lstm_temporal"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "store-sales-time-series-forecasting"
+      ],
+      "prepared_profile": "datasets/prepared/store_sales_time_series/dataset_profile.json"
+    },
+    {
+      "id": "home_credit_default_risk",
+      "status": "approved",
+      "target_tier": "local",
+      "estimated_storage_gb": "well_under_10",
+      "source_type": "kaggle_competition",
+      "slug": "home-credit-default-risk",
+      "task_family": "tabular",
+      "modality": "tabular",
+      "approval_doc": "candidates/home_credit_default_risk.md",
+      "model_families": [
+        "ft_transformer_tabular"
+      ],
+      "download_command": [
+        "kaggle",
+        "competitions",
+        "download",
+        "-c",
+        "home-credit-default-risk"
+      ]
+    },
+    {
+      "id": "credit_card_default",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "under_1_compressed",
+      "source_type": "kaggle_dataset",
+      "slug": "uciml/default-of-credit-card-clients-dataset",
+      "task_family": "tabular",
+      "modality": "tabular",
+      "approval_doc": "candidates/credit_card_default.md",
+      "model_families": [
+        "ft_transformer_tabular"
+      ],
+      "download_command": [
+        "kaggle",
+        "datasets",
+        "download",
+        "-d",
+        "uciml/default-of-credit-card-clients-dataset"
+      ],
+      "prepared_profile": "datasets/prepared/credit_card_default/dataset_profile.json"
+    },
+    {
+      "id": "ogbn_products",
+      "status": "prepared",
+      "target_tier": "local",
+      "estimated_storage_gb": "single_digit_download",
+      "source_type": "pyg_ogb",
+      "slug": "ogbn-products",
+      "task_family": "graph",
+      "modality": "graph",
+      "approval_doc": "candidates/ogbn_products.md",
+      "model_families": [
+        "gat_graph",
+        "mpnn_graph"
+      ],
+      "download_command": [
+        "python",
+        "scripts/manage_dataset_sources.py",
+        "download-ogb",
+        "ogbn_products"
+      ],
+      "prepared_profile": "datasets/prepared/ogbn_products/dataset_profile.json"
+    }
+  ]
+}

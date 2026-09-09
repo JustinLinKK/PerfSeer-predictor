@@ -1,0 +1,201 @@
+{
+  "$id": "perfseer_v3_transfer_artifact_metadata_v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "adapter_policy": {
+            "not": {
+              "const": "base"
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "base_artifact_sha256",
+          "base_hardware_id",
+          "target_subset_sha256",
+          "hardware_profile_sha256",
+          "workload_normalization_sha256",
+          "hardware_normalization_sha256",
+          "calibration_sha256",
+          "paired_residual_policy_sha256",
+          "transfer_lineage_sha256"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "adapter_policy": {
+      "enum": [
+        "base",
+        "linear_only",
+        "film_only",
+        "low_rank_only",
+        "film_low_rank",
+        "film_low_rank_heads",
+        "film_low_rank_last_block"
+      ]
+    },
+    "adapter_rank": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "base_artifact_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "base_hardware_id": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "calibration_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "feature_schema_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "feature_schema_version": {
+      "const": "perfseer_graph_v3_transfer_v1"
+    },
+    "graph_ir_version": {
+      "const": "perfseer_ir_v3"
+    },
+    "hardware_normalization_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "hardware_profile_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "model_config": {
+      "type": "object"
+    },
+    "model_release": {
+      "enum": [
+        "perfseer_v3_teacher",
+        "perfseer_v3_student"
+      ]
+    },
+    "operator_registry_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "optional_output_names": {
+      "contains": {
+        "const": "paired_residual"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "output_contract_version": {
+      "const": "perfseer_v3_outputs_v3_transfer"
+    },
+    "paired_residual_policy_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "target_hardware_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "target_subset_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "trainable_parameter_count": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "transfer_lineage_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "workload_normalization_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "model_release",
+    "graph_ir_version",
+    "feature_schema_version",
+    "feature_schema_sha256",
+    "operator_registry_sha256",
+    "target_hardware_id",
+    "adapter_policy",
+    "output_contract_version",
+    "optional_output_names",
+    "model_config"
+  ],
+  "type": "object"
+}

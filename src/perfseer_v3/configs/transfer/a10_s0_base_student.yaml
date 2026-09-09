@@ -1,0 +1,20 @@
+extends: ../train_deploy_model/v3_student.yaml
+run:
+  run_id: perfseer_v3_a10_s0_base_student
+model:
+  capacity_candidate: S0
+  hidden: 192
+  num_blocks: 2
+  exact_embedding_dim: 32
+  family_embedding_dim: 16
+  hash_embedding_dim: 8
+  overload_hash_embedding_dim: 8
+  phase_embedding_dim: 8
+  input_dtype_embedding_dim: 6
+  dtype_embedding_dim: 8
+  accumulation_dtype_embedding_dim: 8
+  backend_embedding_dim: 6
+  layout_embedding_dim: 4
+  rank_embedding_dim: 4
+  adapter_rank: 16
+  adapter_policy: base

@@ -1,0 +1,147 @@
+{
+  "capacity_report_sha256": "9c78680521540634f8832fe5d7b4bd0f8d32e1c28f48c417acc74c6294b5f7a4",
+  "compatibility_report_sha256": "720e7ec3e51efbcea730f3f34570397fe50dcc65775b3cff25cdb43d7cbd9d99",
+  "feature_contract": {
+    "categorical_cardinalities": {
+      "capture_backends": 6,
+      "capture_modes": 4,
+      "dtypes": 16,
+      "dynamic_shape_policies": 4,
+      "edge_alias_classes": 4,
+      "edge_dynamic_qualities": 4,
+      "feature_qualities": 5,
+      "layouts": 7,
+      "operator_backends": 10,
+      "optimizers": 20,
+      "phase_transitions": 17
+    },
+    "feature_schema_sha256": "7d7966b124db6d473db2391bffa692cad2c74858985ef2cd2f478b8fbe210e78",
+    "ordered_widths": {
+      "edge_continuous": 14,
+      "edge_flags": 5,
+      "global_continuous": 105,
+      "node_continuous": 40,
+      "node_flags": 21,
+      "quality": 8
+    }
+  },
+  "goal_document": "doc/PerfSeer_v3_encoder_and_model_goal_prompt.md",
+  "operator_registry_sha256": "e0cca4384b3a151cc0074e853de430a6493af02b3e669ccba2f8fe76a1f04d77",
+  "remaining_production_blockers": [
+    "Authenticate Nautilus and rerun the final CUDA verifier on target infrastructure.",
+    "Collect grouped production scheduler labels and measured per-operation GPU time.",
+    "Approve a registry revision only from the immutable measured GPU-time report.",
+    "Train and select T/S candidates from held-out accuracy, uncertainty, OOM, latency, size, memory, and duration evidence."
+  ],
+  "report_sha256": "c4474c62677b1b5a4475d2855ebcb4c513aacb01117ed60f68d4c4c19fd9f439",
+  "report_version": "perfseer_v3_encoder_model_audit_v1",
+  "requirements": [
+    {
+      "evidence": [
+        "graph_ir_v3.py",
+        "build_v3_schema.py",
+        "schema mismatch tests"
+      ],
+      "requirement": "versioned canonical graph IR and deterministic hashes",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "model.py HierarchicalNodeEncoder",
+        "identity perturbation tests"
+      ],
+      "requirement": "hierarchical exact/family/hash/phase/dtype/operator encoder",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "features.py typed external self-loops",
+        "edge perturbation tests"
+      ],
+      "requirement": "typed edge semantics including external tensors, slots, alias and phase",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "HierarchicalGlobalEncoder",
+        "hardware embedding tests"
+      ],
+      "requirement": "hardware/execution global encoder and confidence quality inputs",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "capture_training.py",
+        "liveness_v3.py",
+        "cost_v3.py",
+        "coarsen_v3.py"
+      ],
+      "requirement": "full training phases, liveness, cost and coarsening representation",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "model.py",
+        "six-output contract and export tests"
+      ],
+      "requirement": "existing-trunk control, phase-aware pooling and additive optional heads",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "/home/justin/PerfSeer-predictor/reports/perfseer_v3_capacity_study.json",
+        "7 exact parameter counts"
+      ],
+      "requirement": "T0/T1/T2 and S0/S1/S2/S3 capacity sweep",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "training_runner.py",
+        "run_perfseer_v3_training.py",
+        "smoke verification"
+      ],
+      "requirement": "gated CUDA/AMP teacher training and representation distillation runner",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "artifact.py",
+        "deployment_export.py",
+        "runtime.py"
+      ],
+      "requirement": "versioned artifact, verified CPU export and scheduler fallback",
+      "status": "local_pass"
+    },
+    {
+      "evidence": [
+        "This local diagnostic corpus has no production scheduler labels, limited real-model breadth, and no authenticated Nautilus target-hardware run; it can propose but not approve a production vocabulary."
+      ],
+      "requirement": "production measured-GPU-time registry approval",
+      "status": "production_blocked"
+    },
+    {
+      "evidence": [
+        "no grouped production scheduler-label prediction corpus"
+      ],
+      "requirement": "family-held-out teacher/student prediction and calibration gates",
+      "status": "production_blocked"
+    },
+    {
+      "evidence": [
+        "grouped production scheduler-label corpus",
+        "family-held-out validation predictions",
+        "predictor-training peak memory and duration",
+        "matched v2 graph-bucket latency runner",
+        "production calibration and OOM evaluation"
+      ],
+      "requirement": "peak predictor training memory/time and matched-v2 deployment ratios",
+      "status": "production_blocked"
+    }
+  ],
+  "summary": {
+    "local_passed": 9,
+    "local_requirements": 9,
+    "production_blocked": 3
+  }
+}

@@ -1,0 +1,7 @@
+extends: ../train_deploy_model/v3_student.yaml
+run:
+  run_id: perfseer_v3_a10_s1_base_student
+model:
+  capacity_candidate: S1
+  adapter_rank: 16
+  adapter_policy: base

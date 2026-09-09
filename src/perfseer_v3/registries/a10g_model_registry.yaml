@@ -1,0 +1,40 @@
+version: perfseer_v3_a10g_model_registry_v1
+target_hardware_id: nvidia_a10g_24gb_aws_g5
+training_approved: false
+factory_status: implemented_phase3_factories_v1
+entries:
+  - {family_id: resnet50, modality: vision, adapter_ids: [histopathologic-cancer, dogs-vs-cats], assertions: [aten.convolution.2d, aten.batch_norm, aten.add.Tensor], fields: [width_multiplier, stage_depths, input_resolution]}
+  - {family_id: efficientnet_b0_b4, modality: vision, adapter_ids: [dog-breed, plant-pathology], assertions: [aten.convolution.2d, aten.silu], fields: [variant, width_multiplier, depth_multiplier, input_resolution]}
+  - {family_id: mobilenet_v3_large, modality: vision, adapter_ids: [aerial-cactus, dog-breed], assertions: [aten.convolution.2d, aten.hardswish], fields: [width_multiplier, input_resolution]}
+  - {family_id: inception_v3, modality: vision, adapter_ids: [dogs-vs-cats, aptos2019], assertions: [aten.convolution.2d, aten.cat], fields: [aux_logits, input_resolution]}
+  - {family_id: vit_s16, modality: vision, adapter_ids: [siim-isic-melanoma, ranzcr-clip], assertions: [aten.scaled_dot_product_attention, aten.layer_norm], fields: [depth, heads, patch_size, input_resolution]}
+  - {family_id: swin_t, modality: vision, adapter_ids: [siim-isic-melanoma, ranzcr-clip], assertions: [aten.scaled_dot_product_attention, structural:aten.roll, aten.layer_norm], fields: [window_size, depths, heads, input_resolution]}
+  - {family_id: mlp_mixer_s, modality: vision, adapter_ids: [leaf-classification, dog-breed], assertions: [aten.linear, aten.gelu], fields: [depth, channel_dim, token_dim, patch_size]}
+  - {family_id: stn_cnn, modality: vision, adapter_ids: [aerial-cactus, dogs-vs-cats], assertions: [aten.grid_sampler, aten.convolution.2d], fields: [localization_width, input_resolution]}
+  - {family_id: mish_resnet, modality: vision, adapter_ids: [histopathologic-cancer, aptos2019], assertions: [aten.convolution.2d, aten.mish, aten.add.Tensor], fields: [stage_depths, width_multiplier]}
+  - {family_id: prelu_elu_cnn, modality: vision, adapter_ids: [leaf-classification, aerial-cactus], assertions: [aten.convolution.2d, aten.elu], fields: [activation, depth, width]}
+  - {family_id: unet_groupnorm, modality: vision, adapter_ids: [denoising-dirty-documents], assertions: [aten.convolution.2d, aten.group_norm, aten.upsample.bilinear2d], fields: [depth, base_channels, input_resolution]}
+  - {family_id: pix2pix, modality: vision, adapter_ids: [denoising-dirty-documents], assertions: [aten.convolution.2d, aten.convolution_transpose.2d, aten.binary_cross_entropy_with_logits], fields: [generator_width, discriminator_width, input_resolution]}
+  - {family_id: restormer, modality: vision, adapter_ids: [denoising-dirty-documents], assertions: [aten.convolution.2d, aten.scaled_dot_product_attention, aten.layer_norm], fields: [depths, heads, width, input_resolution]}
+  - {family_id: bert_base, modality: nlp, adapter_ids: [jigsaw-toxic, detecting-insults], assertions: [aten.embedding, aten.scaled_dot_product_attention, aten.layer_norm], fields: [sequence_length, layer_count, hidden_size]}
+  - {family_id: gpt2_small, modality: nlp, adapter_ids: [spooky-author, jigsaw-toxic, random-acts-of-pizza], assertions: [aten.embedding, aten.scaled_dot_product_attention, aten.layer_norm], fields: [sequence_length, layer_count, hidden_size]}
+  - {family_id: t5_small, modality: nlp, adapter_ids: [text-normalization-english, text-normalization-russian], assertions: [aten.embedding, aten.scaled_dot_product_attention, aten.layer_norm], fields: [encoder_layers, decoder_layers, sequence_length]}
+  - {family_id: llama_small, modality: nlp, adapter_ids: [spooky-author, jigsaw-toxic], assertions: [aten.rms_norm, aten.scaled_dot_product_attention, aten.silu], fields: [layers, heads, kv_heads, hidden_size]}
+  - {family_id: mla_mini_transformer, modality: nlp, adapter_ids: [jigsaw-toxic, detecting-insults], assertions: [aten.scaled_dot_product_attention, aten.matmul], fields: [latent_rank, heads, depth]}
+  - {family_id: kimi_delta_attention, modality: nlp, adapter_ids: [text-normalization-english, text-normalization-russian], assertions: [aten.matmul, structural:aten.cumsum, aten.silu], fields: [state_size, heads, depth]}
+  - {family_id: switch_moe, modality: nlp, adapter_ids: [jigsaw-toxic, spooky-author], assertions: [aten.topk, aten.gather, aten.linear], fields: [expert_count, top_k, capacity_factor]}
+  - {family_id: bilstm_crf, modality: nlp, adapter_ids: [spooky-author, detecting-insults], assertions: [aten.lstm, aten.logsumexp], fields: [hidden_size, layers, tag_count]}
+  - {family_id: gru_rnn_seq2seq, modality: nlp, adapter_ids: [text-normalization-english, text-normalization-russian], assertions: [aten.gru, aten.embedding], fields: [hidden_size, layers, sequence_length]}
+  - {family_id: fasttext_embeddingbag, modality: nlp, adapter_ids: [jigsaw-toxic, detecting-insults], assertions: [aten.embedding_bag, aten.linear], fields: [embedding_dim, ngram_buckets, sparse_gradients]}
+  - {family_id: distilbert_distillation, modality: nlp, adapter_ids: [jigsaw-toxic, detecting-insults], assertions: [aten.embedding, aten.scaled_dot_product_attention, aten.kl_div], fields: [student_layers, sequence_length, temperature]}
+  - {family_id: panns_cnn14, modality: audio, adapter_ids: [mlsp-2013-birds, icml-2013-whale], assertions: [aten.convolution.2d, aten.batch_norm, aten.log_softmax], fields: [sample_rate, mel_bins, clip_samples]}
+  - {family_id: temporal_convolutional_network, modality: audio, adapter_ids: [mlsp-2013-birds, icml-2013-whale], assertions: [aten.convolution.1d, aten.add.Tensor], fields: [levels, channels, kernel_size]}
+  - {family_id: m5_waveform_cnn, modality: audio, adapter_ids: [mlsp-2013-birds, icml-2013-whale], assertions: [aten.convolution.1d, aten.max_pool1d], fields: [channels, kernel_size, clip_samples]}
+  - {family_id: selu_mlp, modality: tabular, adapter_ids: [nyc-taxi-fare, tabular-playground-dec-2021], assertions: [aten.linear, aten.selu], fields: [depth, width, feature_count]}
+  - {family_id: tabtransformer, modality: tabular, adapter_ids: [tabular-playground-dec-2021, tabular-playground-may-2022], assertions: [aten.embedding, aten.scaled_dot_product_attention], fields: [depth, heads, embedding_dim]}
+  - {family_id: mixture_density_network, modality: tabular, adapter_ids: [nyc-taxi-fare], assertions: [aten.linear, aten.logsumexp], fields: [components, depth, width]}
+  - {family_id: cgcnn, modality: graph, adapter_ids: [nomad2018], assertions: [aten.index_select, structural:aten.segment_reduce, aten.linear], fields: [message_layers, atom_features, neighbor_limit]}
+  - {family_id: gcn, modality: graph, adapter_ids: [nomad2018], assertions: [aten.index_select, structural:aten.segment_reduce, aten.linear], fields: [layers, hidden_size, node_count]}
+  - {family_id: gat, modality: graph, adapter_ids: [nomad2018], assertions: [aten.index_select, structural:aten.segment_reduce, aten.softmax], fields: [layers, heads, hidden_size]}
+  - {family_id: graphsage, modality: graph, adapter_ids: [nomad2018], assertions: [aten.index_select, structural:aten.segment_reduce, aten.linear], fields: [layers, hidden_size, neighbor_count]}
+  - {family_id: independent_generated, modality: generated, adapter_ids: [histopathologic-cancer, jigsaw-toxic, mlsp-2013-birds, nyc-taxi-fare, nomad2018], assertions: [structural:all_tensor_nodes], fields: [source_lineage, architecture_specification, modality, depth, width]}

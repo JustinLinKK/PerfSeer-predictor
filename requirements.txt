@@ -12,6 +12,7 @@
 
 torch>=2.0          # CPU build; install via the cpu index-url shown above
 torch_geometric>=2.4
+ogb>=1.3.6
 networkx>=3.0
 numpy>=1.24
 scikit-learn>=1.2   # optional helper (split utilities / metrics cross-check)

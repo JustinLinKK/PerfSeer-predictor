@@ -1,0 +1,2611 @@
+{
+  "families": [
+    "unknown_or_custom",
+    "dense_matrix",
+    "convolution",
+    "attention",
+    "normalization",
+    "elementwise",
+    "activation_unary",
+    "reduction",
+    "loss_probability",
+    "pool_resample",
+    "layout_shape",
+    "index_scatter",
+    "embedding_sequence",
+    "random_regularization",
+    "sparse_graph",
+    "quantized_low_precision",
+    "spectral_linalg",
+    "custom_fused",
+    "training",
+    "optimizer"
+  ],
+  "hash_buckets": 1024,
+  "operations": [
+    {
+      "aliases": [],
+      "canonical_id": "aten.linear",
+      "cost_formula": "linear",
+      "decomposition": "preserve",
+      "exact_id": 1,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::linear"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.matmul",
+      "cost_formula": "matmul",
+      "decomposition": "preserve",
+      "exact_id": 2,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::matmul"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.convolution.2d",
+      "cost_formula": "convolution",
+      "decomposition": "preserve",
+      "exact_id": 3,
+      "family": "convolution",
+      "family_id": 2,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::conv2d"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::add_.Tensor"
+        },
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::add.out"
+        },
+        "<built-in function add>"
+      ],
+      "canonical_id": "aten.add.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 4,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast"
+      ],
+      "raw": "aten::add.Tensor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.batch_norm",
+      "cost_formula": "normalization",
+      "decomposition": "preserve",
+      "exact_id": 5,
+      "family": "normalization",
+      "family_id": 4,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::batch_norm"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.layer_norm",
+      "cost_formula": "normalization",
+      "decomposition": "preserve",
+      "exact_id": 6,
+      "family": "normalization",
+      "family_id": 4,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::layer_norm"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::silu_"
+        },
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::silu.out"
+        }
+      ],
+      "canonical_id": "aten.silu",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 7,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::silu"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.embedding",
+      "cost_formula": "embedding",
+      "decomposition": "preserve",
+      "exact_id": 8,
+      "family": "embedding_sequence",
+      "family_id": 12,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::embedding"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::transpose_"
+        },
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::transpose.int_out"
+        }
+      ],
+      "canonical_id": "aten.transpose",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 9,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::transpose.int"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "prim.getitem",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "prim::getitem"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::div_.Tensor"
+        },
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::div.out"
+        },
+        "aten::div.Scalar"
+      ],
+      "canonical_id": "aten.div.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 10,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast"
+      ],
+      "raw": "aten::div.Tensor"
+    },
+    {
+      "aliases": [
+        "aten::_softmax"
+      ],
+      "canonical_id": "aten.softmax",
+      "cost_formula": "softmax",
+      "decomposition": "preserve",
+      "exact_id": 11,
+      "family": "loss_probability",
+      "family_id": 8,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::softmax.int"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.gather",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 12,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::gather"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.topk",
+      "cost_formula": "sort_select",
+      "decomposition": "preserve",
+      "exact_id": 13,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::topk"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::clamp_min_"
+        },
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::clamp_min.out"
+        }
+      ],
+      "canonical_id": "aten.clamp_min",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 14,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::clamp_min"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.logsumexp",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 15,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::logsumexp"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.convolution.1d",
+      "cost_formula": "convolution",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "convolution",
+      "family_id": 2,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::conv1d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.convolution.3d",
+      "cost_formula": "convolution",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "convolution",
+      "family_id": 2,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::conv3d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.convolution_transpose.1d",
+      "cost_formula": "convolution",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "convolution",
+      "family_id": 2,
+      "flags": [
+        "transposed",
+        "materializing"
+      ],
+      "raw": "aten::conv_transpose1d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.convolution_transpose.2d",
+      "cost_formula": "convolution",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "convolution",
+      "family_id": 2,
+      "flags": [
+        "transposed",
+        "materializing"
+      ],
+      "raw": "aten::conv_transpose2d.input"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.convolution_transpose.3d",
+      "cost_formula": "convolution",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "convolution",
+      "family_id": 2,
+      "flags": [
+        "transposed",
+        "materializing"
+      ],
+      "raw": "aten::conv_transpose3d.input"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.addmm",
+      "cost_formula": "matmul",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::addmm"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.mm",
+      "cost_formula": "matmul",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::mm"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.bmm",
+      "cost_formula": "matmul",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::bmm"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.einsum",
+      "cost_formula": "einsum",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::einsum"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.scaled_dot_product_attention",
+      "cost_formula": "attention",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "attention",
+      "family_id": 3,
+      "flags": [
+        "fused",
+        "materializing"
+      ],
+      "raw": "aten::scaled_dot_product_attention"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.scaled_dot_product_attention.flash",
+      "cost_formula": "attention",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "attention",
+      "family_id": 3,
+      "flags": [
+        "fused",
+        "materializing"
+      ],
+      "raw": "aten::_scaled_dot_product_flash_attention"
+    },
+    {
+      "aliases": [
+        "aten::_native_batch_norm_legit_functional",
+        "aten::_native_batch_norm_legit_no_training",
+        "aten::cudnn_batch_norm"
+      ],
+      "canonical_id": "aten.native_batch_norm",
+      "cost_formula": "normalization",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "normalization",
+      "family_id": 4,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::native_batch_norm"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.native_layer_norm",
+      "cost_formula": "normalization",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "normalization",
+      "family_id": 4,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::native_layer_norm"
+    },
+    {
+      "aliases": [
+        "aten::native_group_norm"
+      ],
+      "canonical_id": "aten.group_norm",
+      "cost_formula": "normalization",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "normalization",
+      "family_id": 4,
+      "flags": [
+        "reduction",
+        "grouped",
+        "materializing"
+      ],
+      "raw": "aten::group_norm"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.instance_norm",
+      "cost_formula": "normalization",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "normalization",
+      "family_id": 4,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::instance_norm"
+    },
+    {
+      "aliases": [
+        "aten::_fused_rms_norm"
+      ],
+      "canonical_id": "aten.rms_norm",
+      "cost_formula": "normalization",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "normalization",
+      "family_id": 4,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::rms_norm"
+    },
+    {
+      "aliases": [
+        "aten::sub_.Tensor",
+        "aten::sub.out"
+      ],
+      "canonical_id": "aten.sub.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast"
+      ],
+      "raw": "aten::sub.Tensor"
+    },
+    {
+      "aliases": [
+        "aten::mul_.Tensor",
+        "aten::mul.out",
+        "aten::mul.Scalar"
+      ],
+      "canonical_id": "aten.mul.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast"
+      ],
+      "raw": "aten::mul.Tensor"
+    },
+    {
+      "aliases": [
+        "aten::pow.Tensor_Scalar"
+      ],
+      "canonical_id": "aten.pow.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast"
+      ],
+      "raw": "aten::pow.Tensor_Tensor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.where",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast"
+      ],
+      "raw": "aten::where.self"
+    },
+    {
+      "aliases": [
+        "aten::relu_",
+        "aten::relu.out"
+      ],
+      "canonical_id": "aten.relu",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::relu"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.gelu",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::gelu"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.sigmoid",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::sigmoid"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.tanh",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::tanh"
+    },
+    {
+      "aliases": [
+        "aten::sum"
+      ],
+      "canonical_id": "aten.sum",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::sum.dim_IntList"
+    },
+    {
+      "aliases": [
+        "aten::mean"
+      ],
+      "canonical_id": "aten.mean",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::mean.dim"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.amax",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::amax"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.mse_loss",
+      "cost_formula": "loss",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "loss_probability",
+      "family_id": 8,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::mse_loss"
+    },
+    {
+      "aliases": [
+        "aten::nll_loss_nd"
+      ],
+      "canonical_id": "aten.nll_loss",
+      "cost_formula": "loss",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "loss_probability",
+      "family_id": 8,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::nll_loss_forward"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.max_pool.2d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::max_pool2d_with_indices"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.avg_pool.2d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::avg_pool2d"
+    },
+    {
+      "aliases": [
+        "aten::_adaptive_avg_pool2d"
+      ],
+      "canonical_id": "aten.adaptive_avg_pool.2d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "reduction",
+        "adaptive",
+        "materializing"
+      ],
+      "raw": "aten::adaptive_avg_pool2d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.upsample.bilinear2d",
+      "cost_formula": "resample",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::upsample_bilinear2d"
+    },
+    {
+      "aliases": [
+        "prims::collapse_view",
+        "prims::view_of",
+        "aten::as_strided",
+        "aten::_unsafe_view"
+      ],
+      "canonical_id": "aten.view",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::view"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.reshape",
+      "cost_formula": "view_or_copy",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [],
+      "raw": "aten::reshape"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.permute",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::permute"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.cat",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::cat"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.stack",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::stack"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.clone",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::clone"
+    },
+    {
+      "aliases": [
+        "aten::expand_as"
+      ],
+      "canonical_id": "aten.expand",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only",
+        "broadcast"
+      ],
+      "raw": "aten::expand"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.repeat",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::repeat"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.index",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::index.Tensor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.scatter",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::scatter.src"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.sort",
+      "cost_formula": "sort_select",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::sort"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::dropout_"
+        }
+      ],
+      "canonical_id": "aten.dropout",
+      "cost_formula": "dropout",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "random_regularization",
+      "family_id": 13,
+      "flags": [
+        "random",
+        "materializing"
+      ],
+      "raw": "aten::dropout"
+    },
+    {
+      "aliases": [
+        "aten::to.device",
+        "aten::to.dtype_layout"
+      ],
+      "canonical_id": "aten.to_copy",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::_to_copy"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.loss.generic",
+      "cost_formula": "loss",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "loss_probability",
+      "family_id": 8,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "perfseer::loss.generic"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.training.analytical_backward",
+      "cost_formula": "unknown",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "training",
+      "family_id": 18,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::analytical_backward"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.sgd",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.sgd"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.adam",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.adam"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.adamw",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.adamw"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.asgd",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.asgd"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.adadelta",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.adadelta"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.adafactor",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.adafactor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.adagrad",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.adagrad"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.adamax",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.adamax"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.lbfgs",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.lbfgs"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.muon",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.muon"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.nadam",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.nadam"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.radam",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.radam"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.rmsprop",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.rmsprop"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.rprop",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.rprop"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.sparse_adam",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.sparse_adam"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.lamb",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.lamb"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.lars",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.lars"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "perfseer.optimizer.lion",
+      "cost_formula": "optimizer",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "optimizer",
+      "family_id": 19,
+      "flags": [
+        "estimated",
+        "materializing"
+      ],
+      "raw": "perfseer::optimizer.lion"
+    },
+    {
+      "aliases": [
+        "<built-in function getitem>"
+      ],
+      "canonical_id": "operator.getitem",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "operator::getitem"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.abs",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::abs"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.adaptive_avg_pool1d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "adaptive",
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::adaptive_avg_pool1d"
+    },
+    {
+      "aliases": [
+        "aten::_adaptive_avg_pool3d"
+      ],
+      "canonical_id": "aten.adaptive_avg_pool3d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "adaptive",
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::adaptive_avg_pool3d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.amin",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::amin"
+    },
+    {
+      "aliases": [
+        "aten::arange.start"
+      ],
+      "canonical_id": "aten.arange",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::arange"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.argmax",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::argmax"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.argmin",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::argmin"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.avg_pool1d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::avg_pool1d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.avg_pool3d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::avg_pool3d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.bernoulli",
+      "cost_formula": "dropout",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "random_regularization",
+      "family_id": 13,
+      "flags": [
+        "random",
+        "materializing"
+      ],
+      "raw": "aten::bernoulli"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.bilinear",
+      "cost_formula": "einsum",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::bilinear"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.binary_cross_entropy_with_logits",
+      "cost_formula": "loss",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "loss_probability",
+      "family_id": 8,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::binary_cross_entropy_with_logits"
+    },
+    {
+      "aliases": [
+        "prims::broadcast_in_dim"
+      ],
+      "canonical_id": "aten.broadcast_tensors",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "broadcast",
+        "view_only"
+      ],
+      "raw": "aten::broadcast_tensors"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.chunk",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::chunk"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.clamp",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::clamp"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.contiguous",
+      "cost_formula": "view_or_copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::contiguous"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.cos",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::cos"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.cross_entropy_loss",
+      "cost_formula": "loss",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "loss_probability",
+      "family_id": 8,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::cross_entropy_loss"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.elu",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::elu"
+    },
+    {
+      "aliases": [
+        "aten::_embedding_bag"
+      ],
+      "canonical_id": "aten.embedding_bag",
+      "cost_formula": "embedding",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "embedding_sequence",
+      "family_id": 12,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::embedding_bag.padding_idx"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.erf",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::erf"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.exp",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::exp"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.flatten",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::flatten.using_ints"
+    },
+    {
+      "aliases": [
+        "aten::grid_sampler_2d"
+      ],
+      "canonical_id": "aten.grid_sampler",
+      "cost_formula": "resample",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::grid_sampler"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.gru",
+      "cost_formula": "recurrent",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "embedding_sequence",
+      "family_id": 12,
+      "flags": [
+        "fused",
+        "materializing"
+      ],
+      "raw": "aten::gru.input"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.index_put",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::index_put"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.index_select",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::index_select"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.kl_div",
+      "cost_formula": "loss",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "loss_probability",
+      "family_id": 8,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::kl_div"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.leaky_relu",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::leaky_relu"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.linalg_vector_norm",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::linalg_vector_norm"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.log",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::log"
+    },
+    {
+      "aliases": [
+        "aten::_log_softmax"
+      ],
+      "canonical_id": "aten.log_softmax",
+      "cost_formula": "softmax",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "loss_probability",
+      "family_id": 8,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::log_softmax.int"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.lstm",
+      "cost_formula": "recurrent",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "embedding_sequence",
+      "family_id": 12,
+      "flags": [
+        "fused",
+        "materializing"
+      ],
+      "raw": "aten::lstm.input"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::masked_fill_.Scalar"
+        }
+      ],
+      "canonical_id": "aten.masked_fill",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::masked_fill.Scalar"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.masked_select",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::masked_select"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.max_pool1d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::max_pool1d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.max_pool2d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::max_pool2d"
+    },
+    {
+      "aliases": [
+        "aten::max_pool3d_with_indices"
+      ],
+      "canonical_id": "aten.max_pool3d",
+      "cost_formula": "pooling",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::max_pool3d"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.maximum",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::maximum"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.minimum",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::minimum"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.mish",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::mish"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.mv",
+      "cost_formula": "matmul",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::mv"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.narrow",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::narrow"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.ones_like",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::ones_like"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.pad",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::pad"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.prod",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::prod.dim_int"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.rand_like",
+      "cost_formula": "dropout",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "random_regularization",
+      "family_id": 13,
+      "flags": [
+        "random",
+        "materializing"
+      ],
+      "raw": "aten::rand_like"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.remainder.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::remainder.Tensor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.rnn_tanh",
+      "cost_formula": "recurrent",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "embedding_sequence",
+      "family_id": 12,
+      "flags": [
+        "fused",
+        "materializing"
+      ],
+      "raw": "aten::rnn_tanh.input"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.rsqrt",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::rsqrt"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.scatter_reduce",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::scatter_reduce.two"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.select",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::select.int"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.selu",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::selu"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.sin",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::sin"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.slice",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::slice.Tensor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.softplus",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::softplus"
+    },
+    {
+      "aliases": [
+        "prims::split_dim"
+      ],
+      "canonical_id": "aten.split",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::split.Tensor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.sqrt",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::sqrt"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.squeeze",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::squeeze.dim"
+    },
+    {
+      "aliases": [
+        "aten::std.correction"
+      ],
+      "canonical_id": "aten.std",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::std.dim"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.sym_size",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::sym_size.int"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.tile",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::tile"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.unbind",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::unbind.int"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.unflatten",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::unflatten.int"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.unsqueeze",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::unsqueeze"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.upsample_bilinear2d.vec",
+      "cost_formula": "resample",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::upsample_bilinear2d.vec"
+    },
+    {
+      "aliases": [
+        "aten::var.correction"
+      ],
+      "canonical_id": "aten.var",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::var.dim"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.zeros",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::zeros"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.zeros_like",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::zeros_like"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.bitwise_and.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::__and__.Tensor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.eq.Scalar",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::eq.Scalar"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.ge.Scalar",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::ge.Scalar"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.ne.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::ne.Tensor"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.hardsigmoid",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::hardsigmoid"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::hardswish_"
+        }
+      ],
+      "canonical_id": "aten.hardswish",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "activation_unary",
+      "family_id": 6,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::hardswish"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.new_ones",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::new_ones"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.new_zeros",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::new_zeros"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.ones",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::ones"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.pow.Scalar",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "in_place"
+      ],
+      "raw": "aten::pow_.Scalar"
+    },
+    {
+      "aliases": [
+        {
+          "flags": [
+            "in_place"
+          ],
+          "raw": "aten::scatter_add_"
+        }
+      ],
+      "canonical_id": "aten.scatter_add",
+      "cost_formula": "indexing",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "index_scatter",
+      "family_id": 11,
+      "flags": [
+        "reduction"
+      ],
+      "raw": "aten::scatter_add"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.t",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::t"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.cudnn_rnn",
+      "cost_formula": "recurrent",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "embedding_sequence",
+      "family_id": 12,
+      "flags": [
+        "fused",
+        "materializing"
+      ],
+      "raw": "aten::_cudnn_rnn"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.local_scalar_dense",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::_local_scalar_dense"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.detach",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "view_only"
+      ],
+      "raw": "aten::detach"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.all",
+      "cost_formula": "reduction",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "reduction",
+      "family_id": 7,
+      "flags": [
+        "reduction",
+        "materializing"
+      ],
+      "raw": "aten::all"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.empty",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::empty.memory_format"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.set.source_storage",
+      "cost_formula": "view",
+      "decomposition": "decompose",
+      "exact_id": 0,
+      "family": "layout_shape",
+      "family_id": 10,
+      "flags": [
+        "in_place",
+        "view_only"
+      ],
+      "raw": "aten::set_.source_Storage"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.convolution.generic",
+      "cost_formula": "convolution",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "convolution",
+      "family_id": 2,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::convolution"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.scaled_dot_product_attention.efficient",
+      "cost_formula": "attention",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "attention",
+      "family_id": 3,
+      "flags": [
+        "fused",
+        "materializing"
+      ],
+      "raw": "aten::_scaled_dot_product_efficient_attention"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.native_multi_head_attention",
+      "cost_formula": "attention",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "attention",
+      "family_id": 3,
+      "flags": [
+        "fused",
+        "materializing"
+      ],
+      "raw": "aten::_native_multi_head_attention"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.trilinear",
+      "cost_formula": "einsum",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "dense_matrix",
+      "family_id": 1,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::_trilinear"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.constant_pad_nd",
+      "cost_formula": "copy",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "pool_resample",
+      "family_id": 9,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::constant_pad_nd"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.native_dropout",
+      "cost_formula": "dropout",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "random_regularization",
+      "family_id": 13,
+      "flags": [
+        "random",
+        "materializing"
+      ],
+      "raw": "aten::native_dropout"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.native_dropout_backward",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "training",
+      "family_id": 18,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::native_dropout_backward"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.sigmoid_backward",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "training",
+      "family_id": 18,
+      "flags": [
+        "materializing"
+      ],
+      "raw": "aten::sigmoid_backward"
+    },
+    {
+      "aliases": [],
+      "canonical_id": "aten.xlogy.Tensor",
+      "cost_formula": "elementwise",
+      "decomposition": "preserve",
+      "exact_id": 0,
+      "family": "elementwise",
+      "family_id": 5,
+      "flags": [
+        "broadcast",
+        "materializing"
+      ],
+      "raw": "aten::xlogy.Tensor"
+    }
+  ],
+  "selection": {
+    "basis": "bootstrap_exact_ids_with_local_coverage_diagnostic",
+    "diagnostic_candidate_exact_operation_count": 65,
+    "diagnostic_gpu_time_report_sha256": "1134bfb6b6cf1c925e2fc14bea4349c6910167b25e109131ad39ff8247904564",
+    "gpu_time_report_sha256": null,
+    "note": "Final non-UNK IDs must be rebuilt from the smallest vocabulary covering 95% of measured corpus GPU time.",
+    "training_approved": false
+  },
+  "sha256": "e0cca4384b3a151cc0074e853de430a6493af02b3e669ccba2f8fe76a1f04d77",
+  "training_approved": false,
+  "version": "perfseer_aten_ops_v3"
+}

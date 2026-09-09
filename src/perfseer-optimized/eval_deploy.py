@@ -42,12 +42,13 @@ from .eval import (
     rows_by_label_domain,
     rows_by_precision,
     rows_from_predictions,
+    set_metric_names_for_config,
     split_result_fields,
     stats_from_metadata,
     string_value_counts,
     write_error_analysis,
 )
-from .data import NUM_TARGETS, RESOURCE_REGIME_VOCAB, TARGET_NAMES, FeatureConfig, feature_layout, precision_hardware_config
+from .data import NUM_TARGETS, RESOURCE_REGIME_VOCAB, FeatureConfig, feature_layout, precision_hardware_config
 from .model import count_parameters
 from .train import append_jsonl, json_default
 
@@ -251,6 +252,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     first = ckpts[0]
     stats = stats_from_metadata(first)
     ds, feature_cfg, data_root = build_test_dataset(args, first, stats)
+    metric_names = set_metric_names_for_config(feature_cfg)
     loader = DataLoader(ds, batch_size=profile.batch_size, shuffle=False, num_workers=args.num_workers)
     example_batch = next(iter(loader))
 
@@ -334,7 +336,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             "latency_forward_ms_p95": bench["p95_ms"],
             "graphs_per_sec": bench["graphs_per_sec"],
             "mean_mape": float(np.mean(mapes)) if mapes else float("nan"),
-            "metrics": {TARGET_NAMES[idx]: rows[idx] for idx in rows},
+            "target_names": metric_names,
+            "metrics": {metric_names[idx]: rows[idx] for idx in rows},
             "metrics_by_precision": precision_rows,
             "precision_config_counts": precision_count_rows,
             "metrics_by_label_domain": label_domain_rows,

@@ -1,0 +1,116 @@
+version: perfseer_v3_a10g_operation_support_policy_v1
+target_hardware_id: nvidia_a10g_24gb_aws_g5
+registry_version: perfseer_aten_ops_v3
+registry_sha256: e0cca4384b3a151cc0074e853de430a6493af02b3e669ccba2f8fe76a1f04d77
+expected_operation_count: 179
+contract_status: planning
+training_approved: false
+generator_mapping_status: declared_pending_phase2_implementation
+
+defaults:
+  required_dtypes: [float32, float16, bfloat16]
+  required_layouts: [contiguous, non_contiguous]
+  required_shape_regimes: [tiny, small, medium, large, boundary]
+  composite_contexts: [sequential, residual_or_branch, saved_activation_or_alias]
+
+families:
+  unknown_or_custom:
+    support_state: structural_only
+    reason: Generic family/hash/custom encoding remains available; exact identities require registry review.
+    required_phases: []
+    required_backends: []
+  dense_matrix:
+    support_state: required_measured
+    reason: P0 A10G collection obligation; no measured coverage is claimed by this planning contract.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  convolution:
+    support_state: required_measured
+    reason: P0 A10G collection obligation; no measured coverage is claimed by this planning contract.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  attention:
+    support_state: required_measured
+    reason: Requested and observed SDPA/attention backend identities must match on the pinned A10G stack.
+    required_phases: [forward, backward]
+    required_backends: [cuda_requested_and_observed]
+  normalization:
+    support_state: required_measured
+    reason: P0 A10G collection obligation; distributed-only semantics remain excluded.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  elementwise:
+    support_state: required_measured
+    reason: P0 A10G collection obligation; no measured coverage is claimed by this planning contract.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  activation_unary:
+    support_state: required_measured
+    reason: P0 A10G collection obligation; no measured coverage is claimed by this planning contract.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  reduction:
+    support_state: required_measured
+    reason: P0 A10G collection obligation; differentiability is resolved per generated cell.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  loss_probability:
+    support_state: required_measured
+    reason: P0 A10G collection obligation across loss and backward phases.
+    required_phases: [loss, backward]
+    required_backends: [cuda_eager]
+  pool_resample:
+    support_state: required_measured
+    reason: P0 A10G collection obligation; no measured coverage is claimed by this planning contract.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  layout_shape:
+    support_state: required_measured
+    reason: P0 A10G collection obligation including view-versus-copy identity.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  index_scatter:
+    support_state: required_measured
+    reason: P0 A10G collection obligation; differentiability is resolved per generated cell.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  embedding_sequence:
+    support_state: required_measured
+    reason: P0 A10G collection obligation including native and decomposed sequence paths.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  random_regularization:
+    support_state: required_measured
+    reason: P0 A10G collection obligation with deterministic seed policy and backward coverage where applicable.
+    required_phases: [forward, backward]
+    required_backends: [cuda_eager]
+  sparse_graph:
+    support_state: structural_only
+    reason: The bootstrap registry has no exact sparse/graph rules; broad support stays disabled until Phase 2 adds and measures them.
+    required_phases: []
+    required_backends: []
+  quantized_low_precision:
+    support_state: structural_only
+    reason: The bootstrap registry has no exact QAT rules; unsupported FP8/FP4/NVFP4 paths must later be hardware_unsupported.
+    required_phases: []
+    required_backends: []
+  spectral_linalg:
+    support_state: structural_only
+    reason: The bootstrap registry has no exact spectral/linalg rules; broad support stays disabled until Phase 2 adds and measures them.
+    required_phases: []
+    required_backends: []
+  custom_fused:
+    support_state: structural_only
+    reason: The bootstrap registry has no validated exact custom/fused rules; generic custom encoding remains available.
+    required_phases: []
+    required_backends: []
+  training:
+    support_state: required_measured
+    reason: P0 A10G collection obligation for captured backward/training phase identities.
+    required_phases: [backward]
+    required_backends: [cuda_eager]
+  optimizer:
+    support_state: required_measured
+    reason: Every deployment-approved optimizer identity requires compatible A10G measurements.
+    required_phases: [optimizer]
+    required_backends: [cuda_single_tensor, cuda_foreach_or_fused_when_supported]

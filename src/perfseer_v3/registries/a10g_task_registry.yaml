@@ -1,0 +1,31 @@
+version: perfseer_v3_a10g_task_registry_v1
+target_hardware_id: nvidia_a10g_24gb_aws_g5
+training_approved: false
+metadata_source_url: https://github.com/openai/mle-bench
+metadata_revision: 507f92e1138bb6e40dac5c6ee7a6758e6424bf97
+size_hint_source_url: https://github.com/openai/mle-bench/blob/507f92e1138bb6e40dac5c6ee7a6758e6424bf97/README.md#lite-evaluation
+archive_checksum_state: materialization_required
+expected_train_examples_per_task: 4096
+entries:
+  - {task_id: histopathologic-cancer, kaggle_slug: histopathologic-cancer-detection, modality: vision, compressed_size_hint_bytes: 7760000000}
+  - {task_id: dogs-vs-cats, kaggle_slug: dogs-vs-cats-redux-kernels-edition, modality: vision, compressed_size_hint_bytes: 850000000}
+  - {task_id: dog-breed, kaggle_slug: dog-breed-identification, modality: vision, compressed_size_hint_bytes: 750000000}
+  - {task_id: siim-isic-melanoma, kaggle_slug: siim-isic-melanoma-classification, modality: vision, compressed_size_hint_bytes: 116160000000}
+  - {task_id: aptos2019, kaggle_slug: aptos2019-blindness-detection, modality: vision, compressed_size_hint_bytes: 10220000000}
+  - {task_id: aerial-cactus, kaggle_slug: aerial-cactus-identification, modality: vision, compressed_size_hint_bytes: 25400000}
+  - {task_id: plant-pathology, kaggle_slug: plant-pathology-2020-fgvc7, modality: vision, compressed_size_hint_bytes: 800000000}
+  - {task_id: ranzcr-clip, kaggle_slug: ranzcr-clip-catheter-line-classification, modality: vision, compressed_size_hint_bytes: 13130000000}
+  - {task_id: leaf-classification, kaggle_slug: leaf-classification, modality: vision, compressed_size_hint_bytes: 36000000}
+  - {task_id: denoising-dirty-documents, kaggle_slug: denoising-dirty-documents, modality: vision, compressed_size_hint_bytes: 60000000}
+  - {task_id: jigsaw-toxic, kaggle_slug: jigsaw-toxic-comment-classification-challenge, modality: nlp, compressed_size_hint_bytes: 60000000}
+  - {task_id: detecting-insults, kaggle_slug: detecting-insults-in-social-commentary, modality: nlp, compressed_size_hint_bytes: 2000000}
+  - {task_id: spooky-author, kaggle_slug: spooky-author-identification, modality: nlp, compressed_size_hint_bytes: 1900000}
+  - {task_id: random-acts-of-pizza, kaggle_slug: random-acts-of-pizza, modality: nlp, compressed_size_hint_bytes: 3000000}
+  - {task_id: text-normalization-english, kaggle_slug: text-normalization-challenge-english-language, modality: nlp, compressed_size_hint_bytes: 10000000}
+  - {task_id: text-normalization-russian, kaggle_slug: text-normalization-challenge-russian-language, modality: nlp, compressed_size_hint_bytes: 10000000}
+  - {task_id: mlsp-2013-birds, kaggle_slug: mlsp-2013-birds, modality: audio, compressed_size_hint_bytes: 585100000}
+  - {task_id: icml-2013-whale, kaggle_slug: the-icml-2013-whale-challenge-right-whale-redux, modality: audio, compressed_size_hint_bytes: 293140000}
+  - {task_id: nyc-taxi-fare, kaggle_slug: new-york-city-taxi-fare-prediction, modality: tabular, compressed_size_hint_bytes: 5700000000}
+  - {task_id: nomad2018, kaggle_slug: nomad2018-predict-transparent-conductors, modality: graph, compressed_size_hint_bytes: 6240000}
+  - {task_id: tabular-playground-dec-2021, kaggle_slug: tabular-playground-series-dec-2021, modality: tabular, compressed_size_hint_bytes: 700000000}
+  - {task_id: tabular-playground-may-2022, kaggle_slug: tabular-playground-series-may-2022, modality: tabular, compressed_size_hint_bytes: 570000000}

@@ -47,7 +47,7 @@ GPU_PRESETS = {
     "l40s": {"resource": "nvidia.com/gpu", "products": ["NVIDIA-L40S"]},
     "rtx_a4000": {"resource": "nvidia.com/gpu", "products": ["NVIDIA-RTX-A4000"]},
     "rtx_a5000": {"resource": "nvidia.com/gpu", "products": ["NVIDIA-RTX-A5000"]},
-    "rtx_a6000": {"resource": "nvidia.com/gpu", "products": ["NVIDIA-RTX-A6000"]},
+    "rtx_a6000": {"resource": "nvidia.com/rtxa6000", "products": ["NVIDIA-RTX-A6000"]},
     "rtx_4000_ada": {"resource": "nvidia.com/gpu", "products": ["NVIDIA-RTX-4000-Ada-Generation"]},
     "rtx_5000_ada": {"resource": "nvidia.com/gpu", "products": ["NVIDIA-RTX-5000-Ada-Generation"]},
     "rtx_pro_6000_blackwell": {
@@ -373,7 +373,7 @@ spec:
               --profile-epochs 1
               --batches-per-epoch 1
               --sample-interval 0.01
-              --optimizer sgd
+              --optimizer adam
               --sm-occupancy-source nvml_proxy
               --precision-config fp32_ieee &&
               python /config/verify_sampled_labels.py {out_dir}

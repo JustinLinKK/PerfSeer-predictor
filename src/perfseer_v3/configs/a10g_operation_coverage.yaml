@@ -1,0 +1,22 @@
+version: perfseer_v3_a10g_operation_coverage_gates_v1
+target_hardware_id: nvidia_a10g_24gb_aws_g5
+training_approved: false
+gates:
+  silently_dropped_tensor_producing_operations: 0
+  structurally_encoded_node_fraction: 1.0
+  minimum_strict_complete_capture_rate: 0.95
+  minimum_complete_tensor_node_encoding_rate: 0.99
+  maximum_unknown_or_custom_gpu_time_fraction: 0.02
+  minimum_exact_vocabulary_gpu_time_fraction: 0.95
+  capture_profile_workload_fingerprint_mismatches: 0
+required_shape_regimes: [tiny, small, medium, large, boundary]
+minimum_composite_contexts_when_semantically_possible: 3
+coverage_dimensions:
+  - operation
+  - shape_regime
+  - dtype_and_accumulation_policy
+  - phase
+  - backend
+  - layout
+  - optimizer
+  - architecture_context

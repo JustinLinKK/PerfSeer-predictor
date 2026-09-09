@@ -127,6 +127,40 @@ class SourceConverterTests(unittest.TestCase):
         self.assertEqual(set(graph.predecessors(2)), {0, 1})
         self.assertEqual(graph.nodes[2]["feature"]["memory_info"]["output_channels"], 5)
 
+    def test_expanded_token_recurrent_and_attention_ops_convert(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = self.write_model(
+                tmp,
+                """
+                import torch
+                import torch.nn as nn
+
+                class TinySequence(nn.Module):
+                    def __init__(self):
+                        super().__init__()
+                        self.embedding = nn.Embedding(32, 8)
+                        self.gru = nn.GRU(8, 8, batch_first=True)
+                        self.norm = nn.LayerNorm(8)
+                        self.fc = nn.Linear(8, 4)
+
+                    def forward(self, tokens):
+                        x = self.embedding(tokens)
+                        x, _ = self.gru(x)
+                        scores = torch.matmul(x, x.transpose(-2, -1))
+                        probs = torch.softmax(scores, dim=-1)
+                        x = torch.matmul(probs, x)
+                        return self.fc(self.norm(x))
+                """,
+            )
+            graph = convert_source_to_networkx(
+                SourceModelSpec(source, "TinySequence", ((2, 5),), input_dtypes=("int64",))
+            )
+
+        types = [data["feature"]["type"] for _, data in graph.nodes(data=True)]
+        for expected in ("Embedding", "GRU", "Transpose", "MatMul", "Softmax", "LayerNormalization", "Gemm"):
+            self.assertIn(expected, types)
+        self.assertTrue(all(data["feature"]["memory_info"]["rank"] >= 2 for _, data in graph.nodes(data=True)))
+
     def test_cli_writes_graph_and_data(self) -> None:
         ensure_optimized_alias()
         with tempfile.TemporaryDirectory() as tmp:
@@ -485,9 +519,9 @@ class SourceConverterTests(unittest.TestCase):
                         "test_pair_ids": [{"graph_stem": "graph_0000", "label_stem": "graph_0000_bf16_amp"}],
                         "supported_precision_hardware": {
                             "precision_configs": ["fp32_ieee"],
-                            "hardware_ids": ["source_domain_unknown"],
+                            "hardware_ids": ["rtx4090"],
                             "precision_hardware_pairs": [
-                                {"precision_config": "fp32_ieee", "hardware_id": "source_domain_unknown", "count": 1, "label_domains": ["source"]}
+                                {"precision_config": "fp32_ieee", "hardware_id": "rtx4090", "count": 1, "label_domains": ["precision_profile"]}
                             ],
                         },
                     },
@@ -602,12 +636,12 @@ class SourceConverterTests(unittest.TestCase):
                 tmp,
                 ckpt={
                     "metadata": {
-                        "run_id": "precision_distill_student_128",
+                        "run_id": "precision_v2_student",
                         "precision_hardware_config": precision_hardware_config(cfg),
                         "supported_precision_hardware": supported,
                     }
                 },
-                ckpt_paths=["runs/optimized/precision_distill_student_128/seernet_multi.pt"],
+                ckpt_paths=["runs/optimized/precision_v2_student/seernet_multi.pt"],
                 runtime=runtime,
                 profile=profile,
                 feature_cfg=cfg,
@@ -621,7 +655,7 @@ class SourceConverterTests(unittest.TestCase):
             metadata = json.loads(Path(metadata_path).read_text())
 
         self.assertIn(metadata_path, runtime.artifact_paths)
-        self.assertEqual(metadata["run_id"], "precision_distill_student_128")
+        self.assertEqual(metadata["run_id"], "precision_v2_student")
         self.assertEqual(metadata["runtime_backend"], "torchscript")
         self.assertEqual(metadata["runtime_backend_actual"], "torchscript")
         self.assertEqual(metadata["feature_config"]["precision_config"], "bf16_amp")
@@ -1078,7 +1112,7 @@ class SourceConverterTests(unittest.TestCase):
                     "model_name": "seernet_multi",
                     "epoch": 9,
                     "val_loss": 0.123,
-                    "metadata": {"run_id": "source_domain_teacher"},
+                    "metadata": {"run_id": "initialized_teacher"},
                 },
                 ckpt_path,
             )
@@ -1091,7 +1125,7 @@ class SourceConverterTests(unittest.TestCase):
 
         self.assertIsNotNone(info)
         assert info is not None
-        self.assertEqual(info["source_run_id"], "source_domain_teacher")
+        self.assertEqual(info["source_run_id"], "initialized_teacher")
         self.assertEqual(info["source_epoch"], 9)
         for key, value in source.state_dict().items():
             self.assertTrue(torch.equal(value, target.state_dict()[key]))

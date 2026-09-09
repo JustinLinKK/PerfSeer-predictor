@@ -1,0 +1,119 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: real-a10-0629060430-prepare-scratch
+  namespace: ecepxie
+  labels:
+    app: real-a10-0629060430
+    stage: prepare-scratch
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: real-a10-0629060430
+        stage: prepare-scratch
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: prepare-scratch
+        image: pytorch/pytorch:2.3.0-cuda11.8-cudnn8-devel
+        imagePullPolicy: IfNotPresent
+        workingDir: /mnt/output/real-a10-0629060430/repo
+        command: ["/bin/bash", "-lc"]
+        args:
+        - |
+          set -euo pipefail
+          export PYTHONPATH="/mnt/output/real-a10-0629060430/repo/src:/mnt/output/real-a10-0629060430/repo:${PYTHONPATH:-}"
+          python -m pip install --no-cache-dir ogb torch_geometric networkx scikit-learn tqdm nvidia-ml-py pyyaml pandas
+          rm -rf /tmp/perfseer_pack_ready /tmp/perfseer_workload_specs_real_ready
+          mkdir -p /tmp/perfseer_pack_ready /tmp/perfseer_workload_specs_real_ready /mnt/output/real-a10-0629060430
+          python nrp_calibration_pack/generate_model_sources.py \
+            --catalog-mode template \
+            --subset-size 10005 \
+            --seed 20260617 \
+            --out-dir /tmp/perfseer_pack_ready \
+            --precision-sweep fp32_ieee \
+            --validation-mode compile \
+            --generation-workers 4 \
+            --force
+          python nrp_calibration_pack/profile/make_workload_specs.py \
+            --manifest /tmp/perfseer_pack_ready/manifest/subset_manifest.jsonl \
+            --registry dataset_sources/registry.json \
+            --dataset-profile-root /mnt/output/real-a10-0629060430/repo/datasets/prepared \
+            --raw-root /mnt/output/real-a10-0629060430/repo/datasets/raw \
+            --output-dir /tmp/perfseer_workload_specs_real_ready \
+            --subset-id tiny \
+            --batch-size 8 \
+            --precision-sweep fp32_ieee \
+            --optimizer adam \
+            --hardware-id a10 \
+            --force
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          pack = Path("/tmp/perfseer_pack_ready")
+          manifest = pack / "manifest" / "subset_manifest.jsonl"
+          workloads = Path("/tmp/perfseer_workload_specs_real_ready/workloads.jsonl")
+          rows = [json.loads(line) for line in manifest.read_text().splitlines() if line.strip()]
+          workload_rows = [json.loads(line) for line in workloads.read_text().splitlines() if line.strip()]
+          if len(rows) != 10005:
+              raise SystemExit(f"expected 10005 manifest rows, got {len(rows)}")
+          if len({row["model_id"] for row in rows}) != 10005:
+              raise SystemExit("model_id uniqueness verifier failed")
+          model_files = list((pack / "models").glob("*.py"))
+          if len(model_files) != 10006:
+              raise SystemExit(f"expected 10006 Python files including __init__.py, got {len(model_files)}")
+          if len(workload_rows) != 10005:
+              raise SystemExit(f"expected 10005 workload rows, got {len(workload_rows)}")
+          bad = [row.get("profile_point_id") for row in workload_rows if not row.get("dataset", {}).get("real_dataloader_backed")]
+          if bad:
+              raise SystemExit(f"real_dataloader_backed verifier failed: {len(bad)} bad row(s)")
+          print(json.dumps({
+              "event": "scratch_prepare_verifier_ok",
+              "manifest_rows": len(rows),
+              "model_python_files_including_init": len(model_files),
+              "workload_rows": len(workload_rows),
+          }), flush=True)
+          PY
+          tar -C /tmp/perfseer_pack_ready -czf /mnt/output/real-a10-0629060430/pack_ready.tar.gz .
+          rm -rf /mnt/output/real-a10-0629060430/workload_specs_real_ready
+          mkdir -p /mnt/output/real-a10-0629060430/workload_specs_real_ready
+          cp -a /tmp/perfseer_workload_specs_real_ready/. /mnt/output/real-a10-0629060430/workload_specs_real_ready/
+          python - <<'PY'
+          import json
+          import tarfile
+          from pathlib import Path
+
+          package = Path("/mnt/output/real-a10-0629060430/pack_ready.tar.gz")
+          workloads = Path("/mnt/output/real-a10-0629060430/workload_specs_real_ready/workloads.jsonl")
+          if not package.is_file() or package.stat().st_size <= 0:
+              raise SystemExit("pack_ready.tar.gz verifier failed")
+          with tarfile.open(package, "r:gz") as archive:
+              model_count = sum(1 for member in archive.getmembers() if member.name.startswith("models/") and member.name.endswith(".py"))
+          workload_count = sum(1 for line in workloads.read_text().splitlines() if line.strip())
+          if model_count != 10006 or workload_count != 10005:
+              raise SystemExit(f"copied artifact verifier failed: model_count={model_count}, workload_count={workload_count}")
+          print(json.dumps({
+              "event": "scratch_prepare_copied_ok",
+              "pack_tar_bytes": package.stat().st_size,
+              "model_python_files_including_init": model_count,
+              "workload_rows": workload_count,
+          }), flush=True)
+          PY
+        resources:
+          requests:
+            cpu: "8"
+            memory: "48Gi"
+          limits:
+            cpu: "8"
+            memory: "48Gi"
+        volumeMounts:
+        - name: output
+          mountPath: /mnt/output
+      volumes:
+      - name: output
+        persistentVolumeClaim:
+          claimName: perfseer-real-dataset-pvc

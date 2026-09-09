@@ -119,7 +119,7 @@ def main() -> None:
     parser.add_argument("--profile-epochs", type=int, default=1)
     parser.add_argument("--batches-per-epoch", type=int, default=1)
     parser.add_argument("--sample-interval", type=float, default=0.01)
-    parser.add_argument("--optimizer", default="sgd", choices=("sgd", "adam", "adamw"))
+    parser.add_argument("--optimizer", default="adam", choices=("sgd", "adam", "adamw"))
     parser.add_argument("--precision-config", default="fp32_ieee")
     parser.add_argument("--cpu", default="4")
     parser.add_argument("--memory", default="16Gi")

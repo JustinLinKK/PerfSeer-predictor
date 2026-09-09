@@ -18,6 +18,14 @@ import numpy as np
 import torch
 from torch_geometric.data import Data, InMemoryDataset
 
+from perfseer.architecture_schema import (
+    ARCHITECTURE_FAMILIES,
+    FEATURE_SCHEMA_VERSION,
+    MODALITIES,
+    VARIANT_KINDS,
+    feature_schema_signature,
+    node_types_for_schema,
+)
 from perfseer.data import ARG_KEYS, NODE_TYPES, list_pairs, parse_graph, parse_label
 from perfseer.data import _resolve_dirs as resolve_dataset_dirs
 
@@ -31,11 +39,28 @@ TARGET_NAMES: list[str] = [
     "infer_mem",
     "infer_time",
 ]
+SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES: list[str] = [
+    "train_avg_sm_util_percent",
+    "train_p95_sm_util_percent",
+    "train_peak_vram_used_mib",
+    "train_peak_torch_reserved_mib",
+    "train_step_wall_ms",
+    "train_peak_memory_controller_util_percent",
+]
+SCHEDULER_V2_TRAIN_TARGET_NAMES: list[str] = [
+    "train_epoch_ms",
+    "train_avg_sm_util_percent",
+    "train_p95_sm_util_percent",
+    "train_peak_vram_used_mib",
+    "train_peak_torch_reserved_mib",
+    "train_peak_memory_controller_util_percent",
+]
 
-SOURCE_UNKNOWN_PRECISION_CONFIG = "source_domain_unknown"
-DTYPE_VOCAB = ("fp32", "tf32", "bf16", "fp16", "fp8_e4m3", "fp8_e5m2", "unknown")
-TENSORCORE_MODES = ("none", "tf32", "bf16", "fp16", "fp8", "unknown")
+UNKNOWN_PRECISION_CONFIG = "unknown"
+DTYPE_VOCAB = ("fp32", "tf32", "bf16", "fp16", "fp8_e4m3", "fp8_e5m2", "fp4_e2m1", "unknown")
+TENSORCORE_MODES = ("none", "tf32", "bf16", "fp16", "fp8", "fp4", "unknown")
 FP8_FORMATS = ("none", "e4m3", "e5m2", "hybrid_e4m3_e5m2", "unknown")
+FP4_FORMATS = ("none", "nvfp4_e2m1", "unknown")
 PRECISION_CONFIG_VOCAB = (
     "fp32_ieee",
     "tf32",
@@ -44,10 +69,26 @@ PRECISION_CONFIG_VOCAB = (
     "fp8_te_hybrid",
     "fp8_e4m3",
     "fp8_e5m2",
-    SOURCE_UNKNOWN_PRECISION_CONFIG,
+    "nvfp4_te",
+    UNKNOWN_PRECISION_CONFIG,
 )
 RESOURCE_REGIME_VOCAB = ("small_overhead", "memory_bound", "balanced", "compute_bound")
 LABEL_DOMAIN_VOCAB = ("unknown", "source", "precision_profile", "pseudo")
+OPTIMIZER_VOCAB = ("sgd", "adam", "adamw", "unknown")
+DATASET_MODALITY_VOCAB = ("unknown", "image", "text", "tabular", "graph", "audio", "time_series", "tensor")
+DATASET_TASK_TYPE_VOCAB = (
+    "unknown",
+    "image_classification",
+    "image_segmentation",
+    "object_detection",
+    "text_classification",
+    "text_summarization",
+    "graph_node_classification",
+    "tabular_classification",
+    "tabular_regression",
+    "time_series_forecasting",
+    "audio_classification",
+)
 HARDWARE_FEATURE_FIELDS = (
     "compute_capability",
     "architecture_id",
@@ -60,6 +101,34 @@ HARDWARE_FEATURE_FIELDS = (
     "peak_fp16_bf16_tflops",
     "peak_fp8_tflops",
 )
+DATASET_FEATURE_FIELDS = (
+    "dataset_num_samples",
+    "dataset_sample_bytes_mean",
+    "dataset_input_bytes_mean",
+    "dataset_label_bytes_mean",
+    "dataset_sequence_length_p50",
+    "dataset_sequence_length_p95",
+    "dataset_image_pixels_p50",
+    "dataset_image_pixels_p95",
+    "dataset_graph_nodes_p50",
+    "dataset_graph_nodes_p95",
+    "dataset_graph_edges_p50",
+    "dataset_graph_edges_p95",
+    "dataset_input_rank",
+    "dataset_input_dim0",
+    "dataset_input_dim1",
+    "dataset_input_dim2",
+    "dataset_input_dim3",
+    "dataset_input_dim4",
+    "dataset_input_dim5",
+    "dataset_input_numel_per_sample",
+    "dataset_input_bytes_per_sample",
+    "dataset_input_bytes_per_batch",
+    "dataloader_num_workers",
+    "dataloader_prefetch_factor",
+    "training_batch_size",
+    "training_grad_accumulation_steps",
+)
 DTYPE_BYTES = {
     "unknown": 0.0,
     "fp32": 4.0,
@@ -68,9 +137,10 @@ DTYPE_BYTES = {
     "fp16": 2.0,
     "fp8_e4m3": 1.0,
     "fp8_e5m2": 1.0,
+    "fp4_e2m1": 0.5,
 }
 PRECISION_PRESETS: dict[str, dict[str, str]] = {
-    SOURCE_UNKNOWN_PRECISION_CONFIG: {
+    UNKNOWN_PRECISION_CONFIG: {
         "weight_dtype": "unknown",
         "activation_dtype": "unknown",
         "grad_dtype": "unknown",
@@ -78,6 +148,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "unknown",
         "tensorcore_mode": "unknown",
         "fp8_format": "unknown",
+        "fp4_format": "unknown",
     },
     "fp32_ieee": {
         "weight_dtype": "fp32",
@@ -87,6 +158,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "none",
         "fp8_format": "none",
+        "fp4_format": "none",
     },
     "tf32": {
         "weight_dtype": "fp32",
@@ -96,6 +168,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "tf32",
         "fp8_format": "none",
+        "fp4_format": "none",
     },
     "bf16_amp": {
         "weight_dtype": "fp32",
@@ -105,6 +178,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "bf16",
         "fp8_format": "none",
+        "fp4_format": "none",
     },
     "fp16_amp": {
         "weight_dtype": "fp32",
@@ -114,6 +188,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "fp16",
         "fp8_format": "none",
+        "fp4_format": "none",
     },
     "fp8_te_hybrid": {
         "weight_dtype": "fp8_e4m3",
@@ -123,6 +198,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "fp8",
         "fp8_format": "hybrid_e4m3_e5m2",
+        "fp4_format": "none",
     },
     "fp8_e4m3": {
         "weight_dtype": "fp8_e4m3",
@@ -132,6 +208,7 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "fp8",
         "fp8_format": "e4m3",
+        "fp4_format": "none",
     },
     "fp8_e5m2": {
         "weight_dtype": "fp8_e5m2",
@@ -141,6 +218,17 @@ PRECISION_PRESETS: dict[str, dict[str, str]] = {
         "optimizer_state_dtype": "fp32",
         "tensorcore_mode": "fp8",
         "fp8_format": "e5m2",
+        "fp4_format": "none",
+    },
+    "nvfp4_te": {
+        "weight_dtype": "fp4_e2m1",
+        "activation_dtype": "fp4_e2m1",
+        "grad_dtype": "fp4_e2m1",
+        "accum_dtype": "fp32",
+        "optimizer_state_dtype": "fp32",
+        "tensorcore_mode": "fp4",
+        "fp8_format": "none",
+        "fp4_format": "nvfp4_e2m1",
     },
 }
 
@@ -160,6 +248,7 @@ except Exception:
 
 @dataclass(frozen=True)
 class FeatureConfig:
+    feature_schema_version: str = FEATURE_SCHEMA_VERSION
     use_operator_type_onehot: bool = True
     topology: bool = False
     critical_path: bool = False
@@ -167,7 +256,9 @@ class FeatureConfig:
     include_destination_tensor: bool = False
     time_target_mode: str = "raw"
     target_mode: str = "absolute"
-    include_precision_features: bool = False
+    target_source: str = "legacy"
+    include_precision_features: bool = True
+    include_dataset_features: bool = True
     include_hardware_features: bool = False
     precision_config: str = "fp32_ieee"
     hardware_id: str = "unknown"
@@ -178,6 +269,7 @@ class FeatureConfig:
     optimizer_state_dtype: str = ""
     tensorcore_mode: str = ""
     fp8_format: str = ""
+    fp4_format: str = ""
     compute_capability: float = 0.0
     architecture_id: float = 0.0
     sm_count: float = 0.0
@@ -188,6 +280,35 @@ class FeatureConfig:
     peak_tf32_tflops: float = 0.0
     peak_fp16_bf16_tflops: float = 0.0
     peak_fp8_tflops: float = 0.0
+    dataset_num_samples: float = 0.0
+    dataset_sample_bytes_mean: float = 0.0
+    dataset_input_bytes_mean: float = 0.0
+    dataset_label_bytes_mean: float = 0.0
+    dataset_sequence_length_p50: float = 0.0
+    dataset_sequence_length_p95: float = 0.0
+    dataset_image_pixels_p50: float = 0.0
+    dataset_image_pixels_p95: float = 0.0
+    dataset_graph_nodes_p50: float = 0.0
+    dataset_graph_nodes_p95: float = 0.0
+    dataset_graph_edges_p50: float = 0.0
+    dataset_graph_edges_p95: float = 0.0
+    dataset_input_rank: float = 0.0
+    dataset_input_dim0: float = 0.0
+    dataset_input_dim1: float = 0.0
+    dataset_input_dim2: float = 0.0
+    dataset_input_dim3: float = 0.0
+    dataset_input_dim4: float = 0.0
+    dataset_input_dim5: float = 0.0
+    dataset_input_numel_per_sample: float = 0.0
+    dataset_input_bytes_per_sample: float = 0.0
+    dataset_input_bytes_per_batch: float = 0.0
+    dataset_modality: str = "unknown"
+    dataset_task_type: str = "unknown"
+    dataloader_num_workers: float = 0.0
+    dataloader_prefetch_factor: float = 0.0
+    training_batch_size: float = 0.0
+    training_grad_accumulation_steps: float = 1.0
+    training_optimizer: str = "unknown"
     base_label_weight: float = 1.0
     precision_label_weight: float = 1.0
     pseudo_label_weight: float = 1.0
@@ -203,7 +324,9 @@ class FeatureConfig:
         return asdict(self)
 
     def signature(self) -> str:
-        return json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+        payload = self.to_dict()
+        payload["feature_schema_signature"] = feature_schema_signature(self.feature_schema_version)
+        return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
 @dataclass(frozen=True)
@@ -222,6 +345,7 @@ class FeatureLayout:
 def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
     node_names: list[str] = []
     node_std: list[int] = []
+    node_type_vocab = node_types_for_schema(cfg.feature_schema_version)
 
     def add_node(name: str, standardize: bool) -> None:
         idx = len(node_names)
@@ -230,7 +354,7 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             node_std.append(idx)
 
     if cfg.use_operator_type_onehot:
-        for typ in NODE_TYPES:
+        for typ in node_type_vocab:
             add_node(f"type_{typ}", False)
     for key in ARG_KEYS:
         add_node(f"arg_{key}", True)
@@ -238,6 +362,17 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
         add_node(name, True)
     for name in ["flops_ratio", "mac_ratio", "weight_ratio"]:
         add_node(name, False)
+    for name in [
+        "tensor_rank",
+        "input_numel_log1p",
+        "output_numel_log1p",
+        "input_feature_dim_log1p",
+        "output_feature_dim_log1p",
+        "sequence_length_log1p",
+        "spatial_area_log1p",
+        "graph_node_count_log1p",
+    ]:
+        add_node(name, True)
     if cfg.topology:
         for name in ["in_degree", "out_degree", "topo_index", "forward_depth", "reverse_depth"]:
             add_node(name, True)
@@ -323,6 +458,8 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             add_global(f"tensorcore_mode_{mode}", False)
         for fp8_format in FP8_FORMATS:
             add_global(f"fp8_format_{fp8_format}", False)
+        for fp4_format in FP4_FORMATS:
+            add_global(f"fp4_format_{fp4_format}", False)
         for name in [
             "estimated_activation_bytes_log1p",
             "estimated_weight_bytes_log1p",
@@ -331,6 +468,42 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             "estimated_master_weight_bytes_log1p",
         ]:
             add_global(name, True)
+    if cfg.include_dataset_features:
+        for name in [
+            "dataset_num_samples_log1p",
+            "dataset_sample_bytes_mean_log1p",
+            "dataset_input_bytes_mean_log1p",
+            "dataset_label_bytes_mean_log1p",
+            "dataset_sequence_length_p50_log1p",
+            "dataset_sequence_length_p95_log1p",
+            "dataset_image_pixels_p50_log1p",
+            "dataset_image_pixels_p95_log1p",
+            "dataset_graph_nodes_p50_log1p",
+            "dataset_graph_nodes_p95_log1p",
+            "dataset_graph_edges_p50_log1p",
+            "dataset_graph_edges_p95_log1p",
+            "dataset_input_rank_log1p",
+            "dataset_input_dim0_log1p",
+            "dataset_input_dim1_log1p",
+            "dataset_input_dim2_log1p",
+            "dataset_input_dim3_log1p",
+            "dataset_input_dim4_log1p",
+            "dataset_input_dim5_log1p",
+            "dataset_input_numel_per_sample_log1p",
+            "dataset_input_bytes_per_sample_log1p",
+            "dataset_input_bytes_per_batch_log1p",
+            "dataloader_num_workers",
+            "dataloader_prefetch_factor",
+            "training_batch_size",
+            "training_grad_accumulation_steps",
+        ]:
+            add_global(name, True)
+        for modality in DATASET_MODALITY_VOCAB:
+            add_global(f"dataset_modality_{modality}", False)
+        for task_type in DATASET_TASK_TYPE_VOCAB:
+            add_global(f"dataset_task_type_{task_type}", False)
+        for optimizer in OPTIMIZER_VOCAB:
+            add_global(f"training_optimizer_{optimizer}", False)
     if cfg.include_hardware_features:
         for name in [
             "hardware_compute_capability",
@@ -345,6 +518,14 @@ def feature_layout(cfg: FeatureConfig) -> FeatureLayout:
             "hardware_peak_fp8_tflops",
         ]:
             add_global(name, True)
+    for family in ARCHITECTURE_FAMILIES:
+        add_global(f"architecture_family_{family}", False)
+    for modality in MODALITIES:
+        add_global(f"modality_{modality}", False)
+    for variant in VARIANT_KINDS:
+        add_global(f"variant_kind_{variant}", False)
+    for name in ["architecture_depth_bucket", "architecture_width_bucket"]:
+        add_global(name, True)
 
     return FeatureLayout(
         node_dim=len(node_names),
@@ -393,10 +574,11 @@ def _stats4(arr: np.ndarray) -> tuple[float, float, float, float]:
     return float(np.sum(arr)), float(np.mean(arr)), float(np.median(arr)), float(np.max(arr))
 
 
-def _node_type_onehot(type_str: str) -> list[float]:
-    vec = [0.0] * len(NODE_TYPES)
-    if type_str in NODE_TYPES:
-        vec[NODE_TYPES.index(type_str)] = 1.0
+def _node_type_onehot(type_str: str, cfg: FeatureConfig) -> list[float]:
+    vocab = node_types_for_schema(cfg.feature_schema_version)
+    vec = [0.0] * len(vocab)
+    if type_str in vocab:
+        vec[vocab.index(type_str)] = 1.0
     return vec
 
 
@@ -406,7 +588,11 @@ def _onehot(value: str, vocab: Sequence[str]) -> list[float]:
 
 
 def _precision_settings(cfg: FeatureConfig) -> dict[str, str]:
-    preset = PRECISION_PRESETS.get((cfg.precision_config or "fp32_ieee").lower(), PRECISION_PRESETS["fp32_ieee"])
+    try:
+        precision_key = normalize_precision_config(cfg.precision_config or "fp32_ieee")
+    except ValueError:
+        precision_key = UNKNOWN_PRECISION_CONFIG
+    preset = PRECISION_PRESETS.get(precision_key, PRECISION_PRESETS["fp32_ieee"])
     settings = dict(preset)
     for field in (
         "weight_dtype",
@@ -416,11 +602,17 @@ def _precision_settings(cfg: FeatureConfig) -> dict[str, str]:
         "optimizer_state_dtype",
         "tensorcore_mode",
         "fp8_format",
+        "fp4_format",
     ):
         value = getattr(cfg, field)
         if value:
             settings[field] = str(value).lower()
     return settings
+
+
+def _metadata_onehot(value: Any, vocab: Sequence[str]) -> list[float]:
+    key = str(value or "").strip().lower()
+    return [1.0 if key == item else 0.0 for item in vocab]
 
 
 def precision_hardware_config(cfg: FeatureConfig) -> dict[str, Any]:
@@ -436,6 +628,7 @@ def precision_hardware_config(cfg: FeatureConfig) -> dict[str, Any]:
         "optimizer_state_dtype",
         "tensorcore_mode",
         "fp8_format",
+        "fp4_format",
         "compute_capability",
         "architecture_id",
         "sm_count",
@@ -469,11 +662,15 @@ def normalize_precision_config(value: str) -> str:
         "fp8_te_hybrid": "fp8_te_hybrid",
         "fp8_e4m3": "fp8_e4m3",
         "fp8_e5m2": "fp8_e5m2",
-        "source_unknown": SOURCE_UNKNOWN_PRECISION_CONFIG,
-        "source_domain_unknown": SOURCE_UNKNOWN_PRECISION_CONFIG,
+        "fp4": "nvfp4_te",
+        "nvfp4": "nvfp4_te",
+        "nvfp4_te": "nvfp4_te",
+        "unknown": UNKNOWN_PRECISION_CONFIG,
     }
     if key == "bf32":
         raise ValueError("bf32 is ambiguous; use tf32 or bf16_amp")
+    if key == "mxfp8":
+        raise ValueError("mxfp8 is out of scope for v1; use fp8_te_hybrid or nvfp4_te")
     return aliases.get(key, key)
 
 
@@ -487,7 +684,7 @@ def precision_config_index(value: str) -> int:
 
 def normalize_label_domain(value: str | None) -> str:
     key = str(value or "").strip().lower().replace("-", "_")
-    if key in {"source", "base", "base_label", "source_domain"}:
+    if key in {"source", "base", "base_label"}:
         return "source"
     if key in {"precision", "precision_profile", "profile", "measured", "golden"}:
         return "precision_profile"
@@ -548,12 +745,182 @@ def precision_metadata_for_label(label_path: str) -> dict[str, Any] | None:
     return None
 
 
+def _scheduler_resource_candidate_paths(label_path: str) -> tuple[str, ...]:
+    path = os.path.abspath(label_path)
+    label_dir = os.path.dirname(path)
+    label_parent = os.path.dirname(label_dir)
+    data_root = os.path.dirname(label_parent)
+    return (
+        os.path.join(label_dir, "scheduler_resource_label.jsonl"),
+        os.path.join(label_parent, "scheduler_resource_label.jsonl"),
+        os.path.join(data_root, "scheduler_resource_label.jsonl"),
+    )
+
+
+def _scheduler_label_candidate_paths(label_path: str) -> tuple[str, ...]:
+    path = os.path.abspath(label_path)
+    label_dir = os.path.dirname(path)
+    label_parent = os.path.dirname(label_dir)
+    data_root = os.path.dirname(label_parent)
+    return (
+        os.path.join(label_dir, "scheduler_label_v3.jsonl"),
+        os.path.join(label_parent, "scheduler_label_v3.jsonl"),
+        os.path.join(data_root, "scheduler_label_v3.jsonl"),
+    )
+
+
+@lru_cache(maxsize=32)
+def _scheduler_resource_index(path: str) -> dict[str, dict[str, Any]]:
+    if not os.path.isfile(path):
+        return {}
+    index: dict[str, dict[str, Any]] = {}
+    with open(path, "r") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            keys = {
+                str(row.get("profile_point_id", "")),
+                str(row.get("label_file", "")),
+                os.path.basename(str(row.get("label_file", ""))),
+                str(row.get("label_stem", "")),
+            }
+            for key in keys:
+                if key:
+                    index[key] = row
+    return index
+
+
+@lru_cache(maxsize=32)
+def _scheduler_label_index(path: str) -> dict[str, dict[str, Any]]:
+    if not os.path.isfile(path):
+        return {}
+    index: dict[str, dict[str, Any]] = {}
+    with open(path, "r") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            keys = {
+                str(row.get("profile_point_id", "")),
+                str(row.get("label_file", "")),
+                os.path.basename(str(row.get("label_file", ""))),
+                str(row.get("label_stem", "")),
+            }
+            for key in keys:
+                if key:
+                    index[key] = row
+    return index
+
+
+def scheduler_resource_label_for_pair(label_path: str) -> dict[str, Any] | None:
+    metadata = precision_metadata_for_label(label_path) or {}
+    keys = {
+        os.path.basename(label_path),
+        os.path.splitext(os.path.basename(label_path))[0],
+        str(metadata.get("label_file", "")),
+        str(metadata.get("profile_point_id", "")),
+    }
+    keys = {key for key in keys if key}
+    for path in _scheduler_resource_candidate_paths(label_path):
+        index = _scheduler_resource_index(path)
+        for key in keys:
+            row = index.get(key)
+            if row is not None:
+                return row
+    return None
+
+
+def scheduler_label_v3_for_pair(label_path: str) -> dict[str, Any] | None:
+    metadata = precision_metadata_for_label(label_path) or {}
+    keys = {
+        os.path.basename(label_path),
+        os.path.splitext(os.path.basename(label_path))[0],
+        str(metadata.get("label_file", "")),
+        str(metadata.get("profile_point_id", "")),
+    }
+    keys = {key for key in keys if key}
+    for path in _scheduler_label_candidate_paths(label_path):
+        index = _scheduler_label_index(path)
+        for key in keys:
+            row = index.get(key)
+            if row is not None:
+                return row
+    return None
+
+
+def target_source_key(cfg: FeatureConfig | None) -> str:
+    return str(getattr(cfg, "target_source", "legacy") or "legacy").lower()
+
+
 def target_mode_key(cfg: FeatureConfig | None) -> str:
     return str(getattr(cfg, "target_mode", "absolute") or "absolute").lower()
 
 
 def is_log_ratio_target(cfg: FeatureConfig | None) -> bool:
     return target_mode_key(cfg) in {"log_ratio_to_source", "log_ratio", "ratio_delta"}
+
+
+def is_scheduler_resource_target(cfg: FeatureConfig | None) -> bool:
+    return target_source_key(cfg) in {"scheduler_resource_train", "scheduler_resource", "resource_train"}
+
+
+def is_scheduler_v2_target(cfg: FeatureConfig | None) -> bool:
+    return target_source_key(cfg) in {"scheduler_v2_train", "v2_train", "scheduler_label_v3_train"}
+
+
+def uses_target_override(cfg: FeatureConfig | None) -> bool:
+    return is_scheduler_resource_target(cfg) or is_scheduler_v2_target(cfg)
+
+
+def target_names_for_config(cfg: FeatureConfig | None) -> list[str]:
+    if is_scheduler_v2_target(cfg):
+        return list(SCHEDULER_V2_TRAIN_TARGET_NAMES)
+    if is_scheduler_resource_target(cfg):
+        return list(SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES)
+    return list(TARGET_NAMES)
+
+
+def scheduler_resource_target_for_label(label_path: str) -> np.ndarray:
+    row = scheduler_resource_label_for_pair(label_path)
+    if row is None:
+        raise FileNotFoundError(f"target_source='scheduler_resource_train' requires scheduler_resource_label.jsonl row for {label_path}")
+    targets = row.get("targets") if isinstance(row.get("targets"), dict) else {}
+    missing = [name for name in SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES if name not in targets]
+    if missing:
+        raise KeyError(f"scheduler resource label for {label_path} is missing target(s): {', '.join(missing)}")
+    return np.asarray([_f(targets.get(name)) for name in SCHEDULER_RESOURCE_TRAIN_TARGET_NAMES], dtype=np.float64)
+
+
+def scheduler_v2_target_for_label(label_path: str) -> np.ndarray:
+    scheduler_row = scheduler_label_v3_for_pair(label_path)
+    resource_row = scheduler_resource_label_for_pair(label_path)
+    if scheduler_row is None:
+        raise FileNotFoundError(f"target_source='scheduler_v2_train' requires scheduler_label_v3.jsonl row for {label_path}")
+    if resource_row is None:
+        raise FileNotFoundError(f"target_source='scheduler_v2_train' requires scheduler_resource_label.jsonl row for {label_path}")
+    scheduler_targets = scheduler_row.get("targets") if isinstance(scheduler_row.get("targets"), dict) else {}
+    resource_targets = resource_row.get("targets") if isinstance(resource_row.get("targets"), dict) else {}
+    combined = {
+        "train_epoch_ms": scheduler_targets.get("train_epoch_ms"),
+        "train_avg_sm_util_percent": resource_targets.get("train_avg_sm_util_percent"),
+        "train_p95_sm_util_percent": resource_targets.get("train_p95_sm_util_percent"),
+        "train_peak_vram_used_mib": resource_targets.get("train_peak_vram_used_mib"),
+        "train_peak_torch_reserved_mib": resource_targets.get("train_peak_torch_reserved_mib"),
+        "train_peak_memory_controller_util_percent": resource_targets.get("train_peak_memory_controller_util_percent"),
+    }
+    missing = [name for name in SCHEDULER_V2_TRAIN_TARGET_NAMES if combined.get(name) is None]
+    if missing:
+        raise KeyError(f"scheduler v2 label for {label_path} is missing target(s): {', '.join(missing)}")
+    return np.asarray([_f(combined.get(name)) for name in SCHEDULER_V2_TRAIN_TARGET_NAMES], dtype=np.float64)
+
+
+def target_override_for_label(cfg: FeatureConfig, label_path: str) -> np.ndarray | None:
+    if is_scheduler_v2_target(cfg):
+        return scheduler_v2_target_for_label(label_path)
+    if is_scheduler_resource_target(cfg):
+        return scheduler_resource_target_for_label(label_path)
+    return None
 
 
 def precision_from_label_path(graph_path: str, label_path: str) -> str | None:
@@ -626,6 +993,59 @@ def feature_config_for_pair(cfg: FeatureConfig, graph_path: str, label_path: str
             data["compute_capability"] = float(str(hardware.get("compute_capability")))
         except (TypeError, ValueError):
             pass
+    dataset = metadata.get("dataset") if isinstance(metadata.get("dataset"), dict) else {}
+    training = metadata.get("training") if isinstance(metadata.get("training"), dict) else {}
+    dataset_aliases = {
+        "dataset_num_samples": ("dataset_num_samples", "num_samples", "sample_count"),
+        "dataset_sample_bytes_mean": ("dataset_sample_bytes_mean", "sample_bytes_mean"),
+        "dataset_input_bytes_mean": ("dataset_input_bytes_mean", "input_bytes_mean"),
+        "dataset_label_bytes_mean": ("dataset_label_bytes_mean", "label_bytes_mean"),
+        "dataset_sequence_length_p50": ("dataset_sequence_length_p50", "sequence_length_p50"),
+        "dataset_sequence_length_p95": ("dataset_sequence_length_p95", "sequence_length_p95"),
+        "dataset_image_pixels_p50": ("dataset_image_pixels_p50", "image_pixels_p50"),
+        "dataset_image_pixels_p95": ("dataset_image_pixels_p95", "image_pixels_p95"),
+        "dataset_graph_nodes_p50": ("dataset_graph_nodes_p50", "graph_nodes_p50"),
+        "dataset_graph_nodes_p95": ("dataset_graph_nodes_p95", "graph_nodes_p95"),
+        "dataset_graph_edges_p50": ("dataset_graph_edges_p50", "graph_edges_p50"),
+        "dataset_graph_edges_p95": ("dataset_graph_edges_p95", "graph_edges_p95"),
+        "dataset_input_rank": ("dataset_input_rank", "input_rank"),
+        "dataset_input_dim0": ("dataset_input_dim0", "input_dim0"),
+        "dataset_input_dim1": ("dataset_input_dim1", "input_dim1"),
+        "dataset_input_dim2": ("dataset_input_dim2", "input_dim2"),
+        "dataset_input_dim3": ("dataset_input_dim3", "input_dim3"),
+        "dataset_input_dim4": ("dataset_input_dim4", "input_dim4"),
+        "dataset_input_dim5": ("dataset_input_dim5", "input_dim5"),
+        "dataset_input_numel_per_sample": ("dataset_input_numel_per_sample", "input_numel_per_sample"),
+        "dataset_input_bytes_per_sample": ("dataset_input_bytes_per_sample", "input_bytes_per_sample"),
+        "dataset_input_bytes_per_batch": ("dataset_input_bytes_per_batch", "input_bytes_per_batch"),
+    }
+    for field, aliases in dataset_aliases.items():
+        for alias in aliases:
+            if alias in metadata:
+                data[field] = _f(metadata.get(alias))
+                break
+            if alias in dataset:
+                data[field] = _f(dataset.get(alias))
+                break
+    data["dataset_modality"] = str(metadata.get("dataset_modality") or dataset.get("modality") or "unknown").lower()
+    data["dataset_task_type"] = str(metadata.get("dataset_task_type") or dataset.get("task_type") or "unknown").lower()
+    training_aliases = {
+        "dataloader_num_workers": ("dataloader_num_workers", "num_workers"),
+        "dataloader_prefetch_factor": ("dataloader_prefetch_factor", "prefetch_factor"),
+        "training_batch_size": ("training_batch_size", "batch_size"),
+        "training_grad_accumulation_steps": ("training_grad_accumulation_steps", "grad_accumulation_steps"),
+    }
+    for field, aliases in training_aliases.items():
+        for alias in aliases:
+            if alias in metadata:
+                data[field] = _f(metadata.get(alias))
+                break
+            if alias in training:
+                data[field] = _f(training.get(alias))
+                break
+    optimizer = metadata.get("optimizer") or training.get("optimizer")
+    if optimizer:
+        data["training_optimizer"] = str(optimizer).lower()
     return FeatureConfig.from_dict(data)
 
 
@@ -773,7 +1193,9 @@ def list_precision_pairs(data_root: str, include_base_pairs: bool = True) -> lis
         for fname in os.listdir(cg_dir)
         if fname.endswith(".pkl")
     }
-    precision_suffix = re.compile(r"^(?P<stem>.+)_(?P<precision>fp32_ieee|tf32|bf16_amp|fp16_amp|fp8_te_hybrid|fp8_e4m3|fp8_e5m2)\.txt$")
+    precision_suffix = re.compile(
+        r"^(?P<stem>.+)_(?P<precision>fp32_ieee|tf32|bf16_amp|fp16_amp|fp8_te_hybrid|fp8_e4m3|fp8_e5m2|nvfp4_te)\.txt$"
+    )
     for fname in sorted(os.listdir(label_dir)):
         match = precision_suffix.match(fname)
         if not match:
@@ -801,6 +1223,26 @@ def list_precision_pairs(data_root: str, include_base_pairs: bool = True) -> lis
             pairs.append((graph_path, label_path))
             seen.add(key)
     return sorted(pairs, key=lambda pair: (os.path.basename(pair[0]), os.path.basename(pair[1])))
+
+
+def filter_pairs_by_hardware(
+    pairs: Sequence[tuple[str, str]],
+    hardware_id: str | None,
+    feature_config: FeatureConfig | None = None,
+) -> list[tuple[str, str]]:
+    target = str(hardware_id or "").strip()
+    if not target:
+        return list(pairs)
+    cfg = feature_config or FeatureConfig(hardware_id=target)
+    out: list[tuple[str, str]] = []
+    for graph_path, label_path in pairs:
+        metadata = precision_metadata_for_label(label_path) or {}
+        if not metadata.get("hardware_id"):
+            continue
+        pair_cfg = feature_config_for_pair(cfg, graph_path, label_path)
+        if str(pair_cfg.hardware_id or "").strip() == target:
+            out.append((graph_path, label_path))
+    return out
 
 
 def _dtype_bytes(dtype: str) -> float:
@@ -923,7 +1365,13 @@ def _target_for_mode(
     batch_size: float,
     cfg: FeatureConfig,
     base_label6: Sequence[float] | None = None,
+    target_raw_override: Sequence[float] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if target_raw_override is not None:
+        if target_mode_key(cfg) != "absolute":
+            raise ValueError("scheduler target_source requires target_mode='absolute'")
+        target = np.asarray(target_raw_override, dtype=np.float64).reshape(NUM_TARGETS).copy()
+        return target, target, target
     absolute = _target_with_mode(label6, batch_size, cfg)
     base = _target_with_mode(base_label6 if base_label6 is not None else label6, batch_size, cfg)
     mode = target_mode_key(cfg)
@@ -1015,7 +1463,7 @@ def _node_raw(feat: dict, totals: dict[str, float], cfg: FeatureConfig) -> list[
     weight = max(_f(mem.get("weight_size")), 0.0)
     out: list[float] = []
     if cfg.use_operator_type_onehot:
-        out.extend(_node_type_onehot(str(feat.get("type", ""))))
+        out.extend(_node_type_onehot(str(feat.get("type", "")), cfg))
     out.extend(_f(args.get(key)) for key in ARG_KEYS)
     out.extend(
         [
@@ -1028,7 +1476,45 @@ def _node_raw(feat: dict, totals: dict[str, float], cfg: FeatureConfig) -> list[
             _safe_div(weight, totals["weight"]),
         ]
     )
+    out.extend(_node_shape_raw(mem))
     return [float(v) for v in out]
+
+
+def _node_shape_raw(mem: dict) -> list[float]:
+    input_size = max(_f(mem.get("input_size")), 0.0)
+    output_size = max(_f(mem.get("output_size")), 0.0)
+    input_features = max(_f(mem.get("input_features"), _f(mem.get("input_channels"))), 0.0)
+    output_features = max(_f(mem.get("output_features"), _f(mem.get("output_channels"))), 0.0)
+    sequence_length = max(_f(mem.get("sequence_length"), _f(mem.get("output_h"))), 0.0)
+    graph_nodes = max(_f(mem.get("graph_nodes")), 0.0)
+    out_h = max(_f(mem.get("output_h")), 0.0)
+    out_w = max(_f(mem.get("output_w")), 0.0)
+    spatial_area = max(_f(mem.get("spatial_area")), out_h * out_w)
+    rank = _f(mem.get("rank"))
+    if rank <= 0:
+        rank = inferred_tensor_rank(mem)
+    return [
+        rank,
+        np.log1p(input_size),
+        np.log1p(output_size),
+        np.log1p(input_features),
+        np.log1p(output_features),
+        np.log1p(sequence_length),
+        np.log1p(spatial_area),
+        np.log1p(graph_nodes),
+    ]
+
+
+def inferred_tensor_rank(mem: dict) -> float:
+    if _f(mem.get("graph_nodes")) > 0:
+        return 3.0
+    if _f(mem.get("sequence_length")) > 0:
+        return 3.0
+    if _f(mem.get("output_h")) > 0 and _f(mem.get("output_w")) > 0:
+        return 4.0
+    if _f(mem.get("output_features")) > 0 or _f(mem.get("output_channels")) > 0:
+        return 2.0
+    return 0.0
 
 
 def _edge_base(src_feat: dict) -> list[float]:
@@ -1161,12 +1647,14 @@ def _extract_raw(g: nx.DiGraph, cfg: FeatureConfig) -> tuple[np.ndarray, np.ndar
                 float(np.sum(topo["on_weighted"])),  # type: ignore[arg-type]
             ]
         )
+    u.extend(_graph_architecture_raw(g))
     if cfg.include_precision_features:
         precision = _precision_settings(cfg)
         for field in ("weight_dtype", "activation_dtype", "grad_dtype", "accum_dtype", "optimizer_state_dtype"):
             u.extend(_onehot(precision[field], DTYPE_VOCAB))
         u.extend(_onehot(precision["tensorcore_mode"], TENSORCORE_MODES))
         u.extend(_onehot(precision["fp8_format"], FP8_FORMATS))
+        u.extend(_onehot(precision["fp4_format"], FP4_FORMATS))
         activation_bytes = _scaled_bytes(totals["mac"], precision["activation_dtype"])
         weight_bytes = _scaled_bytes(totals["weight"], precision["weight_dtype"])
         grad_bytes = _scaled_bytes(totals["weight"], precision["grad_dtype"])
@@ -1174,6 +1662,43 @@ def _extract_raw(g: nx.DiGraph, cfg: FeatureConfig) -> tuple[np.ndarray, np.ndar
         master_weight_bytes = totals["weight"] if _dtype_bytes(precision["weight_dtype"]) < 4.0 else 0.0
         for value in (activation_bytes, weight_bytes, grad_bytes, optimizer_state_bytes, master_weight_bytes):
             u.append(np.log1p(max(value, 0.0)))
+    if cfg.include_dataset_features:
+        for value in [
+            cfg.dataset_num_samples,
+            cfg.dataset_sample_bytes_mean,
+            cfg.dataset_input_bytes_mean,
+            cfg.dataset_label_bytes_mean,
+            cfg.dataset_sequence_length_p50,
+            cfg.dataset_sequence_length_p95,
+            cfg.dataset_image_pixels_p50,
+            cfg.dataset_image_pixels_p95,
+            cfg.dataset_graph_nodes_p50,
+            cfg.dataset_graph_nodes_p95,
+            cfg.dataset_graph_edges_p50,
+            cfg.dataset_graph_edges_p95,
+            cfg.dataset_input_rank,
+            cfg.dataset_input_dim0,
+            cfg.dataset_input_dim1,
+            cfg.dataset_input_dim2,
+            cfg.dataset_input_dim3,
+            cfg.dataset_input_dim4,
+            cfg.dataset_input_dim5,
+            cfg.dataset_input_numel_per_sample,
+            cfg.dataset_input_bytes_per_sample,
+            cfg.dataset_input_bytes_per_batch,
+        ]:
+            u.append(np.log1p(max(_f(value), 0.0)))
+        u.extend(
+            [
+                _f(cfg.dataloader_num_workers),
+                _f(cfg.dataloader_prefetch_factor),
+                _f(cfg.training_batch_size),
+                _f(cfg.training_grad_accumulation_steps),
+            ]
+        )
+        u.extend(_onehot(str(cfg.dataset_modality or "unknown").lower(), DATASET_MODALITY_VOCAB))
+        u.extend(_onehot(str(cfg.dataset_task_type or "unknown").lower(), DATASET_TASK_TYPE_VOCAB))
+        u.extend(_onehot(str(cfg.training_optimizer or "unknown").lower(), OPTIMIZER_VOCAB))
     if cfg.include_hardware_features:
         u.extend(
             [
@@ -1194,6 +1719,16 @@ def _extract_raw(g: nx.DiGraph, cfg: FeatureConfig) -> tuple[np.ndarray, np.ndar
     if u_raw.shape[0] != layout.global_dim:
         raise ValueError(f"global feature length mismatch: {u_raw.shape[0]} != {layout.global_dim}")
     return x_raw, edge_index, e_raw, u_raw, batch_size
+
+
+def _graph_architecture_raw(g: nx.DiGraph) -> list[float]:
+    meta = getattr(g, "graph", {}) or {}
+    out: list[float] = []
+    out.extend(_metadata_onehot(meta.get("architecture_family"), ARCHITECTURE_FAMILIES))
+    out.extend(_metadata_onehot(meta.get("modality"), MODALITIES))
+    out.extend(_metadata_onehot(meta.get("variant_kind"), VARIANT_KINDS))
+    out.extend([_f(meta.get("depth_bucket")), _f(meta.get("width_bucket"))])
+    return out
 
 
 def standardize_targets(y_raw, stats: dict[str, np.ndarray], cfg: FeatureConfig | None = None):
@@ -1234,6 +1769,7 @@ def build_pyg_data(
     feature_config: FeatureConfig | None = None,
     sample_weight: float = 1.0,
     base_label6: Sequence[float] | None = None,
+    target_raw_override: Sequence[float] | None = None,
     label_domain: str = "unknown",
     graph_family: str = "unknown",
 ) -> Data:
@@ -1241,7 +1777,7 @@ def build_pyg_data(
     layout = feature_layout(cfg)
     x_raw, edge_idx, e_raw, u_raw, batch_size = _extract_raw(g, cfg)
     slice_meta = graph_slice_metadata(g)
-    y_raw, y_eval_raw, y_base_raw = _target_for_mode(label6, batch_size, cfg, base_label6)
+    y_raw, y_eval_raw, y_base_raw = _target_for_mode(label6, batch_size, cfg, base_label6, target_raw_override)
 
     if norm_stats is not None:
         x = (x_raw - norm_stats["node_mean"]) / norm_stats["node_std"]
@@ -1360,7 +1896,8 @@ def _stats_chunk_worker(arg):
         pair_cfg = feature_config_for_pair(cfg, gp, lp)
         x_raw, _ei, e_raw, u_raw, batch_size = _extract_raw(g, pair_cfg)
         base_label = base_label_for_pair(pair_cfg, gp, lp)
-        y_raw, _y_eval_raw, _y_base_raw = _target_for_mode(parse_label(lp), batch_size, pair_cfg, base_label)
+        target_override = target_override_for_label(pair_cfg, lp)
+        y_raw, _y_eval_raw, _y_base_raw = _target_for_mode(parse_label(lp), batch_size, pair_cfg, base_label, target_override)
         y_stat = target_stat_values(y_raw, pair_cfg)
         if x_raw.shape[0]:
             acc["node"][0] += x_raw.shape[0]
@@ -1443,8 +1980,13 @@ def split_dataset(
     seed: int = 42,
     ratios: tuple[float, float, float] = (0.5, 0.25, 0.25),
     split_unit: str = "pair",
+    hardware_id: str | None = None,
+    feature_config: FeatureConfig | None = None,
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str]], list[tuple[str, str]]]:
     all_pairs = list_precision_pairs(data_root)
+    all_pairs = filter_pairs_by_hardware(all_pairs, hardware_id, feature_config)
+    if hardware_id and not all_pairs:
+        raise ValueError(f"no labels found for hardware_id={hardware_id!r} under {data_root}")
     pseudo_pairs = [pair for pair in all_pairs if label_domain_for_pair(*pair) == "pseudo"]
     pairs = [pair for pair in all_pairs if label_domain_for_pair(*pair) != "pseudo"]
     unit = (split_unit or "pair").lower()
@@ -1527,6 +2069,7 @@ def _build_chunk_worker(arg):
             weight = sample_weight_for_pair(cfg, gp, lp)
             label_domain = label_domain_for_pair(gp, lp)
             base_label = base_label_for_pair(pair_cfg, gp, lp)
+            target_override = target_override_for_label(pair_cfg, lp)
             out.append(
                 build_pyg_data(
                     parse_graph(gp),
@@ -1535,11 +2078,14 @@ def _build_chunk_worker(arg):
                     pair_cfg,
                     sample_weight=weight,
                     base_label6=base_label,
+                    target_raw_override=target_override,
                     label_domain=label_domain,
                     graph_family=graph_family_for_path(gp),
                 )
             )
         except Exception as exc:
+            if uses_target_override(cfg):
+                raise
             print(f"[PerfSeerOptimizedDataset] skipping {gp}: {exc}", flush=True)
     return pickle.dumps(out, protocol=pickle.HIGHEST_PROTOCOL)
 

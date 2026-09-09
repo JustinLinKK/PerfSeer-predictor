@@ -27,7 +27,7 @@ from .data import (
     FeatureConfig,
     LABEL_DOMAIN_VOCAB,
     NUM_TARGETS,
-    SOURCE_UNKNOWN_PRECISION_CONFIG,
+    UNKNOWN_PRECISION_CONFIG,
     TARGET_NAMES,
     PerfSeerOptimizedDataset,
     compute_norm_stats,
@@ -43,13 +43,14 @@ from .data import (
     split_dataset,
     split_hash,
     supported_precision_hardware_summary,
+    target_names_for_config,
 )
 from .losses import build_loss, weighted_metric_loss
 from .model import SeerNet, SeerNetConfig, SeerNetMulti, count_parameters
 from .pcgrad import pcgrad_backward
 
 
-METRIC_NAMES = TARGET_NAMES
+METRIC_NAMES = list(TARGET_NAMES)
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -216,7 +217,16 @@ def build_datasets(cfg: dict[str, Any]):
     data_root = cfg["data"].get("root", "dataset")
     feature_cfg = FeatureConfig.from_dict(cfg.get("features"))
     split_unit = str(cfg["data"].get("split_unit", "pair") or "pair")
-    train_files, val_files, test_files = split_dataset(data_root, seed=seed, split_unit=split_unit)
+    hardware_filter = str(cfg["data"].get("hardware_id") or "").strip()
+    if not hardware_filter and str(feature_cfg.hardware_id or "").strip() not in {"", UNKNOWN_PRECISION_CONFIG}:
+        hardware_filter = str(feature_cfg.hardware_id).strip()
+    train_files, val_files, test_files = split_dataset(
+        data_root,
+        seed=seed,
+        split_unit=split_unit,
+        hardware_id=hardware_filter or None,
+        feature_config=feature_cfg,
+    )
     limit = int(cfg["data"].get("limit", 0) or 0)
     if limit > 0:
         train_files = train_files[:limit]
@@ -263,6 +273,7 @@ def build_datasets(cfg: dict[str, Any]):
     split_meta = {
         "seed": seed,
         "split_unit": split_unit,
+        "hardware_id_filter": hardware_filter or None,
         "train_hash": split_hash(train_files),
         "val_hash": split_hash(val_files),
         "test_hash": split_hash(test_files),
@@ -293,6 +304,12 @@ def build_datasets(cfg: dict[str, Any]):
         "supported_precision_hardware": supported_precision_hardware_summary(train_files + val_files + test_files, feature_cfg),
     }
     return train_ds, val_ds, test_ds, norm_stats, feature_cfg, split_meta
+
+
+def set_metric_names_for_config(feature_cfg: FeatureConfig) -> list[str]:
+    global METRIC_NAMES
+    METRIC_NAMES = target_names_for_config(feature_cfg)
+    return METRIC_NAMES
 
 
 def make_model_config(cfg: dict[str, Any], feature_cfg: FeatureConfig, num_outputs: int) -> SeerNetConfig:
@@ -561,12 +578,13 @@ def base_metadata(
     source_precision_provenance = str(cfg.get("data", {}).get("source_precision_provenance") or "").strip()
     source_precision_confirmed = (
         bool(cfg.get("data", {}).get("source_precision_confirmed"))
-        and feature_cfg.precision_config != SOURCE_UNKNOWN_PRECISION_CONFIG
+        and feature_cfg.precision_config != UNKNOWN_PRECISION_CONFIG
     )
     return {
         "run_id": run_id,
         "config": cfg,
         "feature_config": feature_cfg.to_dict(),
+        "target_names": list(METRIC_NAMES),
         "precision_hardware_config": precision_hardware_config(feature_cfg),
         "source_precision": {
             "precision_config": feature_cfg.precision_config,
@@ -612,6 +630,7 @@ def checkpoint_payload(
         "epoch": epoch,
         "val_loss": val_loss,
         "num_targets": NUM_TARGETS,
+        "target_names": list(METRIC_NAMES),
         "metadata": metadata,
         "calibration": calibration,
     }
@@ -1238,7 +1257,9 @@ def apply_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> dict[str, 
         cfg["features"]["precision_config"] = normalize_precision_config(args.precision_config)
     if args.hardware_id is not None:
         cfg.setdefault("features", {})
+        cfg.setdefault("data", {})
         cfg["features"]["hardware_id"] = str(args.hardware_id)
+        cfg["data"]["hardware_id"] = str(args.hardware_id)
     if args.seed is not None:
         cfg["seed"] = args.seed
     if args.limit is not None:
@@ -1257,12 +1278,12 @@ def apply_overrides(cfg: dict[str, Any], args: argparse.Namespace) -> dict[str, 
         cfg.setdefault("data", {})
         cfg["data"]["source_precision_provenance"] = str(args.source_precision_provenance or "").strip()
         precision_config = normalize_precision_config(str(cfg.get("features", {}).get("precision_config", "fp32_ieee")))
-        cfg["data"]["source_precision_confirmed"] = bool(cfg["data"]["source_precision_provenance"]) and precision_config != SOURCE_UNKNOWN_PRECISION_CONFIG
+        cfg["data"]["source_precision_confirmed"] = bool(cfg["data"]["source_precision_provenance"]) and precision_config != UNKNOWN_PRECISION_CONFIG
     if args.require_source_precision_provenance:
         cfg.setdefault("data", {})
         provenance_recorded = bool(str(cfg["data"].get("source_precision_provenance") or "").strip())
         precision_config = normalize_precision_config(str(cfg.get("features", {}).get("precision_config", "fp32_ieee")))
-        cfg["data"]["source_precision_confirmed"] = provenance_recorded and precision_config != SOURCE_UNKNOWN_PRECISION_CONFIG
+        cfg["data"]["source_precision_confirmed"] = provenance_recorded and precision_config != UNKNOWN_PRECISION_CONFIG
         if not provenance_recorded:
             raise ValueError("--require-source-precision-provenance was set but source precision provenance is empty")
     return cfg
@@ -1284,6 +1305,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     print(f"device: {device} | torch threads: {torch.get_num_threads()}", flush=True)
 
     train_ds, val_ds, _test_ds, norm_stats, feature_cfg, split_meta = build_datasets(cfg)
+    set_metric_names_for_config(feature_cfg)
     metadata = base_metadata(cfg, run_id, feature_cfg, norm_stats, split_meta)
     ckpts: list[str] = []
     t0 = time.time()

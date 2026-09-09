@@ -1,0 +1,1289 @@
+blocks:
+- block_id: a10g_composite:dense_matrix_sequential
+  canonical_operation_ids:
+  - aten.linear
+  - aten.matmul
+  - aten.addmm
+  - aten.mm
+  - aten.bmm
+  - aten.einsum
+  - aten.bilinear
+  - aten.mv
+  - aten.trilinear
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: dense_matrix
+  golden_test_id: a10g_composite_golden:dense_matrix_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:dense_matrix_residual_or_branch
+  canonical_operation_ids:
+  - aten.linear
+  - aten.matmul
+  - aten.addmm
+  - aten.mm
+  - aten.bmm
+  - aten.einsum
+  - aten.bilinear
+  - aten.mv
+  - aten.trilinear
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: dense_matrix
+  golden_test_id: a10g_composite_golden:dense_matrix_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:dense_matrix_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.linear
+  - aten.matmul
+  - aten.addmm
+  - aten.mm
+  - aten.bmm
+  - aten.einsum
+  - aten.bilinear
+  - aten.mv
+  - aten.trilinear
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: dense_matrix
+  golden_test_id: a10g_composite_golden:dense_matrix_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:convolution_sequential
+  canonical_operation_ids:
+  - aten.convolution.2d
+  - aten.convolution.1d
+  - aten.convolution.3d
+  - aten.convolution_transpose.1d
+  - aten.convolution_transpose.2d
+  - aten.convolution_transpose.3d
+  - aten.convolution.generic
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: convolution
+  golden_test_id: a10g_composite_golden:convolution_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:convolution_residual_or_branch
+  canonical_operation_ids:
+  - aten.convolution.2d
+  - aten.convolution.1d
+  - aten.convolution.3d
+  - aten.convolution_transpose.1d
+  - aten.convolution_transpose.2d
+  - aten.convolution_transpose.3d
+  - aten.convolution.generic
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: convolution
+  golden_test_id: a10g_composite_golden:convolution_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:convolution_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.convolution.2d
+  - aten.convolution.1d
+  - aten.convolution.3d
+  - aten.convolution_transpose.1d
+  - aten.convolution_transpose.2d
+  - aten.convolution_transpose.3d
+  - aten.convolution.generic
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: convolution
+  golden_test_id: a10g_composite_golden:convolution_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:attention_sequential
+  canonical_operation_ids:
+  - aten.scaled_dot_product_attention
+  - aten.scaled_dot_product_attention.flash
+  - aten.scaled_dot_product_attention.efficient
+  - aten.native_multi_head_attention
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: attention
+  golden_test_id: a10g_composite_golden:attention_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_requested_and_observed
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:attention_residual_or_branch
+  canonical_operation_ids:
+  - aten.scaled_dot_product_attention
+  - aten.scaled_dot_product_attention.flash
+  - aten.scaled_dot_product_attention.efficient
+  - aten.native_multi_head_attention
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: attention
+  golden_test_id: a10g_composite_golden:attention_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_requested_and_observed
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:attention_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.scaled_dot_product_attention
+  - aten.scaled_dot_product_attention.flash
+  - aten.scaled_dot_product_attention.efficient
+  - aten.native_multi_head_attention
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: attention
+  golden_test_id: a10g_composite_golden:attention_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_requested_and_observed
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:normalization_sequential
+  canonical_operation_ids:
+  - aten.batch_norm
+  - aten.layer_norm
+  - aten.native_batch_norm
+  - aten.native_layer_norm
+  - aten.group_norm
+  - aten.instance_norm
+  - aten.rms_norm
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: normalization
+  golden_test_id: a10g_composite_golden:normalization_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:normalization_residual_or_branch
+  canonical_operation_ids:
+  - aten.batch_norm
+  - aten.layer_norm
+  - aten.native_batch_norm
+  - aten.native_layer_norm
+  - aten.group_norm
+  - aten.instance_norm
+  - aten.rms_norm
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: normalization
+  golden_test_id: a10g_composite_golden:normalization_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:normalization_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.batch_norm
+  - aten.layer_norm
+  - aten.native_batch_norm
+  - aten.native_layer_norm
+  - aten.group_norm
+  - aten.instance_norm
+  - aten.rms_norm
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: normalization
+  golden_test_id: a10g_composite_golden:normalization_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:elementwise_sequential
+  canonical_operation_ids:
+  - aten.add.Tensor
+  - aten.div.Tensor
+  - aten.sub.Tensor
+  - aten.mul.Tensor
+  - aten.pow.Tensor
+  - aten.where
+  - aten.maximum
+  - aten.minimum
+  - aten.remainder.Tensor
+  - aten.bitwise_and.Tensor
+  - aten.eq.Scalar
+  - aten.ge.Scalar
+  - aten.ne.Tensor
+  - aten.pow.Scalar
+  - aten.xlogy.Tensor
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: elementwise
+  golden_test_id: a10g_composite_golden:elementwise_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:elementwise_residual_or_branch
+  canonical_operation_ids:
+  - aten.add.Tensor
+  - aten.div.Tensor
+  - aten.sub.Tensor
+  - aten.mul.Tensor
+  - aten.pow.Tensor
+  - aten.where
+  - aten.maximum
+  - aten.minimum
+  - aten.remainder.Tensor
+  - aten.bitwise_and.Tensor
+  - aten.eq.Scalar
+  - aten.ge.Scalar
+  - aten.ne.Tensor
+  - aten.pow.Scalar
+  - aten.xlogy.Tensor
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: elementwise
+  golden_test_id: a10g_composite_golden:elementwise_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:elementwise_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.add.Tensor
+  - aten.div.Tensor
+  - aten.sub.Tensor
+  - aten.mul.Tensor
+  - aten.pow.Tensor
+  - aten.where
+  - aten.maximum
+  - aten.minimum
+  - aten.remainder.Tensor
+  - aten.bitwise_and.Tensor
+  - aten.eq.Scalar
+  - aten.ge.Scalar
+  - aten.ne.Tensor
+  - aten.pow.Scalar
+  - aten.xlogy.Tensor
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: elementwise
+  golden_test_id: a10g_composite_golden:elementwise_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:activation_unary_sequential
+  canonical_operation_ids:
+  - aten.silu
+  - aten.clamp_min
+  - aten.relu
+  - aten.gelu
+  - aten.sigmoid
+  - aten.tanh
+  - aten.abs
+  - aten.clamp
+  - aten.cos
+  - aten.elu
+  - aten.erf
+  - aten.exp
+  - aten.leaky_relu
+  - aten.log
+  - aten.mish
+  - aten.rsqrt
+  - aten.selu
+  - aten.sin
+  - aten.softplus
+  - aten.sqrt
+  - aten.hardsigmoid
+  - aten.hardswish
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: activation_unary
+  golden_test_id: a10g_composite_golden:activation_unary_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:activation_unary_residual_or_branch
+  canonical_operation_ids:
+  - aten.silu
+  - aten.clamp_min
+  - aten.relu
+  - aten.gelu
+  - aten.sigmoid
+  - aten.tanh
+  - aten.abs
+  - aten.clamp
+  - aten.cos
+  - aten.elu
+  - aten.erf
+  - aten.exp
+  - aten.leaky_relu
+  - aten.log
+  - aten.mish
+  - aten.rsqrt
+  - aten.selu
+  - aten.sin
+  - aten.softplus
+  - aten.sqrt
+  - aten.hardsigmoid
+  - aten.hardswish
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: activation_unary
+  golden_test_id: a10g_composite_golden:activation_unary_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:activation_unary_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.silu
+  - aten.clamp_min
+  - aten.relu
+  - aten.gelu
+  - aten.sigmoid
+  - aten.tanh
+  - aten.abs
+  - aten.clamp
+  - aten.cos
+  - aten.elu
+  - aten.erf
+  - aten.exp
+  - aten.leaky_relu
+  - aten.log
+  - aten.mish
+  - aten.rsqrt
+  - aten.selu
+  - aten.sin
+  - aten.softplus
+  - aten.sqrt
+  - aten.hardsigmoid
+  - aten.hardswish
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: activation_unary
+  golden_test_id: a10g_composite_golden:activation_unary_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:reduction_sequential
+  canonical_operation_ids:
+  - aten.logsumexp
+  - aten.sum
+  - aten.mean
+  - aten.amax
+  - aten.amin
+  - aten.argmax
+  - aten.argmin
+  - aten.linalg_vector_norm
+  - aten.prod
+  - aten.std
+  - aten.var
+  - aten.all
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: reduction
+  golden_test_id: a10g_composite_golden:reduction_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:reduction_residual_or_branch
+  canonical_operation_ids:
+  - aten.logsumexp
+  - aten.sum
+  - aten.mean
+  - aten.amax
+  - aten.amin
+  - aten.argmax
+  - aten.argmin
+  - aten.linalg_vector_norm
+  - aten.prod
+  - aten.std
+  - aten.var
+  - aten.all
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: reduction
+  golden_test_id: a10g_composite_golden:reduction_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:reduction_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.logsumexp
+  - aten.sum
+  - aten.mean
+  - aten.amax
+  - aten.amin
+  - aten.argmax
+  - aten.argmin
+  - aten.linalg_vector_norm
+  - aten.prod
+  - aten.std
+  - aten.var
+  - aten.all
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: reduction
+  golden_test_id: a10g_composite_golden:reduction_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:loss_probability_sequential
+  canonical_operation_ids:
+  - aten.softmax
+  - aten.mse_loss
+  - aten.nll_loss
+  - perfseer.loss.generic
+  - aten.binary_cross_entropy_with_logits
+  - aten.cross_entropy_loss
+  - aten.kl_div
+  - aten.log_softmax
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: loss_probability
+  golden_test_id: a10g_composite_golden:loss_probability_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - loss
+  - backward
+- block_id: a10g_composite:loss_probability_residual_or_branch
+  canonical_operation_ids:
+  - aten.softmax
+  - aten.mse_loss
+  - aten.nll_loss
+  - perfseer.loss.generic
+  - aten.binary_cross_entropy_with_logits
+  - aten.cross_entropy_loss
+  - aten.kl_div
+  - aten.log_softmax
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: loss_probability
+  golden_test_id: a10g_composite_golden:loss_probability_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - loss
+  - backward
+- block_id: a10g_composite:loss_probability_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.softmax
+  - aten.mse_loss
+  - aten.nll_loss
+  - perfseer.loss.generic
+  - aten.binary_cross_entropy_with_logits
+  - aten.cross_entropy_loss
+  - aten.kl_div
+  - aten.log_softmax
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: loss_probability
+  golden_test_id: a10g_composite_golden:loss_probability_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - loss
+  - backward
+- block_id: a10g_composite:pool_resample_sequential
+  canonical_operation_ids:
+  - aten.max_pool.2d
+  - aten.avg_pool.2d
+  - aten.adaptive_avg_pool.2d
+  - aten.upsample.bilinear2d
+  - aten.adaptive_avg_pool1d
+  - aten.adaptive_avg_pool3d
+  - aten.avg_pool1d
+  - aten.avg_pool3d
+  - aten.grid_sampler
+  - aten.max_pool1d
+  - aten.max_pool2d
+  - aten.max_pool3d
+  - aten.pad
+  - aten.upsample_bilinear2d.vec
+  - aten.constant_pad_nd
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: pool_resample
+  golden_test_id: a10g_composite_golden:pool_resample_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:pool_resample_residual_or_branch
+  canonical_operation_ids:
+  - aten.max_pool.2d
+  - aten.avg_pool.2d
+  - aten.adaptive_avg_pool.2d
+  - aten.upsample.bilinear2d
+  - aten.adaptive_avg_pool1d
+  - aten.adaptive_avg_pool3d
+  - aten.avg_pool1d
+  - aten.avg_pool3d
+  - aten.grid_sampler
+  - aten.max_pool1d
+  - aten.max_pool2d
+  - aten.max_pool3d
+  - aten.pad
+  - aten.upsample_bilinear2d.vec
+  - aten.constant_pad_nd
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: pool_resample
+  golden_test_id: a10g_composite_golden:pool_resample_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:pool_resample_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.max_pool.2d
+  - aten.avg_pool.2d
+  - aten.adaptive_avg_pool.2d
+  - aten.upsample.bilinear2d
+  - aten.adaptive_avg_pool1d
+  - aten.adaptive_avg_pool3d
+  - aten.avg_pool1d
+  - aten.avg_pool3d
+  - aten.grid_sampler
+  - aten.max_pool1d
+  - aten.max_pool2d
+  - aten.max_pool3d
+  - aten.pad
+  - aten.upsample_bilinear2d.vec
+  - aten.constant_pad_nd
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: pool_resample
+  golden_test_id: a10g_composite_golden:pool_resample_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:layout_shape_sequential
+  canonical_operation_ids:
+  - aten.transpose
+  - prim.getitem
+  - aten.view
+  - aten.reshape
+  - aten.permute
+  - aten.cat
+  - aten.stack
+  - aten.clone
+  - aten.expand
+  - aten.repeat
+  - aten.to_copy
+  - operator.getitem
+  - aten.arange
+  - aten.broadcast_tensors
+  - aten.chunk
+  - aten.contiguous
+  - aten.flatten
+  - aten.ones_like
+  - aten.split
+  - aten.squeeze
+  - aten.sym_size
+  - aten.tile
+  - aten.unbind
+  - aten.unflatten
+  - aten.unsqueeze
+  - aten.zeros
+  - aten.zeros_like
+  - aten.new_ones
+  - aten.new_zeros
+  - aten.ones
+  - aten.t
+  - aten.local_scalar_dense
+  - aten.detach
+  - aten.empty
+  - aten.set.source_storage
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: layout_shape
+  golden_test_id: a10g_composite_golden:layout_shape_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:layout_shape_residual_or_branch
+  canonical_operation_ids:
+  - aten.transpose
+  - prim.getitem
+  - aten.view
+  - aten.reshape
+  - aten.permute
+  - aten.cat
+  - aten.stack
+  - aten.clone
+  - aten.expand
+  - aten.repeat
+  - aten.to_copy
+  - operator.getitem
+  - aten.arange
+  - aten.broadcast_tensors
+  - aten.chunk
+  - aten.contiguous
+  - aten.flatten
+  - aten.ones_like
+  - aten.split
+  - aten.squeeze
+  - aten.sym_size
+  - aten.tile
+  - aten.unbind
+  - aten.unflatten
+  - aten.unsqueeze
+  - aten.zeros
+  - aten.zeros_like
+  - aten.new_ones
+  - aten.new_zeros
+  - aten.ones
+  - aten.t
+  - aten.local_scalar_dense
+  - aten.detach
+  - aten.empty
+  - aten.set.source_storage
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: layout_shape
+  golden_test_id: a10g_composite_golden:layout_shape_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:layout_shape_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.transpose
+  - prim.getitem
+  - aten.view
+  - aten.reshape
+  - aten.permute
+  - aten.cat
+  - aten.stack
+  - aten.clone
+  - aten.expand
+  - aten.repeat
+  - aten.to_copy
+  - operator.getitem
+  - aten.arange
+  - aten.broadcast_tensors
+  - aten.chunk
+  - aten.contiguous
+  - aten.flatten
+  - aten.ones_like
+  - aten.split
+  - aten.squeeze
+  - aten.sym_size
+  - aten.tile
+  - aten.unbind
+  - aten.unflatten
+  - aten.unsqueeze
+  - aten.zeros
+  - aten.zeros_like
+  - aten.new_ones
+  - aten.new_zeros
+  - aten.ones
+  - aten.t
+  - aten.local_scalar_dense
+  - aten.detach
+  - aten.empty
+  - aten.set.source_storage
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: layout_shape
+  golden_test_id: a10g_composite_golden:layout_shape_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:index_scatter_sequential
+  canonical_operation_ids:
+  - aten.gather
+  - aten.topk
+  - aten.index
+  - aten.scatter
+  - aten.sort
+  - aten.index_put
+  - aten.index_select
+  - aten.masked_fill
+  - aten.masked_select
+  - aten.narrow
+  - aten.scatter_reduce
+  - aten.select
+  - aten.slice
+  - aten.scatter_add
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: index_scatter
+  golden_test_id: a10g_composite_golden:index_scatter_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:index_scatter_residual_or_branch
+  canonical_operation_ids:
+  - aten.gather
+  - aten.topk
+  - aten.index
+  - aten.scatter
+  - aten.sort
+  - aten.index_put
+  - aten.index_select
+  - aten.masked_fill
+  - aten.masked_select
+  - aten.narrow
+  - aten.scatter_reduce
+  - aten.select
+  - aten.slice
+  - aten.scatter_add
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: index_scatter
+  golden_test_id: a10g_composite_golden:index_scatter_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:index_scatter_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.gather
+  - aten.topk
+  - aten.index
+  - aten.scatter
+  - aten.sort
+  - aten.index_put
+  - aten.index_select
+  - aten.masked_fill
+  - aten.masked_select
+  - aten.narrow
+  - aten.scatter_reduce
+  - aten.select
+  - aten.slice
+  - aten.scatter_add
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: index_scatter
+  golden_test_id: a10g_composite_golden:index_scatter_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:embedding_sequence_sequential
+  canonical_operation_ids:
+  - aten.embedding
+  - aten.embedding_bag
+  - aten.gru
+  - aten.lstm
+  - aten.rnn_tanh
+  - aten.cudnn_rnn
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: embedding_sequence
+  golden_test_id: a10g_composite_golden:embedding_sequence_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:embedding_sequence_residual_or_branch
+  canonical_operation_ids:
+  - aten.embedding
+  - aten.embedding_bag
+  - aten.gru
+  - aten.lstm
+  - aten.rnn_tanh
+  - aten.cudnn_rnn
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: embedding_sequence
+  golden_test_id: a10g_composite_golden:embedding_sequence_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:embedding_sequence_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.embedding
+  - aten.embedding_bag
+  - aten.gru
+  - aten.lstm
+  - aten.rnn_tanh
+  - aten.cudnn_rnn
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: embedding_sequence
+  golden_test_id: a10g_composite_golden:embedding_sequence_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:random_regularization_sequential
+  canonical_operation_ids:
+  - aten.dropout
+  - aten.bernoulli
+  - aten.rand_like
+  - aten.native_dropout
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: random_regularization
+  golden_test_id: a10g_composite_golden:random_regularization_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:random_regularization_residual_or_branch
+  canonical_operation_ids:
+  - aten.dropout
+  - aten.bernoulli
+  - aten.rand_like
+  - aten.native_dropout
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: random_regularization
+  golden_test_id: a10g_composite_golden:random_regularization_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:random_regularization_saved_activation_or_alias
+  canonical_operation_ids:
+  - aten.dropout
+  - aten.bernoulli
+  - aten.rand_like
+  - aten.native_dropout
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: random_regularization
+  golden_test_id: a10g_composite_golden:random_regularization_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - forward
+  - backward
+- block_id: a10g_composite:training_sequential
+  canonical_operation_ids:
+  - perfseer.training.analytical_backward
+  - aten.native_dropout_backward
+  - aten.sigmoid_backward
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: training
+  golden_test_id: a10g_composite_golden:training_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - backward
+- block_id: a10g_composite:training_residual_or_branch
+  canonical_operation_ids:
+  - perfseer.training.analytical_backward
+  - aten.native_dropout_backward
+  - aten.sigmoid_backward
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: training
+  golden_test_id: a10g_composite_golden:training_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - backward
+- block_id: a10g_composite:training_saved_activation_or_alias
+  canonical_operation_ids:
+  - perfseer.training.analytical_backward
+  - aten.native_dropout_backward
+  - aten.sigmoid_backward
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: training
+  golden_test_id: a10g_composite_golden:training_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_eager
+  required_phases:
+  - backward
+- block_id: a10g_composite:optimizer_sequential
+  canonical_operation_ids:
+  - perfseer.optimizer.sgd
+  - perfseer.optimizer.adam
+  - perfseer.optimizer.adamw
+  - perfseer.optimizer.asgd
+  - perfseer.optimizer.adadelta
+  - perfseer.optimizer.adafactor
+  - perfseer.optimizer.adagrad
+  - perfseer.optimizer.adamax
+  - perfseer.optimizer.lbfgs
+  - perfseer.optimizer.muon
+  - perfseer.optimizer.nadam
+  - perfseer.optimizer.radam
+  - perfseer.optimizer.rmsprop
+  - perfseer.optimizer.rprop
+  - perfseer.optimizer.sparse_adam
+  - perfseer.optimizer.lamb
+  - perfseer.optimizer.lars
+  - perfseer.optimizer.lion
+  context: sequential
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.sequential
+  family: optimizer
+  golden_test_id: a10g_composite_golden:optimizer_sequential
+  interaction_requirements:
+  - materialization
+  - forward_chain
+  - backward
+  - optimizer_interaction
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_phases:
+  - optimizer
+- block_id: a10g_composite:optimizer_residual_or_branch
+  canonical_operation_ids:
+  - perfseer.optimizer.sgd
+  - perfseer.optimizer.adam
+  - perfseer.optimizer.adamw
+  - perfseer.optimizer.asgd
+  - perfseer.optimizer.adadelta
+  - perfseer.optimizer.adafactor
+  - perfseer.optimizer.adagrad
+  - perfseer.optimizer.adamax
+  - perfseer.optimizer.lbfgs
+  - perfseer.optimizer.muon
+  - perfseer.optimizer.nadam
+  - perfseer.optimizer.radam
+  - perfseer.optimizer.rmsprop
+  - perfseer.optimizer.rprop
+  - perfseer.optimizer.sparse_adam
+  - perfseer.optimizer.lamb
+  - perfseer.optimizer.lars
+  - perfseer.optimizer.lion
+  context: residual_or_branch
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.residual_or_branch
+  family: optimizer
+  golden_test_id: a10g_composite_golden:optimizer_residual_or_branch
+  interaction_requirements:
+  - branch
+  - join
+  - residual
+  - liveness
+  - backward
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_phases:
+  - optimizer
+- block_id: a10g_composite:optimizer_saved_activation_or_alias
+  canonical_operation_ids:
+  - perfseer.optimizer.sgd
+  - perfseer.optimizer.adam
+  - perfseer.optimizer.adamw
+  - perfseer.optimizer.asgd
+  - perfseer.optimizer.adadelta
+  - perfseer.optimizer.adafactor
+  - perfseer.optimizer.adagrad
+  - perfseer.optimizer.adamax
+  - perfseer.optimizer.lbfgs
+  - perfseer.optimizer.muon
+  - perfseer.optimizer.nadam
+  - perfseer.optimizer.radam
+  - perfseer.optimizer.rmsprop
+  - perfseer.optimizer.rprop
+  - perfseer.optimizer.sparse_adam
+  - perfseer.optimizer.lamb
+  - perfseer.optimizer.lars
+  - perfseer.optimizer.lion
+  context: saved_activation_or_alias
+  factory_id: perfseer_v3.dataset_pack.composite_blocks.saved_activation_or_alias
+  family: optimizer
+  golden_test_id: a10g_composite_golden:optimizer_saved_activation_or_alias
+  interaction_requirements:
+  - alias
+  - saved_activation
+  - materialization
+  - liveness
+  - backward
+  required_backends:
+  - cuda_single_tensor
+  - cuda_foreach_or_fused_when_supported
+  required_phases:
+  - optimizer
+support_contract_sha256: 13fb04c344ca5b1a67c82767072f6b172e810ce09ffb6dd5c3984c49493e51e9
+target_hardware_id: nvidia_a10g_24gb_aws_g5
+version: perfseer_v3_a10g_composite_block_registry_v1
+composite_registry_sha256: 3629d15c36c8b0aaa559fab95579b3930d44a5035634c2debc52dd7b33d1dbb3

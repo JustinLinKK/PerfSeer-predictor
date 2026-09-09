@@ -1,0 +1,385 @@
+{
+  "$defs": {
+    "transfer_attempt": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "oom"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "failure_payload": {
+                "required": [
+                  "exception_type",
+                  "allocator_state"
+                ],
+                "type": "object"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "attempt_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "attempt_version": {
+          "const": "perfseer_v3_target_attempt_v1"
+        },
+        "base_configuration_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "base_hardware_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "base_targets": {
+          "items": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "type": "array"
+        },
+        "failure_payload": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "failure_stage": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "graph_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "hardware_profile_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "measured_configuration_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "measured_microbatch_size": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "original_microbatch_size": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "paired_configuration_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "repaired_from_configuration_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "run_payload": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "split": {
+          "enum": [
+            "train",
+            "validation",
+            "test",
+            "memory_probe"
+          ]
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "oom",
+            "quarantined"
+          ]
+        },
+        "target_hardware_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "target_targets": {
+          "oneOf": [
+            {
+              "items": {
+                "minimum": 0,
+                "type": "number"
+              },
+              "maxItems": 6,
+              "minItems": 6,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "base_configuration_id",
+        "paired_configuration_id",
+        "split",
+        "base_hardware_id",
+        "target_hardware_id",
+        "hardware_profile_sha256",
+        "base_targets",
+        "status",
+        "failure_stage",
+        "target_targets",
+        "original_microbatch_size",
+        "measured_microbatch_size",
+        "repaired_from_configuration_id",
+        "run_payload",
+        "graph_path",
+        "measured_configuration_id",
+        "failure_payload",
+        "attempt_version",
+        "attempt_sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "perfseer_v3_target_training_manifest_v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "base_hardware_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "base_lineage": {
+      "additionalProperties": false,
+      "properties": {
+        "base_dataset_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_lineage_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_split_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_student_artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_teacher_artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_teacher_embeddings_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_training_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "workload_normalization_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_training_manifest_sha256",
+        "base_dataset_fingerprint",
+        "base_split_fingerprint",
+        "base_teacher_artifact_sha256",
+        "base_student_artifact_sha256",
+        "base_teacher_embeddings_sha256",
+        "workload_normalization_sha256",
+        "base_lineage_sha256"
+      ],
+      "type": "object"
+    },
+    "deployment": {
+      "required": [
+        "target_hardware_id",
+        "hardware_allowlist"
+      ],
+      "type": "object"
+    },
+    "failed_attempts_retained": {
+      "const": true
+    },
+    "hardware_profile_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "label_budget": {
+      "enum": [
+        128,
+        256,
+        512,
+        1024
+      ]
+    },
+    "manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "manifest_version": {
+      "const": "perfseer_v3_target_training_manifest_v1"
+    },
+    "memory_probe_attempts": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/transfer_attempt"
+          },
+          {
+            "properties": {
+              "split": {
+                "const": "memory_probe"
+              }
+            }
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "oom_attempts": {
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/transfer_attempt"
+          },
+          {
+            "properties": {
+              "status": {
+                "const": "oom"
+              }
+            }
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "samples": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "base_configuration_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "base_hardware_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "base_target": {
+            "items": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "maxItems": 6,
+            "minItems": 6,
+            "type": "array"
+          },
+          "graph_path": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "graph_signature": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sample_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "source_group": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "split": {
+            "enum": [
+              "train",
+              "validation",
+              "test"
+            ]
+          },
+          "target": {
+            "items": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "maxItems": 6,
+            "minItems": 6,
+            "type": "array"
+          },
+          "target_hardware_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "sample_id",
+          "base_configuration_id",
+          "split",
+          "graph_path",
+          "source_group",
+          "graph_signature",
+          "base_hardware_id",
+          "target_hardware_id",
+          "base_target",
+          "target",
+          "attempt_sha256"
+        ],
+        "type": "object"
+      },
+      "maxItems": 1024,
+      "minItems": 128,
+      "type": "array"
+    },
+    "source_subset_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "target_hardware_id": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "manifest_version",
+    "source_subset_sha256",
+    "base_lineage",
+    "label_budget",
+    "base_hardware_id",
+    "target_hardware_id",
+    "hardware_profile_sha256",
+    "deployment",
+    "samples",
+    "oom_attempts",
+    "memory_probe_attempts",
+    "failed_attempts_retained",
+    "manifest_sha256"
+  ],
+  "type": "object"
+}
