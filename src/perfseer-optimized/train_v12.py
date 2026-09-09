@@ -286,7 +286,7 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=800)
     parser.add_argument("--local-batch", type=int, default=12)
-    parser.add_argument("--max-batch-nodes", type=int, default=32_000)
+    parser.add_argument("--max-batch-nodes", type=int, default=16_000)
     parser.add_argument("--empty-cache-every", type=int, default=1)
     parser.add_argument("--gradient-accumulation", type=int, default=1)
     parser.add_argument("--patience", type=int, default=60)
