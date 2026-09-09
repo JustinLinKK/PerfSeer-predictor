@@ -331,15 +331,17 @@ def main() -> None:
             rank,
             world_size,
         )
-        test_sampler = NodeBudgetBatchSampler(
-            [datasets["test"].node_count(row["input_sha256"]) for row in splits["test"]],
-            args.local_batch,
-            args.max_batch_nodes,
-            rank,
-            world_size,
-        )
         val_loader = DataLoader(datasets["validation"], batch_sampler=validation_sampler, num_workers=0)
-        test_loader = DataLoader(datasets["test"], batch_sampler=test_sampler, num_workers=0)
+        test_loader = None
+        if not args.skip_test:
+            test_sampler = NodeBudgetBatchSampler(
+                [datasets["test"].node_count(row["input_sha256"]) for row in splits["test"]],
+                args.local_batch,
+                args.max_batch_nodes,
+                rank,
+                world_size,
+            )
+            test_loader = DataLoader(datasets["test"], batch_sampler=test_sampler, num_workers=0)
         args.output.mkdir(parents=True, exist_ok=True)
         atomic_json(args.output / "manifest.json", {
             "architecture": "latest_perfseer_optimized_six_metric_head_extension",
@@ -418,6 +420,7 @@ def main() -> None:
         if args.skip_test:
             report["test"] = {"skipped": "feature cache unavailable for held-out graph inputs"}
         else:
+            assert test_loader is not None
             report["test"] = evaluate(
                 model.module if world_size > 1 else model,
                 test_loader,
