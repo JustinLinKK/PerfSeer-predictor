@@ -1,0 +1,12 @@
+name: cpu_openvino_fp32
+track: cpu_deploy
+runtime_backend: openvino
+device: cpu
+batch_size: 1
+bench_cpu: true
+num_bench_graphs: 1000
+warmup: 20
+cpu_threads: 0
+cpu_interop_threads: 0
+export: true
+onnx_opset: 17

@@ -1,0 +1,77 @@
+run:
+  run_id: scheduler_resource_teacher
+  out_dir: runs/optimized
+  results_path: runs/results.jsonl
+  notes: Train a scheduler packing predictor from scheduler_resource_label.jsonl.
+seed: 42
+data:
+  root: dataset
+  hardware_id: rtx5090
+  limit: 0
+  num_workers: 0
+  split_unit: graph
+features:
+  feature_schema_version: perfseer_graph_v1
+  use_operator_type_onehot: true
+  topology: true
+  critical_path: true
+  edge_topology: true
+  include_destination_tensor: true
+  time_target_mode: raw
+  target_mode: absolute
+  target_source: scheduler_resource_train
+  include_precision_features: true
+  include_dataset_features: true
+  include_hardware_features: false
+  precision_config: fp32_ieee
+  hardware_id: rtx5090
+  base_label_weight: 0.0
+  precision_label_weight: 1.0
+  pseudo_label_weight: 0.0
+model:
+  name: seernet_multi
+  hidden: 512
+  num_blocks: 4
+  head_hidden: 512
+  metric_heads: separate
+  activation: relu
+  dropout: 0.05
+  encoder_norm: layernorm
+  block_norm: prenorm
+  residual: gated
+  residual_gate_init: 0.1
+  residual_gate_mode: vector_per_stream
+  use_synmm: true
+  global_agg: synmm_plus
+  attention_pool: true
+  use_gnpb: true
+  include_u_in_edge_update: true
+  mlp_z_num_linear_layers: 4
+train:
+  metric: all
+  epochs: 600
+  batch_size: 96
+  lr: 0.0007
+  optimizer: adamw
+  weight_decay: 0.00001
+  patience: 40
+  scheduler_patience: 6
+  min_lr: 0.000001
+  loss: huber_logstd
+  huber_delta: 1.0
+  grad_clip_norm: 1.0
+  ema_decay: 0.0
+  device: auto
+multi_task:
+  enabled: true
+  loss_reduction: pcgrad
+  loss_weights:
+    train_avg_sm_util_percent: 1.5
+    train_p95_sm_util_percent: 1.5
+    train_peak_vram_used_mib: 1.25
+    train_peak_torch_reserved_mib: 1.0
+    train_step_wall_ms: 0.75
+    train_peak_memory_controller_util_percent: 0.5
+calibration:
+  enabled: true
+  method: linear

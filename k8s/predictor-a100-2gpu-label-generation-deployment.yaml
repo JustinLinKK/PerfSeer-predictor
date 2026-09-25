@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: predictor-data-labeling-a100
+  namespace: ecepxie
+  labels:
+    app: predictor-data-labeling-a100
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: predictor-data-labeling-a100
+  template:
+    metadata:
+      labels:
+        app: predictor-data-labeling-a100
+    spec:
+      containers:
+        - name: predictor-data-labeling
+          image: nvcr.io/nvidia/pytorch:26.04-py3
+          imagePullPolicy: IfNotPresent
+          workingDir: /root/Predictor
+          command:
+            - /bin/bash
+            - -lc
+            - |
+              /init/init.sh
+              exec sleep infinity
+          env:
+            - name: HOME
+              value: /root
+            - name: XDG_CONFIG_HOME
+              value: /root/.config
+            - name: PATH
+              value: /root/.local/bin:/root/.cargo/bin:/opt/conda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          resources:
+            requests:
+              cpu: "16"
+              memory: 128Gi
+              ephemeral-storage: 64Gi
+              nvidia.com/a100: "2"
+            limits:
+              cpu: "16"
+              memory: 128Gi
+              ephemeral-storage: 64Gi
+              nvidia.com/a100: "2"
+          volumeMounts:
+            - name: home
+              mountPath: /root
+            - name: init
+              mountPath: /init
+              readOnly: true
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: home
+          persistentVolumeClaim:
+            claimName: yuw-home
+        - name: init
+          configMap:
+            name: nautilus-init
+            defaultMode: 0755
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Gi

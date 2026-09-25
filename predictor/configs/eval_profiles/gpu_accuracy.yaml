@@ -1,0 +1,10 @@
+name: gpu_accuracy
+track: accuracy
+runtime_backend: pytorch
+device: cuda
+batch_size: 128
+bench_cpu: false
+num_bench_graphs: 0
+warmup: 0
+cpu_threads: 0
+cpu_interop_threads: 0
