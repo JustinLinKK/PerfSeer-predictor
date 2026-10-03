@@ -82,7 +82,7 @@ CHUNK_SIZE = 256
 PRODUCTION_CHUNK_COUNT = 44 if _NONVISION else 70
 TOTAL_CANDIDATES = 11_200 if _NONVISION else 18_000
 MEASURED_EPOCHS_PER_LABEL = 3
-MAX_REPLACEMENTS_PER_SLOT = 3 if _NONVISION else 100
+MAX_REPLACEMENTS_PER_SLOT = 4 if _NONVISION else 100
 
 
 class A10CampaignError(RuntimeError):
@@ -577,18 +577,8 @@ def _freeze_run_identity(
     root: Path,
     expected: Mapping[str, Any],
 ) -> Mapping[str, Any] | None:
-    """Freeze the origin identity or one explicitly authorized recovery transition."""
+    """Freeze the origin identity or an append-only authorized recovery chain."""
 
-    path = root / "state" / "run_identity.json"
-    if not path.exists():
-        _freeze_json(path, expected, context="run identity")
-        return None
-    if not path.is_file() or path.is_symlink():
-        raise A10CampaignError("run identity path is not a regular file")
-    try:
-        origin = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        raise A10CampaignError("run identity is unreadable") from error
     identity_keys = {
         "version",
         "repository_revision",
@@ -597,54 +587,135 @@ def _freeze_run_identity(
         "crosswalk_sha256",
         "identity_sha256",
     }
-    if not isinstance(origin, Mapping) or set(origin) != identity_keys:
-        raise A10CampaignError("run identity schema differs")
-    origin_payload = dict(origin)
-    claimed_origin_sha256 = origin_payload.pop("identity_sha256", None)
-    if (
-        not isinstance(claimed_origin_sha256, str)
-        or canonical_sha256(origin_payload) != claimed_origin_sha256
-    ):
-        raise A10CampaignError("run identity hash differs")
-    if origin == expected:
+
+    def validate_identity(value: Any, *, context: str) -> tuple[dict[str, Any], str]:
+        if not isinstance(value, Mapping) or set(value) != identity_keys:
+            raise A10CampaignError(f"{context} schema differs")
+        payload = dict(value)
+        claimed = payload.pop("identity_sha256", None)
+        if (
+            not isinstance(claimed, str)
+            or len(claimed) != 64
+            or any(character not in "0123456789abcdef" for character in claimed)
+            or canonical_sha256(payload) != claimed
+        ):
+            raise A10CampaignError(f"{context} hash differs")
+        return dict(value), claimed
+
+    path = root / "state" / "run_identity.json"
+    if not path.exists():
+        validate_identity(expected, context="run identity")
+        _freeze_json(path, expected, context="run identity")
         return None
+    if not path.is_file() or path.is_symlink():
+        raise A10CampaignError("run identity path is not a regular file")
+    try:
+        origin = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise A10CampaignError("run identity is unreadable") from error
+    origin, claimed_origin_sha256 = validate_identity(
+        origin, context="run identity"
+    )
+    expected_identity, expected_sha256 = validate_identity(
+        expected, context="recovery run identity"
+    )
     if not _DISASTER_V2:
+        if origin == expected_identity:
+            return None
         raise A10CampaignError("run identity differs from the frozen workspace")
-    authorization = os.environ.get(RECOVERY_FROM_IDENTITY_ENV, "")
-    if authorization != claimed_origin_sha256:
-        raise A10CampaignError(
-            "run identity recovery is not authorized for the frozen workspace"
-        )
     if (
-        origin.get("version") != expected.get("version")
+        origin.get("version") != expected_identity.get("version")
         or origin.get("campaign_contract_sha256")
-        != expected.get("campaign_contract_sha256")
-        or origin.get("crosswalk_sha256") != expected.get("crosswalk_sha256")
+        != expected_identity.get("campaign_contract_sha256")
+        or origin.get("crosswalk_sha256")
+        != expected_identity.get("crosswalk_sha256")
     ):
         raise A10CampaignError("run identity recovery changes the campaign contract")
-    expected_sha256 = expected.get("identity_sha256")
-    if not isinstance(expected_sha256, str) or canonical_sha256(
-        {key: value for key, value in expected.items() if key != "identity_sha256"}
-    ) != expected_sha256:
-        raise A10CampaignError("recovery run identity hash differs")
-    recovery: dict[str, Any] = {
-        "version": A10_RECOVERY_IDENTITY_VERSION,
-        "from_identity_sha256": claimed_origin_sha256,
-        "to_identity": dict(expected),
-    }
-    recovery["recovery_sha256"] = canonical_sha256(recovery)
     directory = root / "state" / "run_identity_recoveries"
     if directory.exists() and (directory.is_symlink() or not directory.is_dir()):
         raise A10CampaignError("run identity recovery path is unsafe")
-    existing = tuple(directory.iterdir()) if directory.is_dir() else ()
-    if any(
-        row.is_symlink()
-        or not row.is_file()
-        or row.suffix != ".json"
-        or row.stem != expected_sha256
-        for row in existing
-    ):
-        raise A10CampaignError("run identity recovery history differs")
+    recovery_keys = {
+        "version",
+        "from_identity_sha256",
+        "to_identity",
+        "recovery_sha256",
+    }
+    recoveries: list[tuple[Path, dict[str, Any], str, str]] = []
+    for existing_path in sorted(directory.iterdir()) if directory.is_dir() else ():
+        if (
+            existing_path.is_symlink()
+            or not existing_path.is_file()
+            or existing_path.suffix != ".json"
+        ):
+            raise A10CampaignError("run identity recovery history differs")
+        try:
+            recovery = json.loads(existing_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise A10CampaignError("run identity recovery history is unreadable") from error
+        if not isinstance(recovery, Mapping) or set(recovery) != recovery_keys:
+            raise A10CampaignError("run identity recovery history differs")
+        recovery_payload = dict(recovery)
+        claimed_recovery_sha256 = recovery_payload.pop("recovery_sha256", None)
+        from_sha256 = recovery.get("from_identity_sha256")
+        to_identity, to_sha256 = validate_identity(
+            recovery.get("to_identity"), context="recovery run identity"
+        )
+        if (
+            recovery.get("version") != A10_RECOVERY_IDENTITY_VERSION
+            or not isinstance(from_sha256, str)
+            or len(from_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in from_sha256
+            )
+            or existing_path.stem != to_sha256
+            or claimed_recovery_sha256 != canonical_sha256(recovery_payload)
+            or to_identity.get("version") != origin.get("version")
+            or to_identity.get("campaign_contract_sha256")
+            != origin.get("campaign_contract_sha256")
+            or to_identity.get("crosswalk_sha256")
+            != origin.get("crosswalk_sha256")
+        ):
+            raise A10CampaignError("run identity recovery history differs")
+        recoveries.append(
+            (existing_path, dict(recovery), from_sha256, to_sha256)
+        )
+
+    by_from: dict[str, list[tuple[Path, dict[str, Any], str, str]]] = {}
+    for row in recoveries:
+        by_from.setdefault(row[2], []).append(row)
+    active_sha256 = claimed_origin_sha256
+    terminal_recovery: dict[str, Any] | None = None
+    consumed: set[Path] = set()
+    seen_identities = {active_sha256}
+    while active_sha256 in by_from:
+        successors = by_from[active_sha256]
+        if len(successors) != 1:
+            raise A10CampaignError("run identity recovery history branches")
+        recovery_path, recovery, _, to_sha256 = successors[0]
+        if recovery_path in consumed or to_sha256 in seen_identities:
+            raise A10CampaignError("run identity recovery history cycles")
+        consumed.add(recovery_path)
+        seen_identities.add(to_sha256)
+        active_sha256 = to_sha256
+        terminal_recovery = recovery
+    if len(consumed) != len(recoveries):
+        raise A10CampaignError("run identity recovery history is disconnected")
+    if expected_sha256 == active_sha256:
+        return None if terminal_recovery is None else canonical_value(terminal_recovery)
+    if expected_sha256 in seen_identities:
+        raise A10CampaignError("run identity recovery does not extend terminal history")
+    authorization = os.environ.get(RECOVERY_FROM_IDENTITY_ENV, "")
+    if authorization != active_sha256:
+        raise A10CampaignError(
+            "run identity recovery is not authorized for the active workspace identity"
+        )
+    recovery = {
+        "version": A10_RECOVERY_IDENTITY_VERSION,
+        "from_identity_sha256": active_sha256,
+        "to_identity": expected_identity,
+    }
+    recovery["recovery_sha256"] = canonical_sha256(recovery)
     recovery_path = directory / f"{expected_sha256}.json"
     _freeze_json(recovery_path, recovery, context="run identity recovery")
     return canonical_value(recovery)

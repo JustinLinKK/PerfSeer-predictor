@@ -24,6 +24,7 @@ from .materialization import (
 )
 from .substitution_preparer import SubstitutionAwarePreparer
 from .repair import (
+    NONVISION_MAX_QUOTA_REPLACEMENTS,
     OomRepairAttempt,
     make_quota_replacement,
     next_oom_repair,
@@ -299,7 +300,9 @@ def _advance_failed_slot(
         failure_stage=failure.failure_stage,
         reason_code=f"{failure.status.value}:{failure.failure_stage.value}",
     )
-    maximum_replacements = 3 if PROFILE.is_nonvision_4gpu else 100
+    maximum_replacements = (
+        NONVISION_MAX_QUOTA_REPLACEMENTS if PROFILE.is_nonvision_4gpu else 100
+    )
     if slot.replacement_index >= maximum_replacements:
         raise SlotExhaustedError(
             f"quota slot exceeded {maximum_replacements} deterministic replacements"

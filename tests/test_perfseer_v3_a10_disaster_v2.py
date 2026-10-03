@@ -160,7 +160,10 @@ def test_manifest_crosswalk_and_historical_v1_identities() -> None:
 
 def test_fasttext_replacements_rebind_sparse_optimizer_contract() -> None:
     from perfseer_v3.dataset_pack.compatibility import DEPLOYMENT_OPTIMIZERS
-    from perfseer_v3.dataset_pack.repair import make_quota_replacement
+    from perfseer_v3.dataset_pack.repair import (
+        NONVISION_MAX_QUOTA_REPLACEMENTS,
+        make_quota_replacement,
+    )
     from perfseer_v3.dataset_pack.sampler import build_target_manifest
 
     targets = tuple(
@@ -171,7 +174,7 @@ def test_fasttext_replacements_rebind_sparse_optimizer_contract() -> None:
     replacements = []
     for target in targets:
         quarantine = _replacement_audit_quarantine(target)
-        for replacement_index in range(3):
+        for replacement_index in range(NONVISION_MAX_QUOTA_REPLACEMENTS):
             replacement = make_quota_replacement(
                 target,
                 quarantine,
@@ -184,8 +187,9 @@ def test_fasttext_replacements_rebind_sparse_optimizer_contract() -> None:
             replacements.append(replacement)
 
     assert len(targets) == 250
-    assert len(replacements) == 750
-    assert len({row.candidate.candidate_id for row in replacements}) == 750
+    assert NONVISION_MAX_QUOTA_REPLACEMENTS == 4
+    assert len(replacements) == 1_000
+    assert len({row.candidate.candidate_id for row in replacements}) == 1_000
     assert {row.candidate.optimizer["name"] for row in replacements} == set(
         DEPLOYMENT_OPTIMIZERS
     )
@@ -497,6 +501,44 @@ def test_local_validation_preserves_unstable_generated_measurements() -> None:
     )
     with pytest.raises(ValueError, match=r"epoch stability gate \(60%\)"):
         far_too_unstable.validate()
+
+
+def test_retained_epoch_boundary_defers_and_restores_cyclic_gc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack import v100_runner
+
+    state = {"enabled": True}
+    calls: list[str] = []
+    monkeypatch.setattr(v100_runner.gc, "isenabled", lambda: state["enabled"])
+    monkeypatch.setattr(
+        v100_runner.gc,
+        "collect",
+        lambda: calls.append("collect") or 0,
+    )
+
+    def disable() -> None:
+        calls.append("disable")
+        state["enabled"] = False
+
+    def enable() -> None:
+        calls.append("enable")
+        state["enabled"] = True
+
+    monkeypatch.setattr(v100_runner.gc, "disable", disable)
+    monkeypatch.setattr(v100_runner.gc, "enable", enable)
+
+    with v100_runner._defer_cyclic_gc_during_measurement():
+        assert state["enabled"] is False
+    assert state["enabled"] is True
+    assert calls == ["collect", "disable", "enable", "collect"]
+
+    calls.clear()
+    with pytest.raises(RuntimeError, match="fixture failure"):
+        with v100_runner._defer_cyclic_gc_during_measurement():
+            raise RuntimeError("fixture failure")
+    assert state["enabled"] is True
+    assert calls == ["collect", "disable", "enable", "collect"]
 
 
 @pytest.mark.parametrize(
@@ -900,7 +942,7 @@ def test_candidate_planning_failure_does_not_stop_later_four_gpu_batches(
     ]
 
 
-def test_explicit_recovery_identity_preserves_origin_and_freezes_transition(
+def test_explicit_recovery_identity_preserves_origin_and_appends_linear_transitions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -942,9 +984,64 @@ def test_explicit_recovery_identity_preserves_origin_and_freezes_transition(
     assert json.loads(recovery_path.read_text()) == recovery
     assert a10_campaign._freeze_run_identity(tmp_path, corrected) == recovery
 
-    branched = identity("5" * 40, "registry/image@sha256:" + "6" * 64)
-    with pytest.raises(a10_campaign.A10CampaignError, match="history differs"):
-        a10_campaign._freeze_run_identity(tmp_path, branched)
+    next_identity = identity("5" * 40, "registry/image@sha256:" + "6" * 64)
+    with pytest.raises(a10_campaign.A10CampaignError, match="not authorized"):
+        a10_campaign._freeze_run_identity(tmp_path, next_identity)
+    monkeypatch.setenv(
+        a10_campaign.RECOVERY_FROM_IDENTITY_ENV,
+        str(corrected["identity_sha256"]),
+    )
+    next_recovery = a10_campaign._freeze_run_identity(tmp_path, next_identity)
+    assert next_recovery is not None
+    assert next_recovery["from_identity_sha256"] == corrected["identity_sha256"]
+    assert next_recovery["to_identity"] == next_identity
+    assert len(tuple((state / "run_identity_recoveries").glob("*.json"))) == 2
+    assert a10_campaign._freeze_run_identity(tmp_path, next_identity) == next_recovery
+
+
+def test_recovery_identity_rejects_a_signed_branch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from perfseer_v3.dataset_pack import a10_campaign
+    from perfseer_v3.dataset_pack.fingerprints import canonical_sha256
+
+    def identity(revision: str) -> dict[str, object]:
+        value: dict[str, object] = {
+            "version": a10_campaign.A10_RUN_IDENTITY_VERSION,
+            "repository_revision": revision,
+            "image_digest": "registry/image@sha256:" + revision[0] * 64,
+            "campaign_contract_sha256": "c" * 64,
+            "crosswalk_sha256": "d" * 64,
+        }
+        value["identity_sha256"] = canonical_sha256(value)
+        return value
+
+    state = tmp_path / "state"
+    state.mkdir()
+    origin = identity("1" * 40)
+    first = identity("2" * 40)
+    branch = identity("3" * 40)
+    expected = identity("4" * 40)
+    (state / "run_identity.json").write_text(json.dumps(origin))
+    directory = state / "run_identity_recoveries"
+    directory.mkdir()
+    for target in (first, branch):
+        recovery: dict[str, object] = {
+            "version": a10_campaign.A10_RECOVERY_IDENTITY_VERSION,
+            "from_identity_sha256": origin["identity_sha256"],
+            "to_identity": target,
+        }
+        recovery["recovery_sha256"] = canonical_sha256(recovery)
+        (directory / f"{target['identity_sha256']}.json").write_text(
+            json.dumps(recovery)
+        )
+    monkeypatch.setenv(
+        a10_campaign.RECOVERY_FROM_IDENTITY_ENV,
+        str(first["identity_sha256"]),
+    )
+    with pytest.raises(a10_campaign.A10CampaignError, match="branches"):
+        a10_campaign._freeze_run_identity(tmp_path, expected)
 
 
 def test_recovery_environment_is_content_addressed_and_build_bound(
@@ -1209,7 +1306,7 @@ def test_pilot_lineage_workspace_and_offline_job_contract(tmp_path: Path) -> Non
     container = pod["containers"][0]
     assert (
         value["metadata"]["name"]
-        == "perfseer-v3-a10-nonvision-disaster-v2-repair-v1-pilot"
+        == "perfseer-v3-a10-nonvision-disaster-v2-repair-v2-pilot"
     )
     assert container["resources"]["requests"]["nvidia.com/gpu"] == "4"
     assert container["args"][container["args"].index("--workspace") + 1].endswith(

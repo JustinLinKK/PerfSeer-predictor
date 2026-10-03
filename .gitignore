@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.cache/
 .coverage
 htmlcov/
 .venv/
@@ -28,7 +29,7 @@ kaggle.json
 .local/
 .triton/
 torchinductor_*/
-/containers/a10-nonvision-disaster-v2-labeler/build-manifest.json
+containers/**/build-manifest.json
 
 # Regenerable datasets, labels, and run output
 /dataset/
@@ -49,7 +50,23 @@ torchinductor_*/
 *.pth
 *.ckpt
 *.safetensors
+src/**/checkpoints/
+/predictor_v3.2/weights/*
+!/predictor_v3.2/weights/README.md
+
+# Generated archives and persistent run logs
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.bz2
+*.xz
+*.7z
+*.log
 
 # Miscellaneous local artifacts
 *.pdf
 .graphcode/
+**/dataset_with_label
+record/

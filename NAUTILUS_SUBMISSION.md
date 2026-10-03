@@ -155,8 +155,12 @@ kubectl describe pvc "$PERFSEER_PVC" --namespace "$PERFSEER_NAMESPACE"
 The corrected campaign resumes only
 `/workspace/perfseer-v3-native-a10-nonvision-11200-disaster-v2-nvml-v1` and uses
 both a continuous-controller lock and atomic phase state. Its explicit recovery
-authorization is pinned to origin identity
-`5bc98b7c0f8697d30323e39d4e645b4e8a249fdb9ad01120c1c2db3bdd2ad4fb`.
+authorization is pinned to the active repair-v1 identity
+`2bceeb4b4719f0bf9d04bbc476d2a4d31c4c66cc3fc034f984b28e1e707a3651`.
+Repair-v2 appends a second content-hashed identity transition, keeps the 10%
+retained-epoch stability gate, and moves cyclic garbage collection outside the
+timed epoch boundary. Its fourth audited replacement lets the six exhausted
+chunk-06 slots resume without changing any already accepted record.
 The earlier `.../disaster-v2` workspace is separate evidence and must remain
 untouched. Do not run another campaign against either workspace concurrently.
 
@@ -193,21 +197,21 @@ Rendering only parses and verifies YAML locally; it does not contact the cluster
 ```bash
 mkdir -p .local
 python scripts/render_a10_disaster_v2_nautilus_job.py \
-  --output .local/disaster-v2-repair-v1-continuous-ecepxie.yaml \
+  --output .local/disaster-v2-repair-v2-continuous-ecepxie.yaml \
   --namespace "$PERFSEER_NAMESPACE" \
   --image "$PERFSEER_IMAGE_DIGEST" \
   --source-revision "$PERFSEER_SOURCE_REVISION" \
   --pvc "$PERFSEER_PVC" \
   --secret "$PERFSEER_KAGGLE_SECRET" \
   --mode continuous
-sed -n '1,260p' .local/disaster-v2-repair-v1-continuous-ecepxie.yaml
+sed -n '1,260p' .local/disaster-v2-repair-v2-continuous-ecepxie.yaml
 ```
 
 The renderer fails unless the Job has all of these properties:
 
 - digest-only public NRP GitLab image;
 - command `run-continuous` and the exact Disaster V2 workspace;
-- the exact frozen origin-identity recovery authorization;
+- the exact active-identity recovery authorization and append-only recovery chain;
 - one Pod/controller with four independent workers;
 - four `nvidia.com/gpu` requests and limits;
 - required `nvidia.com/gpu.product: NVIDIA-A10` affinity;
@@ -229,8 +233,8 @@ documents product affinity and the reserved-node behavior for multi-GPU requests
 This is the only normal campaign submission:
 
 ```bash
-kubectl apply -f .local/disaster-v2-repair-v1-continuous-ecepxie.yaml
-export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-repair-v1-continuous
+kubectl apply -f .local/disaster-v2-repair-v2-continuous-ecepxie.yaml
+export PERFSEER_JOB=perfseer-v3-a10-nonvision-disaster-v2-repair-v2-continuous
 kubectl get job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE" -o wide
 kubectl get pod --namespace "$PERFSEER_NAMESPACE" \
   -l "job-name=$PERFSEER_JOB" -o wide
@@ -340,7 +344,7 @@ manifest again; do not delete the PVC or workspace:
 
 ```bash
 kubectl delete job "$PERFSEER_JOB" --namespace "$PERFSEER_NAMESPACE"
-kubectl apply -f .local/disaster-v2-repair-v1-continuous-ecepxie.yaml
+kubectl apply -f .local/disaster-v2-repair-v2-continuous-ecepxie.yaml
 ```
 
 The older single-phase renderer modes remain emergency tools. Use them only after

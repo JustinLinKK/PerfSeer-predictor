@@ -25,10 +25,10 @@ CHUNK_COUNT = 44
 EXPORT_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-export-job.yaml")
 CAMPAIGN_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-labeler-job.yaml")
 CONTINUOUS_TEMPLATE = Path("k8s/a10-nonvision-disaster-v2-continuous-job.yaml")
-JOB_PREFIX = "perfseer-v3-a10-nonvision-disaster-v2-repair-v1"
+JOB_PREFIX = "perfseer-v3-a10-nonvision-disaster-v2-repair-v2"
 CAMPAIGN_LABEL = "native-a10-nonvision-disaster-11200-v2"
 RECOVERY_FROM_IDENTITY_SHA256 = (
-    "5bc98b7c0f8697d30323e39d4e645b4e8a249fdb9ad01120c1c2db3bdd2ad4fb"
+    "2bceeb4b4719f0bf9d04bbc476d2a4d31c4c66cc3fc034f984b28e1e707a3651"
 )
 KAGGLE_CONFIG_DIRECTORY = "/run/secrets/kaggle"
 KAGGLE_SOURCE_DIRECTORY = "/run/secrets/kaggle-source"

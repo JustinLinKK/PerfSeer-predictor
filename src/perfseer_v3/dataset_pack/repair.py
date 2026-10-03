@@ -25,6 +25,7 @@ from .generated_lineages import build_generated_lineage_registry
 from .labeler_profile import PROFILE
 
 
+NONVISION_MAX_QUOTA_REPLACEMENTS = 4
 _REPAIR_TOKEN = PROFILE.identity_token if PROFILE.is_native_a10 else "v100"
 REPAIR_VERSION = f"perfseer_v3_{_REPAIR_TOKEN}_oom_batch_repair_v2"
 QUARANTINE_VERSION = f"perfseer_v3_{_REPAIR_TOKEN}_quarantine_v2"

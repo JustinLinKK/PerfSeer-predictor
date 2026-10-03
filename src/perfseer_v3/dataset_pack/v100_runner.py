@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, dataclass
+import gc
 import os
 from pathlib import Path
 import threading
@@ -45,6 +47,22 @@ else:
 
 class V100RunError(RuntimeError):
     """Raised when a single configuration cannot produce an accepted run payload."""
+
+
+@contextmanager
+def _defer_cyclic_gc_during_measurement() -> Any:
+    """Keep cyclic-GC pauses outside a retained epoch's timing boundary."""
+
+    was_enabled = gc.isenabled()
+    if was_enabled:
+        gc.collect()
+        gc.disable()
+    try:
+        yield
+    finally:
+        if was_enabled:
+            gc.enable()
+            gc.collect()
 
 
 @dataclass(frozen=True)
@@ -528,88 +546,92 @@ def run_five_epoch_training(
     try:
         for epoch in range(1, 6):
             measured = epoch >= 3
-            if epoch == 3:
+            measurement_boundary = (
+                _defer_cyclic_gc_during_measurement() if measured else nullcontext()
+            )
+            with measurement_boundary:
+                if epoch == 3:
+                    if resolved_device.type == "cuda":
+                        torch.cuda.synchronize()
+                        torch.cuda.reset_peak_memory_stats()
+                    collector.start()
+                if measured:
+                    collector.begin_epoch(epoch)
                 if resolved_device.type == "cuda":
                     torch.cuda.synchronize()
-                    torch.cuda.reset_peak_memory_stats()
-                collector.start()
-            if measured:
-                collector.begin_epoch(epoch)
-            if resolved_device.type == "cuda":
-                torch.cuda.synchronize()
-            started = time.monotonic()
-            batches = examples = optimizer_steps = 0
-            epoch_loss_finite = True
-            epoch_gradients_finite = True
-            buffered: list[Mapping[str, Any]] = []
-            last_loss_for_epoch: torch.Tensor | None = None
-            for start in range(0, len(dataset), candidate.microbatch_size):
-                stop = min(len(dataset), start + candidate.microbatch_size)
-                batch = dataset.build_batch(range(start, stop))
-                batch = bind_candidate_batch_shape(
-                    candidate, adapter, _move(batch, resolved_device)
-                )
-                buffered.append(batch)
-                batches += 1
-                examples += stop - start
-                if (
-                    len(buffered) == candidate.gradient_accumulation_steps
-                    or stop == len(dataset)
-                ):
-                    loss_ok, gradient_ok, step_loss = _optimizer_step(
-                        candidate,
-                        model,
-                        adapter,
-                        buffered,
-                        forward_loss,
-                        optimizer,
-                        scheduler,
-                        scaler,
+                started = time.monotonic()
+                batches = examples = optimizer_steps = 0
+                epoch_loss_finite = True
+                epoch_gradients_finite = True
+                buffered: list[Mapping[str, Any]] = []
+                last_loss_for_epoch: torch.Tensor | None = None
+                for start in range(0, len(dataset), candidate.microbatch_size):
+                    stop = min(len(dataset), start + candidate.microbatch_size)
+                    batch = dataset.build_batch(range(start, stop))
+                    batch = bind_candidate_batch_shape(
+                        candidate, adapter, _move(batch, resolved_device)
                     )
-                    epoch_loss_finite &= loss_ok
-                    epoch_gradients_finite &= gradient_ok
-                    last_loss_for_epoch = step_loss
-                    optimizer_steps += 1
-                    buffered.clear()
-                    progress()
-            if last_loss_for_epoch is None:
-                raise V100RunError("epoch produced no optimizer steps")
-            scheduler.step(last_loss_for_epoch, unit="epoch")
-            if resolved_device.type == "cuda":
-                torch.cuda.synchronize()
-            ended = time.monotonic()
-            completed.append(epoch)
-            progress()
-            if epoch_loss_finite:
-                finite_losses.append(epoch)
-            if epoch_gradients_finite:
-                finite_gradients.append(epoch)
-            if measured:
-                samples, foreign = collector.end_epoch(epoch, ended)
-                measurement = EpochMeasurement(
-                    version=EPOCH_MEASUREMENT_VERSION,
-                    epoch=epoch,
-                    epoch_completed=True,
-                    epoch_ms=(ended - started) * 1_000.0,
-                    examples_seen=examples,
-                    batches_seen=batches,
-                    microsteps=batches,
-                    optimizer_steps=optimizer_steps,
-                    loss_finite=epoch_loss_finite,
-                    gradients_finite=epoch_gradients_finite,
-                    telemetry_complete=True,
-                    telemetry_samples=samples,
-                    peak_torch_reserved_mib=(
-                        torch.cuda.max_memory_reserved() / MIB
-                        if resolved_device.type == "cuda"
-                        else 0.0
-                    ),
-                    requested_backend_id=str(candidate.execution["backend_id"]),
-                    observed_backend_id=str(candidate.execution["backend_id"]),
-                    foreign_process_detected=foreign,
-                )
-                measurement.validate(accepted=True)
-                measurements.append(measurement)
+                    buffered.append(batch)
+                    batches += 1
+                    examples += stop - start
+                    if (
+                        len(buffered) == candidate.gradient_accumulation_steps
+                        or stop == len(dataset)
+                    ):
+                        loss_ok, gradient_ok, step_loss = _optimizer_step(
+                            candidate,
+                            model,
+                            adapter,
+                            buffered,
+                            forward_loss,
+                            optimizer,
+                            scheduler,
+                            scaler,
+                        )
+                        epoch_loss_finite &= loss_ok
+                        epoch_gradients_finite &= gradient_ok
+                        last_loss_for_epoch = step_loss
+                        optimizer_steps += 1
+                        buffered.clear()
+                        progress()
+                if last_loss_for_epoch is None:
+                    raise V100RunError("epoch produced no optimizer steps")
+                scheduler.step(last_loss_for_epoch, unit="epoch")
+                if resolved_device.type == "cuda":
+                    torch.cuda.synchronize()
+                ended = time.monotonic()
+                completed.append(epoch)
+                progress()
+                if epoch_loss_finite:
+                    finite_losses.append(epoch)
+                if epoch_gradients_finite:
+                    finite_gradients.append(epoch)
+                if measured:
+                    samples, foreign = collector.end_epoch(epoch, ended)
+                    measurement = EpochMeasurement(
+                        version=EPOCH_MEASUREMENT_VERSION,
+                        epoch=epoch,
+                        epoch_completed=True,
+                        epoch_ms=(ended - started) * 1_000.0,
+                        examples_seen=examples,
+                        batches_seen=batches,
+                        microsteps=batches,
+                        optimizer_steps=optimizer_steps,
+                        loss_finite=epoch_loss_finite,
+                        gradients_finite=epoch_gradients_finite,
+                        telemetry_complete=True,
+                        telemetry_samples=samples,
+                        peak_torch_reserved_mib=(
+                            torch.cuda.max_memory_reserved() / MIB
+                            if resolved_device.type == "cuda"
+                            else 0.0
+                        ),
+                        requested_backend_id=str(candidate.execution["backend_id"]),
+                        observed_backend_id=str(candidate.execution["backend_id"]),
+                        foreign_process_detected=foreign,
+                    )
+                    measurement.validate(accepted=True)
+                    measurements.append(measurement)
     finally:
         if collector._thread is not None:
             collector.stop()

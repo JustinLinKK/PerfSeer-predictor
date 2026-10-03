@@ -18,6 +18,7 @@ from perfseer_v3.dataset_pack.compatibility import DEPLOYMENT_OPTIMIZERS
 from perfseer_v3.dataset_pack.contracts import FailureStage
 from perfseer_v3.dataset_pack.fingerprints import canonical_sha256
 from perfseer_v3.dataset_pack.repair import (
+    NONVISION_MAX_QUOTA_REPLACEMENTS,
     QUARANTINE_VERSION,
     QuarantineRecord,
     make_quota_replacement,
@@ -56,7 +57,7 @@ def main() -> int:
     fallback_counts: Counter[int] = Counter()
     for target in manifest.candidates:
         quarantine = _audit_quarantine(target)
-        for replacement_index in range(3):
+        for replacement_index in range(NONVISION_MAX_QUOTA_REPLACEMENTS):
             replacement = make_quota_replacement(
                 target,
                 quarantine,
@@ -83,9 +84,9 @@ def main() -> int:
                 ):
                     raise AssertionError("fastText replacement optimizer contract drifted")
 
-    expected = len(manifest.candidates) * 3
-    if expected != 33_600:
-        raise AssertionError("Disaster V2 replacement audit expected 33,600 rows")
+    expected = len(manifest.candidates) * NONVISION_MAX_QUOTA_REPLACEMENTS
+    if expected != 44_800:
+        raise AssertionError("Disaster V2 replacement audit expected 44,800 rows")
     if len(candidate_ids) != expected or len(set(candidate_ids)) != expected:
         raise AssertionError("replacement candidate identities are incomplete or duplicated")
     if len(substitution_ids) != expected or len(set(substitution_ids)) != expected:

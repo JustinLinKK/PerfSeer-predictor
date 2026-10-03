@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: perfseer-v32-training-output
+  namespace: ecepxie
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: rook-cephfs
+  resources:
+    requests:
+      storage: 80Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: perfseer-v32-a100-t1-20260908
+  namespace: ecepxie
+  labels:
+    app.kubernetes.io/name: perfseer-v32-training
+  annotations:
+    perfseer.ai/dataset-fingerprint: bf025fdcd5bb60084554fcd9f11951b9e87e1b7c2452d9c0fb43ad85a7554bac
+    perfseer.ai/label-policy: perfseer_v32_shorter_timing_v1
+    perfseer.ai/prediction-hardware: nvidia_a10_24gb
+    perfseer.ai/train-rows: "32108"
+    perfseer.ai/validation-rows: "4100"
+    perfseer.ai/test-rows: "3812"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: perfseer-v32-training
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 300
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/cuda.driver.major
+                    operator: Gt
+                    values: ["569"]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: trainer
+          # Build and publish this release, then replace this placeholder with its digest.
+          image: REPLACE_WITH_PUSHED_V32_IMAGE_DIGEST
+          imagePullPolicy: IfNotPresent
+          args:
+            - --dataset
+            - /opt/perfseer/src/perfseer_v3.2/dataset_with_label/ready_for_train_12
+            - --output
+            - /outputs/perfseer-v32-a100-20260908-shorter-time
+            - --resume
+            - --teacher-epochs
+            - "600"
+            - --student-epochs
+            - "100"
+            - --effective-batch
+            - "256"
+            - --microbatch
+            - "4"
+            - --teacher-early-stopping-patience
+            - "6"
+            - --teacher-early-stopping-min-epochs
+            - "30"
+            - --no-teacher-stop-on-validation-gate
+          env:
+            - {name: OMP_NUM_THREADS, value: "4"}
+            - {name: MKL_NUM_THREADS, value: "4"}
+            - {name: CUDA_CACHE_PATH, value: /tmp/cuda-cache}
+          resources:
+            requests: &trainer_resources
+              cpu: "8"
+              memory: 24Gi
+              ephemeral-storage: 16Gi
+              nvidia.com/a100: "1"
+            limits: *trainer_resources
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: output, mountPath: /outputs}
+            - {name: shared-memory, mountPath: /dev/shm}
+            - {name: temporary-files, mountPath: /tmp}
+      volumes:
+        - name: output
+          persistentVolumeClaim:
+            claimName: perfseer-v32-training-output
+        - name: shared-memory
+          emptyDir: {medium: Memory, sizeLimit: 2Gi}
+        - name: temporary-files
+          emptyDir: {sizeLimit: 8Gi}
