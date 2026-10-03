@@ -632,3 +632,47 @@ main documents a larger 44,820-row ABA corpus with 4,800 added `a10_bs` rows;
 its batch distribution remains unverified because the ABA alias does not resolve
 and the documented hostname has no trusted local SSH host key. Evidence is in
 `record/a10-batch-audit-20260930/REPORT.md` and `audit.json`.
+# Implement PerfSeer v4 Training-only Prediction and Few-label Transfer (2026-10-02)
+
+1. Preserve the existing v3.2 implementation and all current core changes. Add
+   `perfseer_v4` with one training graph pass, three equally weighted heads, and
+   seven ordered outputs: training wall/GPU step time, epoch time, average SM,
+   average/peak VRAM, and peak Torch allocated memory. Preserve T1/S1 capacities,
+   output transforms, distillation coefficients, and production gates.
+2. Add versioned training-only dataset projection, normalization, checkpoints,
+   preparation/verification, training, export/prediction, and an explicit v3.2
+   checkpoint converter. Preserve active/native labels, splits, and provenance;
+   conversion preserves predictions but discards optimizer/progress/gate state.
+3. Verify v4.0, exclude generated payloads through .gitignore while retaining
+   container recipes, and audit staged files/outgoing blobs (maximum 5 MiB per
+   new file). Commit existing core work separately from v4.0, push the current
+   feature branch, and verify its remote SHA. Create the v4 workspace branch.
+4. On v4 implement v4.1: seven independent, group-weighted float64 ridge residual
+   models using log timing ratios, memory residuals normalized by max(source,
+   64 MiB), and SM differences divided by 100. Fit scaling only on fit rows,
+   regularize every coefficient, and select the existing lambda grid on validation.
+5. Implement v4.2: task-specific hardware FiLM plus rank-eight adapters around
+   a frozen trained v4.0 embedding and heads. Initialize to identity, keep frozen
+   modules in eval mode, and regularize displacement from initialization by
+   1e-3 times its mean square. Defaults: AdamW without weight decay, lr 1e-4,
+   100 epochs, batch 64, microbatch 4, patience 10 after epoch 20.
+6. Implement v4.3: 17 static resource/epoch descriptors plus fixed hardware/missing
+   features, two 128-wide GELU layers, three physical-output heads, and independent
+   RBF GP target residuals. Source defaults: AdamW lr 1e-3, weight decay 1e-4,
+   batch 256, 100 epochs, patience 10 after epoch 20. GP uses fit-only scaling,
+   unit amplitude, lengths 0.5/1/2/4, existing lambda grid, group-weighted noise
+   lambda W^-1, and float64 Cholesky with 1e-8 jitter. Report latent uncertainty;
+   exponentiated timing correction is the modeled median, not posterior mean.
+7. Add a comparison harness for budgets 32/64/128/256 and seeds 11/29/47 with
+   identical fit/validation/test identities, unchanged/constant/affine and full
+   fine-tuning controls, group isolation, environment/source binding, sealed
+   selection, and seven-output metrics. Report primary time/VRAM objectives,
+   memory underprediction, adaptation and prediction cost; distinguish native
+   measurements from revised references and preserve inconclusive outcomes.
+8. Verify each action with focused checks: contracts, dataset identity, conversion
+   and serialization parity, gradients/frozen state, independent metrics/math,
+   leakage rejection, legacy regressions, parameter counts, and bounded timings.
+   Commit and push tested variants to origin/v4, verify remote SHA and tracking,
+   and leave this checkout on v4. No full training, GPU measurement, or Nautilus
+   campaign is authorized by this implementation. No accuracy gains are claimed
+   from software or synthetic checks. No unrelated main merge or history rewrite.

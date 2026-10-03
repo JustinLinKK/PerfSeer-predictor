@@ -35,9 +35,11 @@ dependencies = [
 perfseer_v3 = "src/perfseer_v3"
 perfseer_v31 = "src/perfseer_v3.1"
 perfseer_v32 = "src/perfseer_v3.2"
+perfseer_v4 = "src/perfseer_v4"
 
 [tool.setuptools]
 packages = [
+    "perfseer_v4",
     "perfseer_v32",
     "perfseer_v31",
     "perfseer_v3",
@@ -50,6 +52,7 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
+perfseer_v4 = ["*.md", "*.json", "configs/*.yaml"]
 perfseer_v32 = ["*.md", "*.json", "configs/*.yaml"]
 perfseer_v31 = ["*.md", "*.json", "schemas/*.json", "configs/*.yaml"]
 perfseer_v3 = [
