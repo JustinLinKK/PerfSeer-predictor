@@ -137,6 +137,7 @@ def test_transfer_manifest_and_target_arrays_project_by_name(source_dataset, tmp
         row.pop("split")
         row.pop("version")
         row["targets"] = [row["targets"][name] for name in row["target_names"]]
+        row["native_targets"] = [row["native_targets"][name] for name in row["target_names"]]
         atomic_write(source_dataset / meta["path"], rows, compress=True)
         meta["sha256"] = file_sha256(source_dataset / meta["path"])
     policy = read_json(source_dataset / manifest["label_policy"]["path"])
@@ -148,6 +149,10 @@ def test_transfer_manifest_and_target_arrays_project_by_name(source_dataset, tmp
     projected = dataset.prepare(source_dataset, tmp_path / "v4")
     row = read_json(tmp_path / "v4" / projected["split_files"]["train"]["path"])[0]
     assert row["targets"]["train_step_wall_ms"] == 1.2 and row["split"] == "train"
+    original = read_json(source_dataset / manifest["split_files"]["train"]["path"])[0]
+    assert row["native_targets"] == dict(zip(original["target_names"], original["native_targets"], strict=True))
+    assert row["native_targets"]["train_step_wall_ms"] == 1. and row["native_targets"]["infer_step_wall_ms"] == .5
+    assert read_json(tmp_path / "v4/source" / manifest["split_files"]["train"]["path"])[0] == original
 
 
 @pytest.mark.parametrize("kind", ["labels", "native", "group", "hash", "input", "policy"])

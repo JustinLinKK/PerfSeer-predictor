@@ -282,6 +282,20 @@ def test_existing_nonresume_checkpoint_rejected_before_normalization_write(tmp_p
     assert (output / checkpoint).read_bytes() == b"existing-checkpoint"
 
 
+@pytest.mark.parametrize("variant", ["v4.2", "v4.3"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_graph_training_rejects_variant_checkpoint_before_restore(tmp_path, monkeypatch, variant, resume):
+    from perfseer_v4 import runner
+
+    checkpoint = tmp_path / ("teacher-latest.pt" if resume else "initial.pt")
+    atomic_write(checkpoint, {"model_variant": variant}, checkpoint=True)
+    monkeypatch.setattr(runner, "restore_model", lambda *args, **kwargs: pytest.fail("wrong variant reached model restore"))
+    monkeypatch.setattr(runner, "memory_probe", lambda *args, **kwargs: pytest.fail("wrong variant reached fitting"))
+    with pytest.raises(ValueError, match="requires a v4.0 checkpoint"):
+        runner.run_stage("teacher", [], [], tmp_path, {}, None, "cpu", epochs=1, resume=resume,
+                         initial_checkpoint=None if resume else checkpoint)
+
+
 @pytest.mark.parametrize("teacher_passed", [False, True])
 def test_resume_completed_gates_restore_selected_models_without_training(sample, tmp_path, monkeypatch, teacher_passed):
     from perfseer_v31.io import file_sha256

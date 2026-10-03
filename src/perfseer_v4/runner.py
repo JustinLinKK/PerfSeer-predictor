@@ -42,8 +42,9 @@ def early_stopping_reason(metrics, epoch, best_key, *, patience=0, min_epochs=0,
 
 
 class Samples:
-    def __init__(self, root, rows, normalization=None, cache_root=None):
+    def __init__(self, root, rows, normalization=None, cache_root=None, *, include_resources=False):
         self.root, self.rows, self.normalization = Path(root), rows, normalization
+        self.include_resources = include_resources
         self.cache = OrderedDict()
         self.cache_root = Path(cache_root) if cache_root else None
         self.cache_identity = code_fingerprint() if cache_root else None
@@ -63,12 +64,12 @@ class Samples:
             input_path = checked_path(self.root, row["input_path"])
             if file_sha256(input_path) != row["input_sha256"]:
                 raise ValueError("sample input hash differs")
-            cache_path = self.cache_root / (fingerprint([row["input_sha256"], self.cache_identity, FEATURE_VERSION]) + ".pt") if self.cache_root else None
+            cache_path = self.cache_root / (fingerprint([row["input_sha256"], self.cache_identity, FEATURE_VERSION, self.include_resources]) + ".pt") if self.cache_root else None
             if cache_path and cache_path.exists():
                 features = torch.load(cache_path, map_location="cpu", weights_only=False)
                 features.validate()
             else:
-                features = build_features(read_json(input_path))
+                features = build_features(read_json(input_path), include_resources=self.include_resources)
                 if cache_path:
                     atomic_write(cache_path, features, checkpoint=True)
             self.cache[key] = normalize_features(features, self.normalization) if self.normalization else features
@@ -76,7 +77,8 @@ class Samples:
                 self.cache.popitem(last=False)
         self.cache.move_to_end(key)
         return {"features": self.cache[key], "target": torch.tensor([row["targets"][name] for name in TARGET_NAMES], dtype=torch.float32),
-                "sample_id": row["sample_id"]}
+                "sample_id": row["sample_id"], "group_id": row.get("group_id"),
+                "workload_id": row["input_sha256"], "split": row.get("split")}
 
 
 def _fit_mode_normalization(samples, dataset_fingerprint, mode):
@@ -185,6 +187,8 @@ def run_stage(role, train, validation, output, manifest, normalization, device, 
     progress = None
     if resume and latest.exists():
         progress = torch.load(latest, map_location="cpu", weights_only=False)
+        if progress.get("model_variant") != "v4.0":
+            raise ValueError("teacher/student training requires a v4.0 checkpoint")
         checkpoint_fingerprint = progress.get("code_fingerprint")
         if progress["normalization"] != asdict(normalization) or progress["role"] != role:
             raise ValueError("resume normalization or role mismatch")
@@ -202,6 +206,8 @@ def run_stage(role, train, validation, output, manifest, normalization, device, 
             raise ValueError("output contains checkpoints; use --resume or a fresh output directory")
         if initial_checkpoint is not None:
             payload = torch.load(initial_checkpoint, map_location="cpu", weights_only=False)
+            if payload.get("model_variant") != "v4.0":
+                raise ValueError("teacher/student training requires a v4.0 checkpoint")
             if payload["role"] != role or file_sha256(initial_checkpoint) != manifest["transfer"]["base_checkpoint_sha256"]:
                 raise ValueError("pretrained checkpoint role or hash differs")
             model = restore_model(payload, device=device)
@@ -321,7 +327,7 @@ def run(args):
         if not args.resume or not (args.output / f"{role}-gate.json").exists():
             return None
         payload = torch.load(args.output / f"{role}-best.pt", map_location="cpu", weights_only=False)
-        if (payload["normalization"] != asdict(normalization) or payload["role"] != role
+        if (payload.get("model_variant") != "v4.0" or payload["normalization"] != asdict(normalization) or payload["role"] != role
                 or payload.get("planned_epochs") != epochs or payload.get("effective_batch") != args.effective_batch
                 or payload.get("code_fingerprint") not in {code_fingerprint(), *args.compatible_resume_code_fingerprint}):
             raise ValueError("completed stage resume contract differs")

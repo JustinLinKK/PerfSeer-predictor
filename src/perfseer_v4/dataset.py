@@ -97,7 +97,7 @@ def _project_row(row, split, input_path, input_sha256):
     validate_targets([native[name] for name in TARGET_NAMES])
     return {**row, "version": DATASET_VERSION, "split": split,
             "input_path": input_path, "input_sha256": input_sha256,
-            "target_names": list(TARGET_NAMES), "targets": targets}
+            "target_names": list(TARGET_NAMES), "targets": targets, "native_targets": native}
 
 
 def prepare(source, output, workers=1, variant="v4.0"):

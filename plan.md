@@ -676,3 +676,19 @@ and the documented hostname has no trusted local SSH host key. Evidence is in
    and leave this checkout on v4. No full training, GPU measurement, or Nautilus
    campaign is authorized by this implementation. No accuracy gains are claimed
    from software or synthetic checks. No unrelated main merge or history rewrite.
+
+Implementation verified (2026-10-03): v4.0 and all three candidates are runnable,
+with a sealed comparison harness and separate active/native evaluation. Existing
+core work is preserved in 2fbe95745; v4.0 is in eb7cdd0a2. Both commits were pushed
+to the original feature branch and its remote SHA verified before creating v4.
+The full suite passes 228 tests with three existing profile-dependent skips;
+25 v4 and 15 prior algebra checks pass. Conversion preserves exact predictions
+on 24 real validation graphs. The complete projection preserves 40,020 rows,
+119 groups and source provenance, with 936 distinct training-only inputs.
+Bounded synthetic CLI runs cover every transfer candidate, export/prediction,
+independent metric reconstruction and one-epoch resource/adaptation updates.
+Wheel build and isolated installed imports pass. Generated evidence, datasets,
+weights, archives, caches and logs remain excluded. Publication of the tested v4
+commit follows the final staged-file and outgoing-blob audit; the final response
+records its remote SHA and branch tracking. No empirical transfer improvement,
+full training, new physical measurements or Nautilus work is claimed.

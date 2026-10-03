@@ -1,7 +1,9 @@
 # PerfSeer V3 Non-Vision Four-A10 Labeler
 
-This repository contains one active workflow: the 11,200-label, non-vision
-PerfSeer V3 campaign for four NVIDIA A10 GPUs on NRP Nautilus.
+The `v4` branch adds [training-only prediction and few-label GPU transfer](src/perfseer_v4/README.md),
+with a separate implementation that preserves historical v3.2 behavior.
+The original workflow below is the 11,200-label, non-vision PerfSeer V3 campaign
+for four NVIDIA A10 GPUs on NRP Nautilus.
 
 ## Start here
 

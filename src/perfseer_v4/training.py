@@ -20,6 +20,7 @@ from .version import (CHECKPOINT_VERSION, OUTPUT_CONTRACT_VERSION, INPUT_SCHEMA_
 
 class TrainingBatch(NamedTuple):
     training: object
+    resources: object = None
 
 
 def rng_state():
@@ -114,6 +115,11 @@ def to_batch(samples, device):
         batch = batch_graph_features([getattr(sample["features"], mode) for sample in samples])
         batches[mode] = replace(batch, **{field.name: getattr(batch, field.name).to(device)
                                          for field in fields(batch) if isinstance(getattr(batch, field.name), torch.Tensor)})
+    resources = [getattr(sample["features"], "resources", None) for sample in samples]
+    if any(value is not None for value in resources):
+        if any(value is None for value in resources):
+            raise ValueError("mixed resource feature availability")
+        batches["resources"] = torch.cat(resources).to(device)
     return TrainingBatch(**batches)
 
 
@@ -239,7 +245,8 @@ def checkpoint_payload(model, *, role, epoch, normalization, dataset_fingerprint
     return {"version": CHECKPOINT_VERSION, "output_contract": OUTPUT_CONTRACT_VERSION,
             "input_schema": INPUT_SCHEMA_VERSION, "feature_version": FEATURE_VERSION,
             "metric_version": METRIC_VERSION, "loss_version": LOSS_VERSION, "selection_version": SELECTION_VERSION,
-            "target_names": TARGET_NAMES, "model_variant": "v4.0", "role": role, "epoch": epoch,
+            "target_names": TARGET_NAMES, "model_variant": model.model_variant, "role": role, "epoch": epoch,
+            **({"adapter_config": model.adapter_config} if model.model_variant == "v4.2" else {}),
             "model_config": model.config.to_dict(), "model_state_dict": {name: value.detach().cpu().clone() for name, value in model.state_dict().items()},
             "target_scales": model.target_scales.detach().cpu().clone(), "normalization": normalization,
             "normalization_sha256": fingerprint(normalization),
@@ -257,9 +264,19 @@ def restore_model(payload, *, dataset_fingerprint=None, device="cpu"):
         raise ValueError("checkpoint dataset fingerprint differs")
     if payload.get("normalization_sha256") != fingerprint(payload["normalization"]):
         raise ValueError("checkpoint normalization hash differs")
-    if payload.get("model_variant") != "v4.0":
+    variant = payload.get("model_variant")
+    if variant == "v4.3":
+        from .resource_model import ResourceMLP, ResourceMLPConfig
+        state = payload["model_state_dict"]
+        model = ResourceMLP(ResourceMLPConfig(**payload["model_config"]), payload["target_scales"],
+                            state["resource_mean"], state["resource_scale"])
+    elif variant in {"v4.0", "v4.2"}:
+        model = SeerNetV4(SeerNetV4Config(**payload["model_config"]), payload["target_scales"])
+        if variant == "v4.2":
+            from .adapters import HardwareAdaptedV4
+            model = HardwareAdaptedV4(model, **payload["adapter_config"], require_trained_source=False)
+    else:
         raise ValueError("unsupported model variant")
-    model = SeerNetV4(SeerNetV4Config(**payload["model_config"]), payload["target_scales"])
     model.load_state_dict(payload["model_state_dict"], strict=True)
     if not torch.equal(model.target_scales.cpu(), torch.as_tensor(payload["target_scales"]).cpu()):
         raise ValueError("checkpoint target scales differ from weights")

@@ -34,6 +34,32 @@ def main(argv=None):
     predict.add_argument("--designs", type=Path, required=True, help="A JSON list of training-only designs")
     predict.add_argument("--output", type=Path, required=True)
     predict.add_argument("--device", default="cpu")
+    predict.add_argument("--calibration", type=Path)
+    predict.add_argument("--environment", type=Path)
+    transfer = commands.add_parser("transfer", help="Fit candidates and seal validation selection; does not score test labels")
+    transfer.add_argument("--dataset", type=Path, required=True)
+    transfer.add_argument("--source", type=Path, required=True)
+    transfer.add_argument("--resource-source", type=Path)
+    transfer.add_argument("--environment", type=Path, required=True)
+    transfer.add_argument("--output", type=Path, required=True)
+    transfer.add_argument("--budgets", type=int, nargs="+", default=[32, 64, 128, 256])
+    transfer.add_argument("--seeds", type=int, nargs="+", default=[11, 29, 47])
+    transfer.add_argument("--variants", nargs="+", default=["source", "constant", "affine", "v4.1", "v4.0-finetune", "v4.2", "v4.3"])
+    transfer.add_argument("--device", default="cpu", help="Neural adaptation device; residual source predictions use CPU FP32")
+    transfer.add_argument("--epochs", type=int, default=100)
+    transfer.add_argument("--microbatch", type=int, default=4)
+    evaluation = commands.add_parser("evaluate", help="Evaluate a sealed selection on held-out test rows")
+    evaluation.add_argument("--selection", type=Path, required=True)
+    evaluation.add_argument("--output", type=Path, required=True)
+    evaluation.add_argument("--device", default="cpu")
+    evaluation.add_argument("--microbatch", type=int, default=4)
+    resource = commands.add_parser("train-resource", help="Explicitly train the v4.3 source MLP")
+    resource.add_argument("--dataset", type=Path, required=True)
+    resource.add_argument("--output", type=Path, required=True)
+    resource.add_argument("--device", default="cuda")
+    resource.add_argument("--epochs", type=int, default=100)
+    resource.add_argument("--microbatch", type=int, default=256)
+    resource.add_argument("--seed", type=int, default=11)
     commands.add_parser("train", help="Train a fresh teacher/student pair; see train --help")
     args = parser.parse_args(argv)
     if args.command == "prepare":
@@ -52,13 +78,30 @@ def main(argv=None):
         from .conversion import convert_file
         convert_file(args.source, args.output)
         result = {"status": "converted", "output": str(args.output), "accuracy_gate_claimed": False}
+    elif args.command == "transfer":
+        from .experiments import select
+        selection = select(args.dataset, args.source, args.resource_source, read_json(args.environment), args.output,
+                           budgets=args.budgets, seeds=args.seeds, variants=args.variants,
+                           device=args.device, epochs=args.epochs, microbatch=args.microbatch)
+        result = {"status": selection["stage"], "trials": len(selection["trials"]),
+                  "selection": str(args.output / "selection.json"), "deployment_approved": False}
+    elif args.command == "evaluate":
+        from .experiments import evaluate_selection
+        report = evaluate_selection(args.selection, args.output, device=args.device, microbatch=args.microbatch)
+        result = {"status": report["status"], "trials": len(report["trials"]), "output": str(args.output), "deployment_approved": False}
+    elif args.command == "train-resource":
+        from .transfer import train_resource
+        result = train_resource(args)
     else:
         from .inference import export_model, predict
         payload = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
         if args.command == "export":
             export_model(payload, args.output)
         else:
-            atomic_write(args.output, predict(payload, read_json(args.designs), device=args.device))
+            from .residuals import load_adapter
+            atomic_write(args.output, predict(payload, read_json(args.designs), device=args.device,
+                         calibration=load_adapter(args.calibration) if args.calibration else None,
+                         environment=read_json(args.environment) if args.environment else None))
         result = {"status": "completed", "output": str(args.output)}
     print(json.dumps(result, indent=2))
 
