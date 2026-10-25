@@ -65,11 +65,33 @@
       },
       "strict_state_load": true,
       "train_rows": 2
+    },
+    "S_A10G": {
+      "batch_independence": true,
+      "conservative_memory_upper": true,
+      "cuda_uninitialized": true,
+      "dataset_sha256": "73cb023b72370ff310f278e7e70fb9131603cf1fe9e4d9bfc1d0c6e46921caef",
+      "eager_torchscript_all_outputs": true,
+      "hardware": "A10G",
+      "kind": "student",
+      "network_blocked": true,
+      "no_historical_code_imported": true,
+      "normalization_sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0",
+      "parameters": 1643470,
+      "physical_outputs": true,
+      "prediction_sha256": "815b914c49c2854d1eddc82bf7b3ba4319d4a73e0f1c935e58ef8f1f1063d8bd",
+      "source_hashes": {
+        "checkpoint": "344114ea07ffc641bc3432813986c17c304c1346e8b84f806265910b890efa69",
+        "probe": "c1de32168d0fe7002d86ef88489365ccc9dda4a01cf97582807e8606cf008675",
+        "script": "933802738f7236f64e1309414b7fac1f15d8983365c994d678740183314bf267"
+      },
+      "strict_state_load": true,
+      "train_rows": 2
     }
   },
   "passed": true,
   "probe_manifest_sha256": "60de36b5b428abb7db2f58dd1d5c818aedbed8b7b52ad254b87e45bddc319da5",
-  "registry_sha256": "92748830b6a2bf4892e90dcdc8da113c2057d63da712cf84337a006f2c68530e",
+  "registry_sha256": "b6d99be41d2bc884a7ed56c9309991fa8f557429b5092a674900a3c726c6d3b3",
   "scope": "tiny TRAIN-only offline inference; no validation, heldout or test metrics",
   "source_unchanged": true,
   "tree_python_files": {

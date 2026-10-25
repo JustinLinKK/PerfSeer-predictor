@@ -1,8 +1,8 @@
 {
-  "assets_manifest_sha256": "60954e5b69c9e577e1d598058d1f211facdcb75628a44b7c87255b93bca2aa74",
+  "assets_manifest_sha256": "d13dd542ee1871b36c8ddb62eddd0a2ac8ed1ee84c3da2eadcfa21f376760b36",
   "complete_release": false,
   "full_quality_gate_required_independently": true,
-  "milestone": "a10-first",
+  "milestone": "a10g-student",
   "models": {
     "P_A10": {
       "checkpoint_sha256": "8533be3508885d91fc94780f989c14421e2f68b3478d406bd1667178cf4ae705"
@@ -12,17 +12,19 @@
     },
     "S_A100": {
       "checkpoint_sha256": "136144e6aa269f7c17df947a2b1b9b7fa4ad82ef9982b250d8fa3c43f22e4762"
+    },
+    "S_A10G": {
+      "checkpoint_sha256": "344114ea07ffc641bc3432813986c17c304c1346e8b84f806265910b890efa69"
     }
   },
   "pending": [
     "P_A100",
     "P_A10G",
-    "S_A10G",
     "TS_A10_A100",
     "T_A10_A100"
   ],
   "plan_sha256": "0868db58a8d80f77849402e41edbf96d4d919604c5a49840d74bd0d217a0d180",
-  "previous_milestone_commit": "a484a6d339d9c2001e57b3cf95c4f81a43a47e38",
+  "previous_milestone_commit": "bedd8e53480f3382d5fa6516d43b8db6faccb78c",
   "schema": "perfseer-paper-release-v1",
   "source_commit": "aeeccaf4c1a32cd634661f3f337b243842a2e650"
 }

@@ -1,35 +1,11 @@
-# PerfSeer: A10 testing release
+# PerfSeer: pretrained student release
 
-This release adds **P_A10**, the full-data A10 teacher, and **S_A10**,
-its D3 student with a verified CPU TorchScript export. Both finished their full
-training budgets (30 and 40 epochs respectively). The A10 dataset is included
-through Git LFS. The remaining hardware and transfer models will arrive in a
-later commit on this same `paper-release` branch. The previously published
-**S_A100** student and full A100 dataset remain available; see
-[A100_QUICKSTART.md](A100_QUICKSTART.md).
+Available checkpoints: **P_A10, S_A10, S_A100, S_A10G**. Each published model has completed training, lineage and CPU export checks.
 
-Start with [A10_QUICKSTART.md](A10_QUICKSTART.md). It explains selective downloads,
-checksum-verified extraction, and CPU inference with the teacher or student.
-Predictions target A10 workloads even though inference runs on CPU.
+Start with [A10_QUICKSTART.md](A10_QUICKSTART.md). For A100 or A10G, use the same `tools/predict_student.py` command with `checkpoints/S_A100/student.ts` or `checkpoints/S_A10G/student.ts` and the matching hardware input-only bundle. Only checkpoints listed above are available in this commit.
 
-`reports/comparison.json` contains the validation results. A10 has no independent
-sealed test. Selection used validation only; the best checkpoint is not a claim
-that every timing, busy-ordering and VRAM quality threshold passed.
+Download the matching `perfseer-v1-a100-full.tar.gz` / `perfseer-v1-a10g-full.tar.gz` dataset and `perfseer-v1-s_a100.tar.gz` / `perfseer-v1-s_a10g.tar.gz` model archive with Git LFS; verify and extract with `tools/extract_assets.py`.
 
-P_A10 uses the SM0/P1 architecture, initialized from the immutable A1001 source.
-That source already has A10 ancestry. This is full-data target adaptation, not
-scratch-only pretraining or unseen-hardware transfer. S_A10 distills that exact
-P_A10 checkpoint with the established D3 recipe.
+Validation and final evaluation are recorded separately in `reports/comparison.json`. Checkpoint selection does not imply every quality threshold passes. A10 has no independent sealed test. The A100 source has A10 ancestry; A10G historical executable/static-feature revisions differ from A10/A100. See the portable/data guides for provenance.
 
-`portable/` contains the teacher implementation, training recipes and frozen
-feature runtime. `student_training/` contains only the pretrained D3 student
-design at this milestone. No unselected transfer-student design is published.
-`data/` contains the direct workload generator and new GPU labeler; follow
-`portable/FRESH_DATA.md` for fresh data capture and feature packing. Historical
-datasets and new local measurements have different protocols and retain their
-own provenance.
-
-`assets/manifest.json` lists archive and member hashes. `reports/lfs/` records
-successful upload and remote hash checks. `RELEASE.json` identifies this as the
-A10 addition milestone and lists pending release components. The later complete
-release will retain this commit in its history.
+The remaining teacher and transfer models will arrive as later commits on this same branch. Only the selected transfer-student design will be added after its four-way comparison.
