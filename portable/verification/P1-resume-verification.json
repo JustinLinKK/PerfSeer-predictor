@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "candidate": "P_A10",
+  "device": "cpu",
+  "cuda_used": false,
+  "epochs": 2,
+  "updates": 4,
+  "state_tensors": 576,
+  "state_optimizer_rng_history_lr_cursor_exact": true,
+  "selected_state_exact": true,
+  "finite_nonzero_gradients_verified": true,
+  "changed_tensors_from_selected_baseline": 542,
+  "source_unchanged": true,
+  "uninterrupted_result_sha256": "02f29e470f6ab10d2529a108a380e245b1057452a47862346aee1b16ca9d5563",
+  "recovered_result_sha256": "02f29e470f6ab10d2529a108a380e245b1057452a47862346aee1b16ca9d5563",
+  "portable_code_sha256": "d75b7ec895e33305c846b3d83f2553d19fd8a72a42fe74f3b02f991180f86b79",
+  "scope": "bounded real-data smoke; not evidence of production model quality"
+}

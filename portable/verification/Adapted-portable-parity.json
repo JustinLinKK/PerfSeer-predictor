@@ -1,0 +1,38 @@
+{
+  "passed": true,
+  "kind": "Adapted",
+  "rows": 2,
+  "prediction_max_absolute_difference": 0.0,
+  "bit_identical": true,
+  "python_isolated_mode": true,
+  "working_directory_outside_repository": true,
+  "PYTHONPATH_empty": true,
+  "CUDA_VISIBLE_DEVICES_empty": true,
+  "checkpoint_copied": false,
+  "stdout": {
+    "rows": 2,
+    "kind": "Adapted",
+    "device": "cpu",
+    "parameter_count": 253644481,
+    "finite": true
+  },
+  "input_sha256": "65368a972c8f36d9a09762ba4b88858f74c6b3f1a168694d646fcf1887730617",
+  "predictions": [
+    [
+      1.045393466949463,
+      0.9589373469352722,
+      1.045393466949463,
+      15.046195030212402,
+      809.6926879882812,
+      814.7301025390625
+    ],
+    [
+      4.89621114730835,
+      4.700496196746826,
+      4.89621114730835,
+      41.79072952270508,
+      830.0302734375,
+      835.3961181640625
+    ]
+  ]
+}

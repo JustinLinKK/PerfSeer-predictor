@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "portable_files": 322,
+  "data_source_files_checked": 45,
+  "manifest_sha256": "7495fe4c1cda171acbcb91cfd8515ff73de7fea61e1e7d8dc6f0e82e4c3d40c4",
+  "trainer_code_sha256": "d75b7ec895e33305c846b3d83f2553d19fd8a72a42fe74f3b02f991180f86b79",
+  "torch_imported": false,
+  "gpu_accessed": false,
+  "scope": "Source integrity and frozen verification receipts"
+}

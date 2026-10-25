@@ -1,0 +1,58 @@
+"""Self-contained generated PyTorch architecture for @MODEL_ID_TEXT@."""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from typing import Any
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def _integer(config: Mapping[str, Any], key: str, default: int) -> int:
+    return int(config.get(key, default))
+
+class MixtureDensityModel(nn.Module):
+    """Gaussian or Laplace mixture-density regression head."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        features = _integer(config, 'feature_count', 16)
+        width = _integer(config, 'width', 64)
+        depth = _integer(config, 'depth', 2)
+        self.components = _integer(config, 'component_count', 3)
+        self.distribution = str(config.get('base_module', 'gaussian_mixture'))
+        layers: list[nn.Module] = [nn.Linear(features, width), nn.ELU()]
+        for _ in range(depth - 1):
+            layers.extend((nn.Linear(width, width), nn.ELU()))
+        self.network = nn.Sequential(*layers)
+        self.head = nn.Linear(width, self.components * 3)
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        """Map regression features ``[B,F]`` to mixture parameters ``[B,3K]``."""
+        raw = self.head(self.network(features))
+        logits, location, raw_scale = raw.chunk(3, dim=-1)
+        weights = torch.softmax(logits, dim=-1)
+        scale = F.softplus(raw_scale) + 0.0001
+        if self.distribution == 'laplace_mixture':
+            scale = torch.exp(torch.log(scale))
+        return torch.cat((weights, location, scale), dim=-1)
+
+
+MODEL_ID = @MODEL_ID@
+PROFILE_POINT_ID = @PROFILE_POINT_ID@
+MODEL_CONFIG = @MODEL_CONFIG@
+BATCH_SIZE = @BATCH_SIZE@
+PRECISION_CONFIG = @PRECISION_CONFIG@
+PRECISION_DTYPE = torch.float16 if PRECISION_CONFIG == "fp16_amp" else torch.float32
+OPTIMIZER_NAME = @OPTIMIZER_NAME@
+INPUT_SPECS = @INPUT_SPECS@
+INPUT_SHAPE = tuple(INPUT_SPECS[0]["shape"])
+
+def precision_context(device_type: str = "cuda"):
+    if device_type != "cuda" or PRECISION_CONFIG == "fp32_ieee":
+        from contextlib import nullcontext
+        return nullcontext()
+    return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+
+def make_model() -> nn.Module:
+    return MixtureDensityModel(MODEL_CONFIG)

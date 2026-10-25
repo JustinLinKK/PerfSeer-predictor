@@ -1,0 +1,1632 @@
+{
+  "schema": "perfseer-portable-source-manifest-v1",
+  "trainer_code_sha256": "d75b7ec895e33305c846b3d83f2553d19fd8a72a42fe74f3b02f991180f86b79",
+  "architecture_sha256": "f273a6fd53464ab03c81b4492a494e48b55c6d659e68bca3efcabc6360c0053d",
+  "pinned_runtime_files": 284,
+  "pinned_runtime_byte_identical": true,
+  "copied_support_byte_identical": true,
+  "architecture_byte_identical": true,
+  "extraction_proof": "verification/recipe-parity.json",
+  "required_receipts": [
+    "verification/environment.json",
+    "verification/recipe-parity.json",
+    "verification/fresh-pipeline.json",
+    "verification/P1-portable-parity.json",
+    "verification/Adapted-portable-parity.json",
+    "verification/T7-portable-parity.json",
+    "verification/P1-resume-verification.json",
+    "verification/T7-resume-verification.json"
+  ],
+  "files": [
+    {
+      "path": "FRESH_DATA.md",
+      "bytes": 7038,
+      "sha256": "2b64862bf4e529b2bb8a1971b9f9a6270425aa4fc0ba8955b6966742eea0ab28"
+    },
+    {
+      "path": "README.md",
+      "bytes": 9316,
+      "sha256": "a2c5b23a29c4326ac70ce6e74745d77c65406a904fc3001ab64c2576d6566894"
+    },
+    {
+      "path": "SOURCE_ALLOWLIST.json",
+      "bytes": 98397,
+      "sha256": "07994e8376742982a946dc1f4d098ed9df4cf1a62e20d41756712614bf370bc7"
+    },
+    {
+      "path": "__init__.py",
+      "bytes": 91,
+      "sha256": "db447481cfee4efa318fb803b62403d08e260aba43a5627286c4152e848f7c1d"
+    },
+    {
+      "path": "aba3_training_support.py",
+      "bytes": 14381,
+      "sha256": "1caca3cdc9f8f790bd045d727dbf06c60a32cac98af40fe4b55eda62902cf43d"
+    },
+    {
+      "path": "architecture.pt",
+      "bytes": 36517,
+      "sha256": "f273a6fd53464ab03c81b4492a494e48b55c6d659e68bca3efcabc6360c0053d"
+    },
+    {
+      "path": "base_loader.py",
+      "bytes": 9962,
+      "sha256": "1fc805343e65c1e640cc5ae12aaba9ce27de17780fded988ed025d194873cbb6"
+    },
+    {
+      "path": "checkpoint_catalog.json",
+      "bytes": 868,
+      "sha256": "4faa6e907659619810ccfd41be9f79ca92e986fe8ab01fe4000de5917efdd60a"
+    },
+    {
+      "path": "infer.py",
+      "bytes": 2862,
+      "sha256": "dbd9576f3698c9325a14d666d8c46379291b92f05cecadf485965381f21f8bdd"
+    },
+    {
+      "path": "io_utils.py",
+      "bytes": 2123,
+      "sha256": "72def24f85742d536b7bb4ec8cd8cc9758905aa513f2526ee53e38306729f804"
+    },
+    {
+      "path": "model/starter.py",
+      "bytes": 61398,
+      "sha256": "70bc3c7b442e9366a8e69828e04bafe9eb0568344ed574ed62e4b236c792644d"
+    },
+    {
+      "path": "pack_fresh.py",
+      "bytes": 11512,
+      "sha256": "9bae65a2177546287982fd9c96ff2d7add89af39c4c1c157d3f76b6dc8e0c4e8"
+    },
+    {
+      "path": "requirements-tested.txt",
+      "bytes": 79,
+      "sha256": "ec4c609b8b53f41ca2cdedb24c29f3753cd81c6a2cc9d944ecfc86d3d005e8e3"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/__init__.py",
+      "bytes": 210,
+      "sha256": "bc49e87e265f769c8cac1b4c64062e4d360805c971849d862cd812011604dfa5"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/capture_export.py",
+      "bytes": 8052,
+      "sha256": "c82bb7734908762c8e21d8ff8d0248e32467f7d3353a8253529073a34bda7d1c"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/capture_training.py",
+      "bytes": 14156,
+      "sha256": "7ad435a50b68c3f0e2850c777530a2cbec2ca4be2a37b766f113dda35084637b"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/dataset.py",
+      "bytes": 24447,
+      "sha256": "dfccecba77fec259fce5af83f5d12561e03b386959b10c967cc6ec5955b146b4"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/execution_replay.py",
+      "bytes": 4345,
+      "sha256": "9ff5a18eb9655dc3a3e4ad4852a6dc903bc7029523ba7b0055f6850aa0c0c10d"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/features.py",
+      "bytes": 2679,
+      "sha256": "3cdabc6977f2414ea42139370d0c6ba0aeba97a2168e1d85c7af2e621d2390f3"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/features_core.py",
+      "bytes": 37717,
+      "sha256": "fe277060bbd993737923d28965ca07a8644971c819c51e779217d31c3777a854"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/generated_model_runtime.py",
+      "bytes": 18956,
+      "sha256": "c05fb507cabb8efd0c050a37f01bb58460d19e785872d5b3bf604187117a27fb"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/inference.py",
+      "bytes": 1456,
+      "sha256": "bb190507cf31f0084a12cdacf9b35a40bc5001b33ba7811d9c50c6d32c00daec"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/io.py",
+      "bytes": 1476,
+      "sha256": "d685d6b94d983da201c45f1312f342eeeb9c4679b8331fe792c33eea4280ff14"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/liveness.py",
+      "bytes": 3104,
+      "sha256": "767fb9dfd4eade01abfefce6841f5273532edb6d991b98ecd6e55fa341b333e0"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/model.py",
+      "bytes": 12232,
+      "sha256": "33c5c32d159d7a0d84fb302b629bd0e12e8407eb359b8e6d2a30062ae9b16482"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/optimizer_defaults.json",
+      "bytes": 5238,
+      "sha256": "d77facbb598d13abf04501bb98f2219611c94281b2596baac0c76a7a82ee06ea"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/recovered_contracts.py",
+      "bytes": 31014,
+      "sha256": "7be9b6315ec4484a39398c474545dbff1f3aa6275c2e2164c7a8c3c48ab38d75"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/recovered_generated_lineages.py",
+      "bytes": 10402,
+      "sha256": "879eb87f6ac1807abf6eefb75a1527818bbccee324272545dce40b28f3fc6339"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/runner.py",
+      "bytes": 17106,
+      "sha256": "886706384ff37c5ea119dddac0ab5ccfc129cc9afe59421fae80bff869efb884"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/training.py",
+      "bytes": 11678,
+      "sha256": "11f466cce170a108aaffd80cc557eaa40465e41e901bdf68f1ccdae4ca3bf315"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/verification.py",
+      "bytes": 6531,
+      "sha256": "0af8f359b860f70a78b166566dbf66d6f151101bbdf00bbc5d3183625cea7526"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v31/version.py",
+      "bytes": 424,
+      "sha256": "de96ef2b8e778150e8e12f16bfb2aa6efe496681d2caddf99824a8e2aa3ef075"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/__init__.py",
+      "bytes": 237,
+      "sha256": "6fab1a3d89d8c6dc399f146411d36cc77c5ebdbafad9234366110cebaa5ae980"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/calibration.py",
+      "bytes": 17677,
+      "sha256": "ea84f4c200c4f3d0d51048a0ae248853c953339a4623a91bd0ad237d74d74fb6"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/calibration_contracts.py",
+      "bytes": 9801,
+      "sha256": "29fd5a709aac95719f303c663f416734420faddaff3094df0e164bdf3f9dae26"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/calibration_evaluation.py",
+      "bytes": 20982,
+      "sha256": "62248562272eb5ffa2d252a5cf9d1482111bcff671010830a7aad402f388f202"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/calibration_runner.py",
+      "bytes": 28059,
+      "sha256": "dff7aae1d94b830adf772292cfdb1bfd09f54862301926da5b7613583b43e6ff"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/capture.py",
+      "bytes": 7733,
+      "sha256": "c96fe316ea540f34f2a1cbf298441e8bfb6b901a96d5856b99cfa4cdc187780c"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/dataset.py",
+      "bytes": 25166,
+      "sha256": "19c22e26d23e5d7c04d7c149906380bb1a65336cee5efd97e64275fea2e4b76d"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/features.py",
+      "bytes": 4137,
+      "sha256": "e7941e8552559e3a11af95b5c787a7a4025d53e2e95d45b92ad0ddcceda9023e"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/inference.py",
+      "bytes": 5138,
+      "sha256": "e988a30a7722327bf6b7fa790367977fc9959464e32ca7378e81d2fc06f81191"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/label_policy.py",
+      "bytes": 12843,
+      "sha256": "c0bbe4c7c2352073a8372ecd026a773ab8aa159ec831ac5639eb0cfde3d4b481"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/memory_baseline.py",
+      "bytes": 5409,
+      "sha256": "16f8bfe2af59a00fb21ddfdc8bdfa76d4d7b5159b1b5d0bb1ebe7b771419dcf1"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/model.py",
+      "bytes": 9420,
+      "sha256": "453f9e6e886a4ab5d1a9ebda54875f4a735163f59ea3af72e7e937070e69f6ac"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/runner.py",
+      "bytes": 25978,
+      "sha256": "3293c005974b3c3fcdddfaaaac4fd05368743db1d87b30429cd01fdcc876fbe3"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/training.py",
+      "bytes": 14281,
+      "sha256": "bf20b1b1631f4622a0963ded45e5b64f03dcc987312a03233e5637f27b28eb57"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/transfer_labeling.py",
+      "bytes": 64009,
+      "sha256": "c805cf1c154255238f365dbb454b376bf3b468ec7ff746f7262dee5b7e937989"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/transfer_sources.py",
+      "bytes": 14245,
+      "sha256": "5717e4a16403f0429043d23ffd1a088f22d7433649c3b61a74564bb1bb102852"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/transfer_training.py",
+      "bytes": 19288,
+      "sha256": "8ededbe758837b0148bf9c9b70d2286b310290fbb8d1b5badcfbe97b663c7b8f"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/transfer_verification.py",
+      "bytes": 31270,
+      "sha256": "6a6b61b872d1f9b37844da117f4e7435bb9ec877abee4229a5cfd028428f3964"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/verification.py",
+      "bytes": 15228,
+      "sha256": "d5e8e98fbc4f68d1df505cdd146dc11b781e700ed8d925565099b121d791c21a"
+    },
+    {
+      "path": "runtime/aliases/perfseer_v32/version.py",
+      "bytes": 1523,
+      "sha256": "ae83c8a71a3623f973314edfdb87b269ddb59f26d581dc5c319a847cbc07b628"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/__init__.py",
+      "bytes": 834,
+      "sha256": "7454377975de675cc94dafeeca703af81786e758b5e9a860153d3ba7904781cd"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/artifact.py",
+      "bytes": 23036,
+      "sha256": "ec4f0bc9ab8c13eeb66ad347caae755c89ab460e9c5c85e0f2ea723bd77f3039"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/baseline.py",
+      "bytes": 5249,
+      "sha256": "0216d02b4b6c18f3e61845c6e3fa32d2e147130a74f4f7c6655dfe98205875d8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/canonicalize.py",
+      "bytes": 2414,
+      "sha256": "8bde2c580ac0b172ac179433e8e27e427bbe0313f363601906cd6199549b77c7"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/capacity.py",
+      "bytes": 7171,
+      "sha256": "c673456a144c5c515172d79e2b0a6f680ea63ae0134ef1c61c2f3af161383c85"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/capture_export.py",
+      "bytes": 31349,
+      "sha256": "244a7061f2669d0188c433df1ed3417bf8b17d1b11c7ecd762d14a792e3d565c"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/capture_fx.py",
+      "bytes": 677,
+      "sha256": "91684b273921226f24ff029fe1370e545742e62e8189f7b86a9652bedb013721"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/capture_training.py",
+      "bytes": 27141,
+      "sha256": "a3acb3f55039acc49ac3f6044b91f5a230dbf763bf69765a96444bcc23994751"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/coarsen_v3.py",
+      "bytes": 11019,
+      "sha256": "34d262f8bc1c425620c6d8732b68aada5b6879adc94fddc6eeb73ea649ad2b65"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/configs/a10_nonvision_11200_dataset_pack.yaml",
+      "bytes": 3810,
+      "sha256": "69216e7b684c552c98d720be98e23211eadea48147e7e5e98a01df1f8d981b72"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/configs/v100_operation_coverage.yaml",
+      "bytes": 760,
+      "sha256": "b1b52badaebb3d6ab1e48e6abd35f99ba42e7ea31a1c686cc49fa377c223ccc8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/cost_registry_v3.py",
+      "bytes": 8926,
+      "sha256": "77f9eebe26771f7e760652be89227845facea18124ca36fdca4d3cf2470a36cf"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/coverage.py",
+      "bytes": 18030,
+      "sha256": "3f163b24a1c5082b3d6014f785da5bea9cd8f610105e0147e2bcba45f97e87c2"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/coverage_corpus/__init__.py",
+      "bytes": 21446,
+      "sha256": "1c2b096956f527f6155fb7855f22c08225eb4d79cfa543abf54b876979528b08"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/__init__.py",
+      "bytes": 3579,
+      "sha256": "70129343b3956ac5b447088e1fc732e3df87fbc79b9d5479670943345d9a6f58"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/a10_campaign.py",
+      "bytes": 56934,
+      "sha256": "69602c3425116ef3cd2a26aa3469469003ca8f57e3340461ce842beb2bea200c"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/a10_continuous.py",
+      "bytes": 17237,
+      "sha256": "f8931bc30528f8a39a3abb204baba429f8ce4a86635f51a63a95e51098fae3f4"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/a10_crosswalk.py",
+      "bytes": 13715,
+      "sha256": "f77af278079d195cd74cb88c5ab510e84434e993a80103862ff6789b5fcc5859"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/a10_disaster_crosswalk.py",
+      "bytes": 11623,
+      "sha256": "d58d59527cd1382465dafa0e3345f026f1ab11ea4148449a3391e07fd8ed49b9"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/a10_export.py",
+      "bytes": 36791,
+      "sha256": "1541535b2ce351f049f4be813eea1f9883ae73ae0afbe8abf6dc171d83f0513b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/a10_nonvision_crosswalk.py",
+      "bytes": 14144,
+      "sha256": "bf4bb715596a7cdb338384c59c01a72266e0b982b4a988a266df15fbcc2f5117"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/a10_speech_crosswalk.py",
+      "bytes": 17173,
+      "sha256": "00ae73bf9963bfe23ff56742a4bcc9b091b5d48bbd4fdb3b7e1e1cefea9c09a0"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/adapters/__init__.py",
+      "bytes": 330,
+      "sha256": "33320b66d2a07669c528c46ccb4deda1730b6071fdebddefef0b363e4b7f7027"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/adapters/audio.py",
+      "bytes": 134,
+      "sha256": "df06f680364bf1f7f44f030b8bd4180f1c32cef813c6d6b7b21ef29383c95bff"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/adapters/base.py",
+      "bytes": 14741,
+      "sha256": "3ac3f971664b96fd980c504b85a839d891a2410aff9a9cb393c26fbeefb7a3d0"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/adapters/graph.py",
+      "bytes": 134,
+      "sha256": "08e0883af18d681e98094536a7a3c110e52d499fa470bbfb3569306f182ded03"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/adapters/nlp.py",
+      "bytes": 132,
+      "sha256": "8fcb7f75a796fa0ea4b5c7b2263222f6c18b1589eea0c1c46be46f09cc26243a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/adapters/tabular.py",
+      "bytes": 136,
+      "sha256": "d3a40ca9fd98044a16e846500571fd637768bdd0627463a2a05772c0339062c8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/campaign.py",
+      "bytes": 18229,
+      "sha256": "4d982f92762bf1f2d8d0d8e6d4a24e2971800ab437e3805df8d759b35ffb7121"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/compatibility.py",
+      "bytes": 10633,
+      "sha256": "20f20bfef0606e2fce3bacfc45cb08a32e295512dcacd5a843bb39a6fa75c241"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/composite_blocks/__init__.py",
+      "bytes": 467,
+      "sha256": "1cc33aeea2026e7c265b3cef3c3b2e34345959d79486af2b86f78fa3f6d6f6d3"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/composite_blocks/base.py",
+      "bytes": 8571,
+      "sha256": "1b45246b466059d6b7d49659ecd91169bb947177702f69a43a65d68fe392485c"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/composite_blocks/residual_or_branch.py",
+      "bytes": 169,
+      "sha256": "9e3fd5de2a7ede7d663d7ff49747dc13e2fe4d27a048c980d148983032bd9455"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/composite_blocks/saved_activation_or_alias.py",
+      "bytes": 180,
+      "sha256": "9cf1adef8119a05ecb3dfa78eaf341133647850a494d2995a8246ddf6e4dc113"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/composite_blocks/sequential.py",
+      "bytes": 175,
+      "sha256": "bec2ccd0101852252aabc170c107d5072e1eb2243e6f4b9a67330b1fe01a9d8a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/composite_sampler.py",
+      "bytes": 19022,
+      "sha256": "4ef350a5e6036e873120761c23517eeef437d195679622b433a121ddc4e0ea19"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/contracts.py",
+      "bytes": 32427,
+      "sha256": "9eecd95f1286b7c63192337a1820349d517ffa300b45ade93b002ac6ecb44ff2"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/coverage_config.py",
+      "bytes": 7266,
+      "sha256": "c728b090741df0dea569d124f932b6606377fe9732d7df4dae069ac7c4b38f60"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/disaster_substitution.py",
+      "bytes": 4988,
+      "sha256": "95bf977ec51af5e927aa73e5bfb2f4550006f89cfb6ae628d7577d099739f0f0"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/dispatcher_verify.py",
+      "bytes": 15048,
+      "sha256": "de29dabdf888ec48ccc2ef2221b59460c3dc668f1cd2a09a7223c51ae745bd21"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/family_sharding.py",
+      "bytes": 13808,
+      "sha256": "95c95bb76501c9bcabf2d0110cde2bba85fcaa9bbfbcd5d8a00a5b8e388a537b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/finalization.py",
+      "bytes": 57832,
+      "sha256": "837645682c70e7f7b39be95add98d75798ff7fa300ebb104cc62c9cc60b68000"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/fingerprints.py",
+      "bytes": 2893,
+      "sha256": "088ca9485da80f34ef52dfb391b668c6a9b292afe3a48b1dbdd80ce7616100b3"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/generated_lineages.py",
+      "bytes": 10438,
+      "sha256": "245e65079d00081ae3521ef97fc3b06fee430ec3cfe044bbf68bd54961837a42"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/kaggle.py",
+      "bytes": 26666,
+      "sha256": "20fe40fedb268c3ebe6592332e5d6292a711fcf72902570c061eb3981ed48221"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/label_worker.py",
+      "bytes": 15011,
+      "sha256": "3b4dd6e30c28e82255d9780e0ffe745c471538dab76e860aa4b10f8d269b532f"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/labeler_profile.py",
+      "bytes": 10975,
+      "sha256": "68b33bf12c800cd58498f553e47d5df8b6704256ffdbb5e788e47d1f45d22ec6"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/local_provenance.py",
+      "bytes": 3505,
+      "sha256": "1b6c7b2bf364ad3a97d191b6249cc467b690a572b5f3208e4ed0d6b9ab34ef7d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/local_runtime.py",
+      "bytes": 42436,
+      "sha256": "42972a865b87d6e29fb3dd136975e0c358470f0e7cae66c09056f97ec689f976"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/local_smoke.py",
+      "bytes": 40967,
+      "sha256": "129620f90e71cc2cd317bed0c92f22bec836a2c14be927a84822a0047df2501d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/local_task_fixture.py",
+      "bytes": 9386,
+      "sha256": "de4999a83a309bff1c0515db13f51c4bf55abfb396562e9f5fa8a99e4d050793"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/local_validation.py",
+      "bytes": 27679,
+      "sha256": "444adcc48498b0bbe8bcb052269693ccabedbb31de580dcc070ad320dd969b63"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/materialization.py",
+      "bytes": 49036,
+      "sha256": "1bbe2bb01da43b84bdce8740a3bafc7e80609f3fe5db56845918106ce54572b8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/mlebench_bridge.py",
+      "bytes": 11313,
+      "sha256": "c4c0a32281e334571174ae8a99c646875dea9a5e85f0c5d2058858c83e22dfae"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/modality_sharding.py",
+      "bytes": 26211,
+      "sha256": "0798645a2f11ed6ceaa1bbf6befd462c6a2db542e37731b68d9bf02d2030049a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/modality_workflow.py",
+      "bytes": 18645,
+      "sha256": "9102a9b0a46d31a20e8b209f38b1d21207a47e9ccaeef39e08c2b0c98f19197b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/model_golden.py",
+      "bytes": 17345,
+      "sha256": "18e2355185152ddea9b4c1ed0545d08af22b7a609c9042c9a6741b53d634f87a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/model_registry.py",
+      "bytes": 20128,
+      "sha256": "7debc3488198aa92ede385bbea6224a8fd3ca98fe6c926caf9be40f8816f0a97"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/__init__.py",
+      "bytes": 471,
+      "sha256": "8e067e5d9a3075d53a77679716f9e12413730287e0d3c9b860dba90f9a82d956"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/architecture.py",
+      "bytes": 4937,
+      "sha256": "2311a0b8b7f8bbbb6589b4ed1daf731f3f72f41f69c9c4b145e01f14ff4e8f6c"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/base.py",
+      "bytes": 21760,
+      "sha256": "0868076ff953b4aee0a8070a5773893b67f34a7196603bdb6b24c859ab8cddb2"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/bert_base.py",
+      "bytes": 130,
+      "sha256": "ca83408b7c566635a663315e05535f36eea3109c236e157b0c1907163475865a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/bilstm_crf.py",
+      "bytes": 127,
+      "sha256": "7eb969b967bcc7f0f442ac05891528155ebbb36ef5a20bcceb273fe8a6c8dd57"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/cgcnn.py",
+      "bytes": 140,
+      "sha256": "bd120b93c45fbc15454d8ca05b3e4d31d2dda9a1a8c46b7c7eb26f98501ad0fc"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/distilbert_distillation.py",
+      "bytes": 163,
+      "sha256": "ed0e687998ecb39b339931631fc560da60c4b749456bb8bc9e10e2f3df317159"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/factory.py",
+      "bytes": 76540,
+      "sha256": "139595e01e3a3ad2ae507577116f5e58da76e6472970579fe33ba22211936fc0"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/fasttext_embeddingbag.py",
+      "bytes": 159,
+      "sha256": "03f33a5ab67dcd9c758d675990a0c7c2931af4b115e483d882d9d7cecb83c56f"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/gat.py",
+      "bytes": 126,
+      "sha256": "09791ad41cc64dd7a58659846c366d6f0ea864d877e85005666ef301f9c6760e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/gcn.py",
+      "bytes": 130,
+      "sha256": "b648d9445675092b2f042915068c4f0f178fd1bcce9f24f796cfc73ba97b94d8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/gpt2_small.py",
+      "bytes": 133,
+      "sha256": "a348200b50188ef3bf6b35d11336e5dffe9e34af092ef0d215fb45b02278f836"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/graphsage.py",
+      "bytes": 125,
+      "sha256": "96cddc07b204adb6ce0dd06dbc11b6f26485376237a65a86cffdbeb49e58885a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/gru_rnn_seq2seq.py",
+      "bytes": 145,
+      "sha256": "a326d9d182ae46b476f00aa80c28f1325b4d040a1330966904290eae9f901107"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/independent_generated.py",
+      "bytes": 10148,
+      "sha256": "c012c8c6c6b92e793deba8e54e907cbff3ab1c583197e20666a4cbaf87f9debc"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/kimi_delta_attention.py",
+      "bytes": 152,
+      "sha256": "648493da4bad016a632e45f70153b7faaefd15be1d2cc67e4d6cc27c864a0fec"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/llama_small.py",
+      "bytes": 136,
+      "sha256": "3f5324989127218d67f5e48d9a81716a2b4d42c5c898ab2e81279d8343e9c159"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/m5_waveform_cnn.py",
+      "bytes": 134,
+      "sha256": "2a98e66e68f483acf9e7c1ec9ef72f913a5d41ed1b75081efc376fff11083c75"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/mixture_density_network.py",
+      "bytes": 146,
+      "sha256": "00bb8436303480d03f0c9e4717562b731174f09688ca84e9a92dbbbe4769a4d1"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/mla_mini_transformer.py",
+      "bytes": 164,
+      "sha256": "ae63b0780b9b987528b999129e2c291d75b325d6054abeea0da2a26cf6a3eac9"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/module_api.py",
+      "bytes": 689,
+      "sha256": "f1a424fdf5b52b0f7b2b5c069af3120f854dd694ba64ccfe41255ce3058002fd"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/panns_cnn14.py",
+      "bytes": 142,
+      "sha256": "9683f5ce9ae829e76d492bc0fe8cc2b946df11462bab477db333f168d1f8aaad"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/selu_mlp.py",
+      "bytes": 133,
+      "sha256": "e7994782d98ef22f9d1f16a78150795dc7801f9c29c7cdaf4b677c9fdb984eea"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/switch_moe.py",
+      "bytes": 141,
+      "sha256": "1a999a38095ed9233d4340d4b0339deb63140652e8d44b730ac007f2f87ff94a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/t5_small.py",
+      "bytes": 131,
+      "sha256": "e6adb2ff9350d1e6628610e4f1bc2731592b0876a3ea200605188119d4e54558"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/tabtransformer.py",
+      "bytes": 135,
+      "sha256": "4d993ed38f21a5be91d00ae48ddf21da2af584f7e25e44fe34291af86be8f616"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/models/temporal_convolutional_network.py",
+      "bytes": 160,
+      "sha256": "5d3c9ac8981ef3c215c1643d9d459815167ea25660ee9b5a5f40872143b0815d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/__init__.py",
+      "bytes": 574,
+      "sha256": "b33b7d02bd84e2f2d376d6fd9d1b21692028d4e348f57d2283a57c5d9929ce07"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/activation_unary.py",
+      "bytes": 380,
+      "sha256": "0aec146650b308ed7e421f07c4d5701d0d2d419d0c16b892f48a4f1bdf7c29e4"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/attention.py",
+      "bytes": 366,
+      "sha256": "ed3b35b32d97e864d91adc498f412b1937d6c263560232f66a58d1b7e56c3909"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/base.py",
+      "bytes": 11229,
+      "sha256": "6f424291529256b429c89e3632d115544330ac397ccd9822d60fb085e8c5aff1"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/convolution.py",
+      "bytes": 370,
+      "sha256": "8f09e63ad70b840ad8e60224fc9694353675aa68a9de57e784995dadf209a851"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/dense_matrix.py",
+      "bytes": 372,
+      "sha256": "630c9da34f39e6de9bcedf2634883b9c48d751a76aa443e57b048a405528dba5"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/elementwise.py",
+      "bytes": 370,
+      "sha256": "d0619459fcc5601f50eda510c6f68f8cbd15327b233be550668faabce52dc5c1"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/embedding_sequence.py",
+      "bytes": 384,
+      "sha256": "c274181ee7d2d8734d82b04f6bc72b4bfd832598677bf03080b22bf73b923772"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/index_scatter.py",
+      "bytes": 374,
+      "sha256": "b73d196d0f92258a6d4fe588cc95c7941a81fd25835d799cf15e892385f22d80"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/layout_shape.py",
+      "bytes": 372,
+      "sha256": "4d86e767d336db2da6ed6b6df27e29db3546fab7f36d5a2429ce56e2131b7e05"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/loss_probability.py",
+      "bytes": 380,
+      "sha256": "3488c3fb9e455b61ece8e533997874489fcf4236ef9b8b91f9bffbd3f6340dfd"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/normalization.py",
+      "bytes": 374,
+      "sha256": "7e6b68a677b1c029b7765ac43ec2abbf5fc2cc9c6c293bc2eac90fcb7b86610b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/optimizer.py",
+      "bytes": 366,
+      "sha256": "91ec73be677ce101c8db5d3eef27fa1d8cc6c61587d5ea9c34230455f646622b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/p1_fixtures.py",
+      "bytes": 4546,
+      "sha256": "a3f3142fe0ef56fad4b014de4ccd0f4b1958f472a875dddc85fb7d8fdaaec92c"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/pool_resample.py",
+      "bytes": 374,
+      "sha256": "758ed5084f29ba44a011adb29d96ba1a67b1fcf80a756eaffe912b9dfe2adb89"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/random_regularization.py",
+      "bytes": 390,
+      "sha256": "5c7b823363e3be4bda5fc0d885879b5f213b80efed2762def5ec7d4df351492e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/recipes.py",
+      "bytes": 32964,
+      "sha256": "7d85a9f4ac6a8ea8b3a274a4b45629a638d03255feb7a4009bf13f9fe5775102"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/reduction.py",
+      "bytes": 366,
+      "sha256": "d083201803847dc6f796749d1109cc31bc5432f805e45d85b50797f02b1b7857"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_benchmarks/training.py",
+      "bytes": 364,
+      "sha256": "885abf198e9e022e45171b8e6eb5e8f6a7481245a249c4d4adfe7634e5c84d0b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_coverage.py",
+      "bytes": 42767,
+      "sha256": "244ebe173cabd5872a005df2861272eb9e038de7c719de63a8b952b2e7e2d331"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_sampler.py",
+      "bytes": 20119,
+      "sha256": "844e8491beb35c238bafe575bdffddad806cd905f0b95e09c4d21dfd43cd1d70"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/operation_support.py",
+      "bytes": 21685,
+      "sha256": "07bd2260b43793c0d50d269d61dd327fa5d06d22d5fc854fc1f8799161bf3435"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/planning_bundle.py",
+      "bytes": 3850,
+      "sha256": "9a328c82025824f1beff5ebb8a4fdca4a31ad85b66e181ef21895b8213127cf8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/prepared_view.py",
+      "bytes": 40977,
+      "sha256": "5642ace8a2a3473d963cb06f1dc9354f78b8b075c28fe77a8f335e3df3e8a4c6"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/quota.py",
+      "bytes": 19699,
+      "sha256": "30a0dd1eb9e595c372e8dc182d91bf36b19eb015cbdfbf6bd62782da03045587"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/real_data.py",
+      "bytes": 17397,
+      "sha256": "39eeb83f6c97d7fb60ae6f1efddaf99a944e263d342340e38b77f95980f32a8e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/repair.py",
+      "bytes": 30069,
+      "sha256": "e7e4df433731564d6678ed4013c7d0b302de2efd746a26e182352f80a889430b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/sampler.py",
+      "bytes": 63001,
+      "sha256": "9bc7cdf81b2c6a0c3e95e9c32b893d90662824fac1a01eebe546a49f3d6fa79a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/sharding.py",
+      "bytes": 61027,
+      "sha256": "56304270463ff60c40df139f5041603c9c41268d03c9e08711bc72e25c7db368"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/source_identity.py",
+      "bytes": 1731,
+      "sha256": "3ddc183b663561fc19acba985eb01c4b5f0fba4e93ae6ef1779f570d229a31fd"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/specialized_steps.py",
+      "bytes": 6946,
+      "sha256": "483ef4c5e11a67db3b30dad843343763c7f067228e9ec97a992044eb24cd431b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/speech_substitution.py",
+      "bytes": 5204,
+      "sha256": "4a206e8343e8269b7aa4c5209ce2d50b3659f73e2ba946b4580b0ae082d1b72d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/storage.py",
+      "bytes": 10597,
+      "sha256": "e3b94a8177a154eefd23a6437ddb6e3e2af38c019044874b33d347a7c4ca755e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/substitution_preparer.py",
+      "bytes": 4206,
+      "sha256": "8334e25e30589c53aa050f1f2c204988c9c32a586ee7a09099b29a5bc4b3e73b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/supervisor.py",
+      "bytes": 62842,
+      "sha256": "7ed82a651af454e0ca488874993e43a81f286991122b33020100b00cd7c97c41"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/task_registry.py",
+      "bytes": 31745,
+      "sha256": "bcd8a6f119099d7231a5a2812661cfa2873eb94b7b661ef98cf97f621bdcc9e6"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/transfer_labeling.py",
+      "bytes": 33648,
+      "sha256": "e59835bdc7cf6011558e0751a35405c34ed2bbd34b639bda9fb225ed10f9ba55"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/v100_runner.py",
+      "bytes": 27078,
+      "sha256": "12d76849cb6ccc7de137fc350b73cd7a9c287d220a3d5fcf3d896611ee909389"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/dataset_pack/workflow.py",
+      "bytes": 22932,
+      "sha256": "359832581b59bba74330166f3d4a708a7c421260a2fdf1d5e5a18fc371b6d20b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/deployment_export.py",
+      "bytes": 6052,
+      "sha256": "78506fbc3acc6e7fe183c0e14c1a7c77184d6825224a007b226fd8fa3efdcae0"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/diagnostics.py",
+      "bytes": 1288,
+      "sha256": "118181f03bb00ee07bd44fd108c9bed8bb2f537141f859424e07686b41ed513a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/evaluation.py",
+      "bytes": 16930,
+      "sha256": "3b5984a9823a107d52d871e3e261b094c734e543b3a1ca8c37c3cf885ed6277a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/features.py",
+      "bytes": 48190,
+      "sha256": "579c80b8920e84cb4d0b0b59a0bd3f939a5c398e0a74b88d012df5cc34db0e9f"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/graph_ir_v3.py",
+      "bytes": 18752,
+      "sha256": "b9b932af61639e7ad08d96934bc410cf50151de8356c568128cc20c9114b6460"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/hardware.py",
+      "bytes": 17335,
+      "sha256": "b2bcbd3c7de434c40ab7a2e62355750e687686e7b1b78b0fb7a4384ec520e3c7"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/hardware_transfer.py",
+      "bytes": 18086,
+      "sha256": "493bf8e8b495052adccef160ca1f03e8bb6f34cde7cff07662b5f33cd564902e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/inputs.py",
+      "bytes": 3173,
+      "sha256": "b3a185f1ed34a89e089585f6f7fde2cb49389d32f11238f56da40fd4e0b7d6ca"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/liveness_v3.py",
+      "bytes": 3153,
+      "sha256": "3879026785cc24cbe242deba6f549d144c730ed8154de7d9824392249570790f"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/load.py",
+      "bytes": 2244,
+      "sha256": "d123d892f7dae28fb58f177db6ea9b9bc784448281f8c34e61ddd5b7894ff4f2"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/migration.py",
+      "bytes": 2894,
+      "sha256": "29f186e01d17f56abc542348e117df7b71a9d48037ec7390e0b3f9370b7a72d8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/model.py",
+      "bytes": 41216,
+      "sha256": "0fd47608b71bf91b57daecfb32b717fd2258258be824f68d5a38a8dc9d227fc0"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/op_registry.py",
+      "bytes": 12984,
+      "sha256": "476511ad70b5abed72f763cf090a175e9b49f5647886f14754d8ac2cbe883750"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/op_registry_v3.json",
+      "bytes": 60300,
+      "sha256": "8d42ba1f9f73a34db45a4bc03c97459b27d6550175358fb85b447d5608b570ed"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/op_registry_v3.yaml",
+      "bytes": 37758,
+      "sha256": "a92d5024137e67fc34ec57e6cb54684bc2410de38d3af5825aca889159e13a8c"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/profiling.py",
+      "bytes": 20675,
+      "sha256": "69e3e00176d2c8781215c70b932f50873fa93b309134579b3eba91d38ce93294"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/composite_block_registry.yaml",
+      "bytes": 32498,
+      "sha256": "781a992e990f8ec8749d7222e578b640a5c567e9ec6c309b6b7f3fc9475c9fdc"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/native_a10_nonvision_disaster_pilot_v2.yaml",
+      "bytes": 2574,
+      "sha256": "27b76f435a28814491831d9dc6afdff413e902bb75d8c43c4fc2fe3a5941695a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/native_a10_nonvision_disaster_v2_substitution.yaml",
+      "bytes": 1365,
+      "sha256": "1ab0b2b1eab270cc03cbb43d97f285a99854383ef4461e0ddddc0197dddecc45"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/native_a10_nonvision_pilot_v1.yaml",
+      "bytes": 2565,
+      "sha256": "5ce65d93855ec2cd3e24309b191c256fa4ad1166caedf84ec4ea5cc6c3ce30fa"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/native_a10_speech_v2_substitution.yaml",
+      "bytes": 1238,
+      "sha256": "428630cc52c4713e28edbc3d45b531e95ccff85fddc54dd4d2490e53dcaa2482"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/operation_benchmark_registry.yaml",
+      "bytes": 140096,
+      "sha256": "8a8f0e5b4946e2da117d68779aa8d1df3dca3cff9ef67f153124f460b685a97d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/operation_support_v100.generated.json",
+      "bytes": 248683,
+      "sha256": "59f8821378276ed83037311f54fdb3e53b0680aadc880cd1a38d3c9356a2755b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/operation_support_v100.yaml",
+      "bytes": 5220,
+      "sha256": "860e572f3743417067492ba5de4b008e7441169323dcfa862ed85cc77622f3c1"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/v100_model_registry.yaml",
+      "bytes": 7489,
+      "sha256": "7f61ce8117e4cad728f3ef15c3f88ce9daad34cf9013bc6c9ca20adf2e66a7cd"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/registries/v100_task_registry.yaml",
+      "bytes": 3465,
+      "sha256": "50e3935e37923c5f2175bc91787111c7f59c351fd2bff89a0d33c4f2194304d8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/runtime.py",
+      "bytes": 11898,
+      "sha256": "a1dcb0e24d7f87a130c98a4c6e78b7deb3ac002dbe77824de8c26c34014f3b95"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/schema.py",
+      "bytes": 14330,
+      "sha256": "9ea36ea918d90e82abc76c67c04bf1a37745701df435b37f6c4ae165bb05cb99"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/schemas/perfseer_graph_v3.json",
+      "bytes": 24050,
+      "sha256": "1fe5c9f26c7bda3372ef79d12ea32323fd846ed4e8b98021ee4e0230fa1696da"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/schemas/perfseer_hardware_profile_v1.json",
+      "bytes": 10191,
+      "sha256": "536df0cbb0c58a18cfbef0cabdaa107feeb5424d05dac5b12b7541bba8f059cc"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/schemas/perfseer_target_training_manifest_v1.json",
+      "bytes": 8907,
+      "sha256": "477bca326a7378fe3159f50e7767bc60fc0f20bd979f10494df18989dcc437d2"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/schemas/perfseer_transfer_artifact_metadata_v1.json",
+      "bytes": 4041,
+      "sha256": "d29803286fdba8079d71bd2a6d20bdb164c49299914785131303758f1a8f34e8"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/schemas/perfseer_transfer_subset_manifest_v1.json",
+      "bytes": 4888,
+      "sha256": "e024fa478f114d3f31bb14efb7bd4ce063c5bdd8b01415fd3afdb96390617b8e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/source.py",
+      "bytes": 2740,
+      "sha256": "4017e20f70a239004bd53ed692574d308b259e857c320aea91f625d8aea0b01d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/splits.py",
+      "bytes": 9243,
+      "sha256": "3e3d23176ac98232232d06894775f94dbb1f6e765316a0c58b490bee27baa8d2"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/tensor_metadata.py",
+      "bytes": 8521,
+      "sha256": "18bb6f13ca0e4e498b21d7b2d38c2657435ff57c203166eca3d231100105df55"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/training.py",
+      "bytes": 48143,
+      "sha256": "3c613798c2befbab96cb67a05fcc9fd37993dba741496c948ba9632224942f43"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/training_manifest.example.json",
+      "bytes": 3180,
+      "sha256": "bc0fd79fc293c6f4dcb88f5d1db25ca8173f61c8a3aa26c91911482fd10f1b7e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/training_runner.py",
+      "bytes": 80277,
+      "sha256": "6c76bdc1878a34abbddb9df7f2a7c2e00b77a7618f1471495d75758d439fe298"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/training_semantics.py",
+      "bytes": 18627,
+      "sha256": "6dbc2a066a8ee3d6ee9c38585a3e1cad1f5860e10c3212cb816187081d60e17d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/transfer_subset.py",
+      "bytes": 26187,
+      "sha256": "2befafa830ca432105a8fa6c560a7ac009fa6950498717873388046aa3889b12"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/version.py",
+      "bytes": 745,
+      "sha256": "580d88ec23c3fb41417aa77328b79d9c8f15ef2ace2ff3ac4c1a21013f3b79a1"
+    },
+    {
+      "path": "runtime/src/perfseer_v3/workloads.py",
+      "bytes": 28490,
+      "sha256": "28ebca4f1f9bcf4ca122d22f3a7c347e9823deb79d56245332e7744a022ae79e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/__init__.py",
+      "bytes": 210,
+      "sha256": "bc49e87e265f769c8cac1b4c64062e4d360805c971849d862cd812011604dfa5"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/capture_export.py",
+      "bytes": 8052,
+      "sha256": "c82bb7734908762c8e21d8ff8d0248e32467f7d3353a8253529073a34bda7d1c"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/capture_training.py",
+      "bytes": 14156,
+      "sha256": "7ad435a50b68c3f0e2850c777530a2cbec2ca4be2a37b766f113dda35084637b"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/dataset.py",
+      "bytes": 24447,
+      "sha256": "dfccecba77fec259fce5af83f5d12561e03b386959b10c967cc6ec5955b146b4"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/execution_replay.py",
+      "bytes": 4345,
+      "sha256": "9ff5a18eb9655dc3a3e4ad4852a6dc903bc7029523ba7b0055f6850aa0c0c10d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/features.py",
+      "bytes": 2679,
+      "sha256": "3cdabc6977f2414ea42139370d0c6ba0aeba97a2168e1d85c7af2e621d2390f3"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/features_core.py",
+      "bytes": 37717,
+      "sha256": "fe277060bbd993737923d28965ca07a8644971c819c51e779217d31c3777a854"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/generated_model_runtime.py",
+      "bytes": 18956,
+      "sha256": "c05fb507cabb8efd0c050a37f01bb58460d19e785872d5b3bf604187117a27fb"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/inference.py",
+      "bytes": 1456,
+      "sha256": "bb190507cf31f0084a12cdacf9b35a40bc5001b33ba7811d9c50c6d32c00daec"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/io.py",
+      "bytes": 1476,
+      "sha256": "d685d6b94d983da201c45f1312f342eeeb9c4679b8331fe792c33eea4280ff14"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/liveness.py",
+      "bytes": 3104,
+      "sha256": "767fb9dfd4eade01abfefce6841f5273532edb6d991b98ecd6e55fa341b333e0"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/model.py",
+      "bytes": 12232,
+      "sha256": "33c5c32d159d7a0d84fb302b629bd0e12e8407eb359b8e6d2a30062ae9b16482"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/optimizer_defaults.json",
+      "bytes": 5238,
+      "sha256": "d77facbb598d13abf04501bb98f2219611c94281b2596baac0c76a7a82ee06ea"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/recovered_contracts.py",
+      "bytes": 31014,
+      "sha256": "7be9b6315ec4484a39398c474545dbff1f3aa6275c2e2164c7a8c3c48ab38d75"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/recovered_generated_lineages.py",
+      "bytes": 10402,
+      "sha256": "879eb87f6ac1807abf6eefb75a1527818bbccee324272545dce40b28f3fc6339"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/runner.py",
+      "bytes": 17106,
+      "sha256": "886706384ff37c5ea119dddac0ab5ccfc129cc9afe59421fae80bff869efb884"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/training.py",
+      "bytes": 11678,
+      "sha256": "11f466cce170a108aaffd80cc557eaa40465e41e901bdf68f1ccdae4ca3bf315"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/verification.py",
+      "bytes": 6531,
+      "sha256": "0af8f359b860f70a78b166566dbf66d6f151101bbdf00bbc5d3183625cea7526"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.1/version.py",
+      "bytes": 424,
+      "sha256": "de96ef2b8e778150e8e12f16bfb2aa6efe496681d2caddf99824a8e2aa3ef075"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/__init__.py",
+      "bytes": 237,
+      "sha256": "6fab1a3d89d8c6dc399f146411d36cc77c5ebdbafad9234366110cebaa5ae980"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/calibration.py",
+      "bytes": 17677,
+      "sha256": "ea84f4c200c4f3d0d51048a0ae248853c953339a4623a91bd0ad237d74d74fb6"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/calibration_contracts.py",
+      "bytes": 9801,
+      "sha256": "29fd5a709aac95719f303c663f416734420faddaff3094df0e164bdf3f9dae26"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/calibration_evaluation.py",
+      "bytes": 20982,
+      "sha256": "62248562272eb5ffa2d252a5cf9d1482111bcff671010830a7aad402f388f202"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/calibration_runner.py",
+      "bytes": 28059,
+      "sha256": "dff7aae1d94b830adf772292cfdb1bfd09f54862301926da5b7613583b43e6ff"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/capture.py",
+      "bytes": 7733,
+      "sha256": "c96fe316ea540f34f2a1cbf298441e8bfb6b901a96d5856b99cfa4cdc187780c"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/dataset.py",
+      "bytes": 25166,
+      "sha256": "19c22e26d23e5d7c04d7c149906380bb1a65336cee5efd97e64275fea2e4b76d"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/features.py",
+      "bytes": 4137,
+      "sha256": "e7941e8552559e3a11af95b5c787a7a4025d53e2e95d45b92ad0ddcceda9023e"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/inference.py",
+      "bytes": 5138,
+      "sha256": "e988a30a7722327bf6b7fa790367977fc9959464e32ca7378e81d2fc06f81191"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/label_policy.py",
+      "bytes": 12843,
+      "sha256": "c0bbe4c7c2352073a8372ecd026a773ab8aa159ec831ac5639eb0cfde3d4b481"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/memory_baseline.py",
+      "bytes": 5409,
+      "sha256": "16f8bfe2af59a00fb21ddfdc8bdfa76d4d7b5159b1b5d0bb1ebe7b771419dcf1"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/model.py",
+      "bytes": 9420,
+      "sha256": "453f9e6e886a4ab5d1a9ebda54875f4a735163f59ea3af72e7e937070e69f6ac"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/runner.py",
+      "bytes": 25978,
+      "sha256": "3293c005974b3c3fcdddfaaaac4fd05368743db1d87b30429cd01fdcc876fbe3"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/training.py",
+      "bytes": 14281,
+      "sha256": "bf20b1b1631f4622a0963ded45e5b64f03dcc987312a03233e5637f27b28eb57"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/transfer_labeling.py",
+      "bytes": 64009,
+      "sha256": "c805cf1c154255238f365dbb454b376bf3b468ec7ff746f7262dee5b7e937989"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/transfer_sources.py",
+      "bytes": 14245,
+      "sha256": "5717e4a16403f0429043d23ffd1a088f22d7433649c3b61a74564bb1bb102852"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/transfer_training.py",
+      "bytes": 19288,
+      "sha256": "8ededbe758837b0148bf9c9b70d2286b310290fbb8d1b5badcfbe97b663c7b8f"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/transfer_verification.py",
+      "bytes": 31270,
+      "sha256": "6a6b61b872d1f9b37844da117f4e7435bb9ec877abee4229a5cfd028428f3964"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/verification.py",
+      "bytes": 15228,
+      "sha256": "d5e8e98fbc4f68d1df505cdd146dc11b781e700ed8d925565099b121d791c21a"
+    },
+    {
+      "path": "runtime/src/perfseer_v3.2/version.py",
+      "bytes": 1523,
+      "sha256": "ae83c8a71a3623f973314edfdb87b269ddb59f26d581dc5c319a847cbc07b628"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/__init__.py",
+      "bytes": 73,
+      "sha256": "e386ce87a33aabbfa78fbfa4d3bb8b06bab02d9a43305c251fd54c83ad88a74e"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/adapters.py",
+      "bytes": 5885,
+      "sha256": "b96fce76d3b84e71d4a15cae98eb99d8e5a23493b27c272945b6d64f33f101e6"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/campaign.py",
+      "bytes": 39716,
+      "sha256": "949c111c6a8c6464521eda7a7c6ac5ab7f0f5b14425a4dfe328da6560f0ecdc4"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/campaign_cli.py",
+      "bytes": 4696,
+      "sha256": "7942eafdb84f4fd46f761df645446ac18e1cafb2f886273125a3d418252a2ba8"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/campaign_controller.py",
+      "bytes": 9938,
+      "sha256": "acb3e92c4b15344d32ff6b0974c0424a479a13cf48426547f3fe3edcbde37632"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/campaign_data.py",
+      "bytes": 35694,
+      "sha256": "e04083aa7f354b0e2b21eb76a758a1d4722fbfe25ca9e46e8cb35cbe2e5c8ae5"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/campaign_objective.py",
+      "bytes": 9488,
+      "sha256": "a60918b572bbe698fe54c1c6b15cc4a372cd23cfb64007fcafb7967c4bc8c9f5"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/campaign_packaging.py",
+      "bytes": 16582,
+      "sha256": "bdc78a7138f67c30987a9c2269adbfc770c4eade8358aff058ddc60a89f22877"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/campaign_residual.py",
+      "bytes": 7922,
+      "sha256": "9ad936592f9331b15fa45d483ebf86e8e5e4fdef5ed2ac9863e3bcaa571718ad"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/capture.py",
+      "bytes": 1207,
+      "sha256": "4a9e6d07989ff68f1dc6b6bc6cdfd454e34c57412a5116b98a3210bb46ea36b9"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/cli.py",
+      "bytes": 7376,
+      "sha256": "e97cd3def8b7211c708f528ba64048f53f9ecc52f02b766ea9f11861ece26619"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/configs/a100_campaign.json",
+      "bytes": 1355,
+      "sha256": "33a117989a006aaf96900c5fe315a5e7b96258ae592875ae9eed2c19e13a8985"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/conversion.py",
+      "bytes": 6145,
+      "sha256": "b70621cae3a7f24fc20699795d6c4570f48c1f2a492ab1d2b65c9f3546a5a252"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/dataset.py",
+      "bytes": 12451,
+      "sha256": "73ee03130d6dd26d4c4783f5e21d26680b7b876cf75f7b10eb6032857f5fb952"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/experiments.py",
+      "bytes": 18340,
+      "sha256": "8eda7c00e0455302b39a692dd6fcc6b01edb73fc8e7a0c7f488aecd317f04779"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/features.py",
+      "bytes": 1462,
+      "sha256": "da99690e3aa30abc07e7a22a801d3518d78fafe45efb1ac61d385eaba5426eab"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/inference.py",
+      "bytes": 5927,
+      "sha256": "cb9412b6d581386e958c9601529e7c60881f8697e4347c45cdfe51154cb294c0"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/model.py",
+      "bytes": 4764,
+      "sha256": "4a7ce74defaa0e09323ccc7ff191ff51a3e5bf22bd36d585c52bcf6488abc39e"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/native_data.py",
+      "bytes": 17792,
+      "sha256": "63e97abe76d10f76d3d0ad7dd081d02ea16200673653661c7968786749da00d0"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/native_graph.py",
+      "bytes": 27384,
+      "sha256": "66a1846b0af653ad69247aae872885b5d18b1555b45e3e2f04a7f33f78a76efb"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/native_model.py",
+      "bytes": 6060,
+      "sha256": "c8e346d008df7df45eeaa84ea440d462d219f9fe1dc41ee83b2afd208d2cf1ba"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/native_static.py",
+      "bytes": 15862,
+      "sha256": "f0758b29b9f4503332ca824639ad84f28c9ef2b46cc053f1e5ac536bb73900c4"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/native_training.py",
+      "bytes": 28482,
+      "sha256": "b66247f6f2fdf700bf87530aa57488984a0dc3182a2255ec34e7e094453e9a1b"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/residuals.py",
+      "bytes": 20153,
+      "sha256": "07bb3961a9ad427f5105c382974cd7d08d18da195c79ed7a710ad2bbbc177b7e"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/resource_model.py",
+      "bytes": 7516,
+      "sha256": "1df210cbf1f32de456aee551192a2b54936ef84d5bc18a2d3d17e27b06cfea1b"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/runner.py",
+      "bytes": 27711,
+      "sha256": "c8793e50eef4fa9926aa641f7d17aa9725bd1dbd34c06cfe5d289ae63ab11d3c"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/seerblock_data.py",
+      "bytes": 18760,
+      "sha256": "d30c3a47b4e8edadb2d49f236be497a91cb92166081da9e70ebed14456ecceaa"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/seerblock_model.py",
+      "bytes": 7773,
+      "sha256": "a7fe2634fab551e00d09699e373b2819126c8f7a9c0a2d8bafa2ac43b13900cd"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/seerblock_training.py",
+      "bytes": 23018,
+      "sha256": "a6612586d015406e10e9937170ac45e955a1c38d9b48be75153f12728bcd7cdf"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/seerblock_transfer_data.py",
+      "bytes": 12873,
+      "sha256": "48789063faade647a6a968c80b1e8a2673a546c503b5b38e6e4ae3bc029717b4"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/three_branch.py",
+      "bytes": 2477,
+      "sha256": "107789256d7ce6ac8d768577c65bcc58e2aa83a93fd0e19d65f0962fe1d520a3"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/timing_context.py",
+      "bytes": 1834,
+      "sha256": "3ca4c80d73deb92c85ae5d544b716448be6ff007a1a7568bb30bc06e988b73e5"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/timing_metrics.py",
+      "bytes": 1861,
+      "sha256": "1ae5d5ceef497711942f0b849e537ba504b7fed291d93cd95069531021bf2fab"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/timing_model.py",
+      "bytes": 4156,
+      "sha256": "96651c0f95337f90d43e407d9cb32d9f59613df0ed70c8cad6ec478038ba1fb6"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/training.py",
+      "bytes": 15797,
+      "sha256": "704677aeb3719dde48ec800ddc9b4a04fbc9cd9026e8dc2bffff38ba730fb2b6"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/transfer.py",
+      "bytes": 10393,
+      "sha256": "67bd49ff7d54a4ce0954a520272cff4781ce57994cd1f02f22124e8329fc3a11"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/transfer_teacher.py",
+      "bytes": 4970,
+      "sha256": "176eee3680cf7cd8a160ae799f934cb76057999704b2fc967436c1eee0babe57"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/verification.py",
+      "bytes": 3268,
+      "sha256": "29357b7799581e74255f64bc213de6b42c134305a9ef9b42a672085c596945e9"
+    },
+    {
+      "path": "runtime/src/perfseer_v4/version.py",
+      "bytes": 1387,
+      "sha256": "acc56c426faf51d60c64aceee4a4ff6493c2e78c0e15bd5e6920677ce03c187a"
+    },
+    {
+      "path": "score.py",
+      "bytes": 1299,
+      "sha256": "d97dfe387c0e7fa5b41fde354f89c70f1db5669988b4b1ec3b383625d29e9d3f"
+    },
+    {
+      "path": "scorer.py",
+      "bytes": 540,
+      "sha256": "c4e1db5cd9717fe6c9f74d0ce48f732c05e241c7f778454e4744f90146292238"
+    },
+    {
+      "path": "teacher_components.py",
+      "bytes": 3857,
+      "sha256": "423207f289f952ab42019cd0db20477fb70c3a77097091f5bfbb393fea8ef3fe"
+    },
+    {
+      "path": "teachers.py",
+      "bytes": 9109,
+      "sha256": "9486533bbdcf5c0055864d535c48ba76325bd577340bcbda84d05569d352a812"
+    },
+    {
+      "path": "train.py",
+      "bytes": 18545,
+      "sha256": "b30088b8ed29b11535526b6feff1dc8141dd71f7da164219cc53e7188c823318"
+    },
+    {
+      "path": "train_pretrain.py",
+      "bytes": 258,
+      "sha256": "858b0a224e0df6527a15db280285daa84f0d1bd859a835e3e1991c253d67fa7f"
+    },
+    {
+      "path": "train_transfer.py",
+      "bytes": 261,
+      "sha256": "d97d9dad58281ca5373628879c15fc5662b57b04c7a68f93932744a0855fca4d"
+    },
+    {
+      "path": "training_support.py",
+      "bytes": 3629,
+      "sha256": "abab1d7af2e6bb055726eb410eb840089cc75eec84832057fb17c31b3f3cbf50"
+    },
+    {
+      "path": "v5_objectives.py",
+      "bytes": 10312,
+      "sha256": "a8415f44c1727a52faf3250af1ea4a3a8e16b20fcef42461859a0313b17beae1"
+    },
+    {
+      "path": "validate_release.py",
+      "bytes": 5096,
+      "sha256": "7ba4cf64e9abc7facc79cb599f1b0f17aa73d681c27f79da59cfd9d4e086f842"
+    },
+    {
+      "path": "verification/Adapted-portable-parity.json",
+      "bytes": 862,
+      "sha256": "883286ff6009693e7e2ca431345f2c6eafc25cae721102e011aaeb1eb506fef7"
+    },
+    {
+      "path": "verification/P1-portable-parity.json",
+      "bytes": 856,
+      "sha256": "ba06adcaf1eff5ca0399d419827d57028f93df2b7ae854e31df11f095164533a"
+    },
+    {
+      "path": "verification/P1-resume-verification.json",
+      "bytes": 722,
+      "sha256": "dc7301f4c0a55d45c124c89df03a0da91804b289c22f39dbde9f3975b84e63b4"
+    },
+    {
+      "path": "verification/T7-portable-parity.json",
+      "bytes": 858,
+      "sha256": "3d738129887008b4830eaeff0299771536abe6c513b9b21234acace0320020e3"
+    },
+    {
+      "path": "verification/T7-resume-verification.json",
+      "bytes": 719,
+      "sha256": "79d61c0102bbebe2d001044928ecf9904e8927a00b934ebb973a2dc5451093dd"
+    },
+    {
+      "path": "verification/check_pipeline.py",
+      "bytes": 2681,
+      "sha256": "788831cdb54773a3581a179be4035117eb54ed80b090f4500afe73875034fc77"
+    },
+    {
+      "path": "verification/check_source_copy.py",
+      "bytes": 2976,
+      "sha256": "43df8c60e270a225c7eb89e1c787407c2650637cbf742e5119529e49b961e1e0"
+    },
+    {
+      "path": "verification/clean_inference.py",
+      "bytes": 2865,
+      "sha256": "3e46c996d1f503656dc4c2f68c146c9f81497bb2ae0593809f77638fa0959f2f"
+    },
+    {
+      "path": "verification/compare_training.py",
+      "bytes": 3964,
+      "sha256": "7f0b4adfcf09ec6626437234c7a880d2622f090908f365fc703557ec8e537cf4"
+    },
+    {
+      "path": "verification/environment.json",
+      "bytes": 288,
+      "sha256": "ad7170eaf2ae890b8becc60ba6b4fccb17633fbd0cb2b8d7f78e0b9a607d1cd8"
+    },
+    {
+      "path": "verification/freeze_sources.py",
+      "bytes": 4757,
+      "sha256": "c352c21a7c7921c8c315b2555679c8b79bc15fcec805ff0bdd15bc2bbf0a224e"
+    },
+    {
+      "path": "verification/fresh-pipeline.json",
+      "bytes": 964,
+      "sha256": "dc4ed25f8bf62418e8d56af11eebb57469b912136bcccef3522d3df19c956e74"
+    },
+    {
+      "path": "verification/prepare_probe.py",
+      "bytes": 1675,
+      "sha256": "b9d1f02c12fcd4429a7a233624ab1e215fc3711b5bf5c425705ac41f7b12f822"
+    },
+    {
+      "path": "verification/recipe-parity.json",
+      "bytes": 610,
+      "sha256": "bbdf5e9da730b1ed95218531e2952c5d2d5ed3e5879f70b555cae664b3579aca"
+    },
+    {
+      "path": "verification/reference_worker.py",
+      "bytes": 2076,
+      "sha256": "201874e5eb3d8982a922825bf0a4d98ce23d321dc858974a62c28ce5173c721f"
+    }
+  ]
+}

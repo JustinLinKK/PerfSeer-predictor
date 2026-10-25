@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "T7_optimizer_group_names_order_rates_parameters_exact": true,
+  "T7_memory_loss_and_gradient_exact": true,
+  "exact_extracted_AST_symbols": [
+    "Renormalize",
+    "VramSeerBlock",
+    "P1Model",
+    "Adapted",
+    "load_base",
+    "deterministic_evaluation"
+  ],
+  "group_tensor_counts": {
+    "True": {
+      "timing_calibration": 5,
+      "busy": 100,
+      "offset": 1,
+      "memory_head": 6,
+      "adapter": 120
+    },
+    "False": {
+      "timing": 134,
+      "busy": 100,
+      "offset": 1,
+      "memory_head": 6,
+      "adapter": 120
+    }
+  },
+  "cuda_initialized": false
+}

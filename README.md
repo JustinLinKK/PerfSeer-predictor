@@ -1,42 +1,24 @@
-# PerfSeer V3 Non-Vision Four-A10 Labeler
+# PerfSeer: A100 student release
 
-The `v4` branch adds [training-only prediction and few-label GPU transfer](src/perfseer_v4/README.md),
-with a separate implementation that preserves historical v3.2 behavior.
-The original workflow below is the 11,200-label, non-vision PerfSeer V3 campaign
-for four NVIDIA A10 GPUs on NRP Nautilus.
+**S_A100** is the verified D3 student distilled from A1001 (P_A100). Its 40-epoch
+training, selected checkpoint and CPU TorchScript export are complete. The model
+and full labeled A100 dataset are distributed through Git LFS.
 
-## Start here
+Start with [A100_QUICKSTART.md](A100_QUICKSTART.md) for selective download,
+checksum-verified extraction and CPU inference. The predictor targets A100
+workloads; inference itself runs on CPU.
 
-Follow [`NAUTILUS_SUBMISSION.md`](NAUTILUS_SUBMISSION.md) to:
+`reports/comparison.json` separates validation and sealed-test results. Selection
+used validation only. A selected checkpoint is not a claim that all time, busy
+ordering and VRAM quality thresholds pass. A1001 has A10 ancestry, which limits
+claims about unseen-hardware transfer.
 
-1. accept and verify the 12 Kaggle sources;
-2. build and test the immutable `linux/amd64` image;
-3. push it to the NRP GitLab Container Registry and resolve its digest;
-4. create the Kaggle Secret and 700 GiB CephFS PVC;
-5. render, inspect, and submit the four-A10 pilot;
-6. monitor the pilot and 44 sequential production chunks; and
-7. export and download labels, configurations, and source bundles.
+`portable/` contains the frozen feature runtime and teacher code, `data/` the
+workload generator and GPU labeler, and `student_training/` the pretrained D3
+recipe. No unselected transfer-student design is included. Follow
+`portable/FRESH_DATA.md` for new workloads and labels on the actual target GPU.
 
-The guide explicitly covers both active substitutions:
-
-- ICML Whale was replaced by TensorFlow Speech Recognition (`yes`/`no`).
-- Detecting Insults was replaced by NLP with Disaster Tweets.
-
-## Active repository map
-
-- `containers/a10-nonvision-disaster-v2-labeler/`: pinned image and dependencies.
-- `src/perfseer_v3/`: active labeler/runtime plus immutable lineage metadata.
-- `scripts/run_perfseer_v3_a10_labeling.py`: unified labeler CLI.
-- `scripts/render_a10_disaster_v2_nautilus_job.py`: local digest-only Job renderer and verifier.
-- `scripts/monitor_a10_nonvision_job.sh`: required durable Nautilus monitor.
-- `k8s/`: active Disaster V2 Job/PVC templates.
-- `tests/test_perfseer_v3_a10_disaster_v2.py`: focused contract and substitution tests.
-- `record/`: current verification evidence and future monitor logs.
-
-Production uses one Pod with four independent workers, one worker per A10. Candidate
-failures are isolated, OOM repair preserves the requested effective batch, and
-global integrity failures stop the Job. RTX 5090 results are validation-only and can
-never enter the production A10 corpus.
-
-No image publication or Nautilus mutation is performed automatically by this
-repository. Submission commands in the operator guide require explicit user action.
+`assets/manifest.json` binds every archive/member hash. `reports/lfs/` contains
+remote-byte verification. This is a partial release: the A10 teacher/student,
+A10G student and remaining teacher/transfer assets will be added in subsequent
+commits on this same `paper-release` branch.

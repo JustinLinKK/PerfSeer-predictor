@@ -1,0 +1,12 @@
+{
+  "pretrain": {
+    "initialization": "scratch",
+    "model": "d3",
+    "objective": "d3",
+    "lr": 0.001
+  },
+  "only_published_recipes": [
+    "PRETRAIN"
+  ],
+  "selection_policy": "maximum validation v5 composite; ties earlier epoch; no test used for selection"
+}

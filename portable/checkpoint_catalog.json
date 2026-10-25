@@ -1,0 +1,11 @@
+{
+  "schema": "perfseer-teacher-checkpoint-catalog-v1",
+  "architecture": "architecture.pt",
+  "models": {
+    "P_A100": {"kind": "P1", "hardware": "A100", "identity_override": null, "lineage": "Selected P1/SM0 checkpoint formerly named A1001"},
+    "P_A10G": {"kind": "Adapted", "hardware": "A10G", "identity_override": 190, "lineage": "A10G1 full-data target-specific continuation"},
+    "P_A10": {"kind": "Adapted", "hardware": "A10", "identity_override": 190, "lineage": "Release full-data target-specific continuation; weights supplied separately after completion"},
+    "T_A10_A100": {"kind": "T7", "hardware": "A10", "identity_override": 190, "lineage": "A100-to-A10 rank-eight memory-trunk LoRA; release generated TRAIN workload design"}
+  },
+  "checkpoint_paths": "Supplied explicitly to infer.py; this catalog does not load an implicit source checkpoint."
+}

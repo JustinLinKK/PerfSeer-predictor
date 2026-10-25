@@ -1,0 +1,223 @@
+"""Self-contained generated PyTorch architecture for @MODEL_ID_TEXT@."""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from typing import Any
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def _integer(config: Mapping[str, Any], key: str, default: int) -> int:
+    return int(config.get(key, default))
+
+def _activation(name: str) -> nn.Module:
+    return {'elu': nn.ELU(), 'gelu': nn.GELU(), 'hardswish': nn.Hardswish(), 'mish': nn.Mish(), 'prelu': nn.PReLU(), 'relu': nn.ReLU(inplace=False), 'selu': nn.SELU(inplace=False), 'silu': nn.SiLU(inplace=False)}.get(name, nn.GELU())
+
+class SqueezeExcitation(nn.Module):
+    """Channel gate with parameters ``C -> C/r -> C`` (Kaiming initialized)."""
+
+    def __init__(self, channels: int, ratio: float=0.25) -> None:
+        super().__init__()
+        hidden = max(4, int(channels * ratio))
+        self.reduce = nn.Conv2d(channels, hidden, 1)
+        self.expand = nn.Conv2d(hidden, channels, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Gate source ``x`` with shape ``[B,C,H,W]``; return ``[B,C,H,W]``."""
+        gate = x.mean(dim=(2, 3), keepdim=True)
+        gate = F.silu(self.reduce(gate))
+        gate = torch.sigmoid(self.expand(gate))
+        return x * gate
+
+class ConvNormAct(nn.Module):
+    """Convolution-normalization-activation block with Kaiming defaults."""
+
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int=3, stride: int=1, groups: int=1, activation: str='relu', norm: str='batch') -> None:
+        super().__init__()
+        padding = kernel_size // 2
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, groups=groups, bias=False)
+        self.norm = nn.GroupNorm(min(8, out_channels), out_channels) if norm == 'group' else nn.BatchNorm2d(out_channels)
+        self.activation = _activation(activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Transform source image ``x:[B,Cin,H,W]`` into ``[B,Cout,H/s,W/s]``."""
+        y = self.conv(x)
+        y = self.norm(y)
+        return self.activation(y)
+
+class ConvNeXtBlock(nn.Module):
+    """ConvNeXt V1/V2 block; all learned matrices use PyTorch defaults."""
+
+    def __init__(self, channels: int, version: int=1, activation: str='gelu') -> None:
+        super().__init__()
+        self.depthwise = nn.Conv2d(channels, channels, 7, padding=3, groups=channels)
+        self.norm = nn.LayerNorm(channels)
+        self.expand = nn.Linear(channels, channels * 4)
+        self.contract = nn.Linear(channels * 4, channels)
+        self.activation = _activation(activation)
+        self.version = version
+        if version == 2:
+            self.gamma = nn.Parameter(torch.zeros(1, 1, 1, channels))
+            self.beta = nn.Parameter(torch.zeros(1, 1, 1, channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply a channel-preserving block to ``x:[B,C,H,W]``."""
+        residual = x
+        y = self.depthwise(x)
+        y = y.permute(0, 2, 3, 1)
+        y = self.contract(self.activation(self.expand(self.norm(y))))
+        if self.version == 2:
+            magnitude = torch.linalg.vector_norm(y, dim=(1, 2), keepdim=True)
+            normalized = magnitude / (magnitude.mean(dim=-1, keepdim=True) + 1e-06)
+            y = y + self.gamma * (y * normalized) + self.beta
+        y = y.permute(0, 3, 1, 2)
+        return residual + y
+
+class ResidualConvBlock(nn.Module):
+    """Two-convolution residual block with optional ConvNeXt substitution."""
+
+    def __init__(self, channels: int, base_module: str, activation: str='relu', kernel_size: int=3) -> None:
+        super().__init__()
+        self.convnext: nn.Module | None = None
+        if 'convnext_v2' in base_module:
+            self.convnext = ConvNeXtBlock(channels, version=2, activation=activation)
+        elif 'convnext_v1' in base_module:
+            self.convnext = ConvNeXtBlock(channels, version=1, activation=activation)
+        self.first = ConvNormAct(channels, channels, kernel_size, activation=activation)
+        self.second = nn.Sequential(nn.Conv2d(channels, channels, kernel_size, padding=kernel_size // 2, bias=False), nn.BatchNorm2d(channels))
+        self.activation = _activation(activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Update source feature map ``x:[B,C,H,W]`` and preserve its shape."""
+        if self.convnext is not None:
+            return self.convnext(x)
+        y = self.second(self.first(x))
+        return self.activation(x + y)
+
+class MBConvBlock(nn.Module):
+    """Mobile inverted bottleneck with depthwise convolution and SE gating."""
+
+    def __init__(self, channels: int, expand_ratio: int, fused: bool, se_ratio: float) -> None:
+        super().__init__()
+        hidden = max(channels, channels * expand_ratio)
+        if fused:
+            self.expand = ConvNormAct(channels, hidden, 3, activation='silu')
+            self.depthwise = nn.Identity()
+        else:
+            self.expand = ConvNormAct(channels, hidden, 1, activation='silu')
+            self.depthwise = ConvNormAct(hidden, hidden, 3, groups=hidden, activation='silu')
+        self.se = SqueezeExcitation(hidden, se_ratio)
+        self.project = nn.Sequential(nn.Conv2d(hidden, channels, 1, bias=False), nn.BatchNorm2d(channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Transform and gate ``x:[B,C,H,W]``; return a residual ``[B,C,H,W]``."""
+        y = self.expand(x)
+        y = self.depthwise(y)
+        y = self.project(self.se(y))
+        return x + y
+
+class InceptionBlock(nn.Module):
+    """Multi-branch asymmetric convolution block."""
+
+    def __init__(self, channels: int, asymmetric_kernel: int, residual: bool) -> None:
+        super().__init__()
+        branch = max(4, channels // 4)
+        padding = asymmetric_kernel // 2
+        self.branch1 = nn.Conv2d(channels, branch, 1)
+        self.branch3 = nn.Sequential(nn.Conv2d(channels, branch, 1), nn.ReLU(), nn.Conv2d(branch, branch, 3, padding=1))
+        self.branch_asym = nn.Sequential(nn.Conv2d(channels, branch, (1, asymmetric_kernel), padding=(0, padding)), nn.ReLU(), nn.Conv2d(branch, branch, (asymmetric_kernel, 1), padding=(padding, 0)))
+        self.branch_pool = nn.Sequential(nn.AvgPool2d(3, stride=1, padding=1), nn.Conv2d(channels, branch, 1))
+        self.project = nn.Conv2d(branch * 4, channels, 1)
+        self.residual = residual
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Concatenate four branches from ``x:[B,C,H,W]`` and return ``[B,C,H,W]``."""
+        branches = (self.branch1(x), self.branch3(x), self.branch_asym(x), self.branch_pool(x))
+        y = self.project(torch.cat(branches, dim=1))
+        return F.relu(y + x if self.residual else y)
+
+class VisionClassifier(nn.Module):
+    """Convolutional classifier used by compatible vision families."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        family = str(config['family_id'])
+        width = _integer(config, 'width', 32)
+        depth = _integer(config, 'depth', 4)
+        base = str(config.get('base_module', 'baseline'))
+        activation = str(config.get('activation', 'relu'))
+        if family == 'mish_resnet':
+            activation = 'mish'
+        elif family == 'prelu_elu_cnn':
+            activation = 'elu' if base == 'elu' else 'prelu'
+        elif family == 'mobilenet_v3_large':
+            activation = 'hardswish'
+        kernel = _integer(config, 'kernel_size', 3)
+        self.stem = ConvNormAct(3, width, kernel, stride=2, activation=activation)
+        blocks: list[nn.Module] = []
+        for block_index in range(depth):
+            if family == 'efficientnet_b0_b4' and base != 'convnext_v2':
+                blocks.append(MBConvBlock(width, _integer(config, 'expand_ratio', 4), base == 'fused_mbconv', float(config.get('se_ratio', 0.25))))
+            elif family == 'mobilenet_v3_large' and base == 'mobilenet_v3':
+                blocks.append(nn.Sequential(ConvNormAct(width, width, kernel, groups=width, activation='hardswish'), SqueezeExcitation(width), nn.Conv2d(width, width, 1)))
+            elif family == 'inception_v3':
+                blocks.append(InceptionBlock(width, _integer(config, 'asymmetric_kernel', 7), base == 'inception_residual'))
+            elif family == 'stn_cnn' and base == 'stn_cnn':
+                blocks.append(ConvNormAct(width, width, kernel, activation=activation))
+            else:
+                block_activation = 'elu' if family == 'prelu_elu_cnn' and base == 'prelu_elu' and block_index % 2 else activation
+                blocks.append(ResidualConvBlock(width, base, activation=block_activation, kernel_size=kernel))
+        self.blocks = nn.Sequential(*blocks)
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.head = nn.Linear(width, 10)
+
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        """Classify source image ``image:[B,3,H,W]`` into logits ``[B,10]``."""
+        features = self.blocks(self.stem(image))
+        pooled = self.pool(features).flatten(1)
+        return self.head(pooled)
+
+class SpatialTransformerClassifier(nn.Module):
+    """Affine spatial transformer followed by a convolutional classifier."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        width = _integer(config, 'width', 24)
+        localization_depth = _integer(config, 'localization_depth', 2)
+        localization: list[nn.Module] = [ConvNormAct(3, width, 5, stride=2)]
+        localization.extend((ConvNormAct(width, width, 3) for _ in range(max(localization_depth - 1, 0))))
+        self.localization = nn.Sequential(*localization, nn.AdaptiveAvgPool2d(1))
+        self.affine = nn.Linear(width, 6)
+        nn.init.zeros_(self.affine.weight)
+        self.affine.bias.data.copy_(torch.tensor([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]))
+        self.classifier = VisionClassifier(config)
+
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        """Warp ``image:[B,3,H,W]`` with learned ``[B,2,3]`` affine matrices and classify to ``[B,10]``."""
+        batch = image.shape[0]
+        local = self.localization(image).flatten(1)
+        theta = self.affine(local).view(batch, 2, 3)
+        grid = F.affine_grid(theta, image.shape, align_corners=False)
+        warped = F.grid_sample(image, grid, align_corners=False)
+        return self.classifier(warped)
+
+
+MODEL_ID = @MODEL_ID@
+PROFILE_POINT_ID = @PROFILE_POINT_ID@
+MODEL_CONFIG = @MODEL_CONFIG@
+BATCH_SIZE = @BATCH_SIZE@
+PRECISION_CONFIG = @PRECISION_CONFIG@
+PRECISION_DTYPE = torch.float16 if PRECISION_CONFIG == "fp16_amp" else torch.float32
+OPTIMIZER_NAME = @OPTIMIZER_NAME@
+INPUT_SPECS = @INPUT_SPECS@
+INPUT_SHAPE = tuple(INPUT_SPECS[0]["shape"])
+
+def precision_context(device_type: str = "cuda"):
+    if device_type != "cuda" or PRECISION_CONFIG == "fp32_ieee":
+        from contextlib import nullcontext
+        return nullcontext()
+    return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+
+def make_model() -> nn.Module:
+    return SpatialTransformerClassifier(MODEL_CONFIG)

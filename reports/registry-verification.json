@@ -1,0 +1,19 @@
+{
+  "checks": [
+    "artifact regular-file and SHA-256",
+    "checkpoint/result binding",
+    "architecture and normalizer identity",
+    "declared source/teacher lineage",
+    "replay/export and TS selection evidence"
+  ],
+  "expected_model_count": 1,
+  "findings": [],
+  "model_count": 1,
+  "models_present": [
+    "S_A100"
+  ],
+  "no_weight_deserialization": true,
+  "passed": true,
+  "schema": "perfseer-release-v1-registry-verification",
+  "scope": "a100-student"
+}

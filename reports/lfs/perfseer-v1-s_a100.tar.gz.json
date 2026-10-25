@@ -1,0 +1,10 @@
+{
+  "asset": "perfseer-v1-s_a100.tar.gz",
+  "bytes": 12341411,
+  "path": "paper-release/release_v1/assets/perfseer-v1-s_a100.tar.gz",
+  "remote_hash_verified": true,
+  "remote_reachable": true,
+  "schema": "perfseer-release-v1-lfs-publish-receipt",
+  "sha256": "0dbd48676c272e3113539178bc2a9974a59d5bb27a8b8329a7a1280041993b2d",
+  "upload_succeeded": true
+}

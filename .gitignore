@@ -1,72 +1,7 @@
-# Python caches and local environments
 __pycache__/
-*.py[codz]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.cache/
-.coverage
-htmlcov/
-.venv/
-venv/
-env/
-
-# Packaging output
-build/
-dist/
-*.egg-info/
-
-# Secrets and local configuration
-.env
-.envrc
-.kaggle/
-kaggle.json
-**/kaggle.json
-*.pem
-*.key
-
-# Local rendering and validation workspaces
-.local/
-.triton/
-torchinductor_*/
-containers/**/build-manifest.json
-
-# Regenerable datasets, labels, and run output
-/dataset/
-/datasets/
-/label/
-/labels/
-/runs/
-/reports/
-/logs/
-/by_profile_point/
-/nrp_results*/
-/index.jsonl
-/summary.json
-/workloads.jsonl
-
-# Model/checkpoint payloads never belong in the image context or Git
-*.pt
-*.pth
-*.ckpt
-*.safetensors
-src/**/checkpoints/
-/predictor_v3.2/weights/*
-!/predictor_v3.2/weights/README.md
-
-# Generated archives and persistent run logs
-*.zip
-*.tar
-*.tar.gz
-*.tgz
-*.gz
-*.bz2
-*.xz
-*.7z
-*.log
-
-# Miscellaneous local artifacts
-*.pdf
-.graphcode/
-**/dataset_with_label
-record/
+*.pyc
+extracted/
+runs/
+cache/
+generated_*/
+fresh_labels/

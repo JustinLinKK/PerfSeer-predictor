@@ -1,0 +1,87 @@
+"""Export and consume paired-input, twelve-output A10 predictor artifacts."""
+
+import torch
+
+from .features import build_features, normalize_features
+from perfseer_v31.io import atomic_write, fingerprint
+from .runner import normalization_from_dict
+from .training import restore_model, to_batch
+from .version import HARDWARE_ID, INPUT_SCHEMA_VERSION, TARGET_NAMES
+
+
+def export_model(checkpoint, path):
+    restore_model(checkpoint)
+    normalization_from_dict(checkpoint["normalization"])
+    keys = ("version", "output_contract", "target_names", "role", "epoch", "model_config",
+            "model_state_dict", "target_scales", "normalization", "dataset_fingerprint",
+            "input_schema", "feature_version", "metric_version", "loss_version", "selection_version")
+    payload = {key: checkpoint[key] for key in keys}
+    payload.update(prediction_hardware=checkpoint.get("prediction_hardware", HARDWARE_ID), normalization_sha256=fingerprint(payload["normalization"]),
+                   label_policy=checkpoint.get("label_policy"),
+                   evaluation=checkpoint.get("validation", {}).get("evaluation", {}))
+    if checkpoint.get("transfer"):
+        payload["transfer"] = checkpoint["transfer"]
+        payload["teacher_checkpoint_sha256"] = checkpoint.get("teacher_checkpoint_sha256")
+    atomic_write(path, payload, checkpoint=True)
+
+
+@torch.no_grad()
+def predict(artifact, designs, device="cpu", *, amp=None, microbatch=None, calibration=None, environment=None):
+    if calibration is not None:
+        return predict_calibrated(artifact, designs, calibration, environment, device=device,
+                                  amp=amp, microbatch=microbatch)["predictions"]
+    hardware = artifact.get("prediction_hardware")
+    transfer = artifact.get("transfer", {})
+    target = "nvidia_geforce_rtx_5090_32gb_local"
+    if artifact.get("input_schema") != INPUT_SCHEMA_VERSION or not (
+        hardware == HARDWARE_ID or hardware == target == transfer.get("target_hardware_id")
+    ):
+        raise ValueError("not a v3.2 paired-input prediction artifact with verified hardware")
+    if hardware == target:
+        from .capture import graphs_from_design
+        if any(graph.metadata.get("target_hardware_id") != hardware for design in designs
+               for graph in graphs_from_design(design).values()):
+            raise ValueError("design hardware differs from transfer prediction hardware")
+    if artifact.get("normalization_sha256") != fingerprint(artifact["normalization"]):
+        raise ValueError("exported normalization hash differs")
+    model = restore_model(artifact, device=device).eval()
+    normalization = normalization_from_dict(artifact["normalization"])
+    if normalization.split_fingerprint != artifact["dataset_fingerprint"]:
+        raise ValueError("normalization dataset fingerprint differs")
+    configuration = artifact.get("evaluation", {})
+    amp = configuration.get("amp", False) if amp is None else amp
+    microbatch = configuration.get("requested_microbatch", 1) if microbatch is None else microbatch
+    if microbatch < 1:
+        raise ValueError("prediction microbatch must be positive")
+    predictions = []
+    for start in range(0, len(designs), microbatch):
+        batch = to_batch([{"features": normalize_features(build_features(design), normalization)}
+                          for design in designs[start:start + microbatch]], device)
+        with torch.autocast(torch.device(device).type, dtype=torch.bfloat16, enabled=amp and torch.device(device).type == "cuda"):
+            predictions.extend(model.predict_batch(batch).prediction.float().cpu().tolist())
+    return [dict(zip(TARGET_NAMES, row, strict=True)) for row in predictions]
+
+
+def predict_calibrated(artifact, designs, calibration, environment, *, device="cpu", amp=None,
+                       microbatch=None, unknown_domain="reject"):
+    """Opt-in CPU calibration with explicit status and unadapted auxiliary names."""
+    from .calibration import apply_adapter, feature_values, source_identity
+    from .calibration_contracts import environment_identity
+    from .memory_baseline import graph_baseline
+    import math
+
+    if str(device) != "cpu" or amp not in (None, False) or microbatch not in (None, 1):
+        raise ValueError("calibration requires its frozen CPU, FP32, microbatch-one inference configuration")
+    if environment is None:
+        raise ValueError("calibrated inference requires the target environment")
+    environment_identity(environment)
+    source = source_identity(artifact)
+    predictions = predict(artifact, designs, device="cpu", amp=False, microbatch=1)
+    rows = []
+    for design, prediction in zip(designs, predictions, strict=True):
+        features = feature_values(design, prediction)
+        if calibration.get("analytic"):
+            baseline = graph_baseline(design)
+            features["memory_bytes"]["log_analytic_bytes"] = math.log1p(baseline["peak_bytes"])
+        rows.append({"source_prediction": prediction, "features": features})
+    return apply_adapter(calibration, rows, source=source, environment=environment, unknown_domain=unknown_domain)

@@ -1,0 +1,146 @@
+"""Self-contained generated PyTorch architecture for @MODEL_ID_TEXT@."""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from typing import Any
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def _integer(config: Mapping[str, Any], key: str, default: int) -> int:
+    return int(config.get(key, default))
+
+def _activation(name: str) -> nn.Module:
+    return {'elu': nn.ELU(), 'gelu': nn.GELU(), 'hardswish': nn.Hardswish(), 'mish': nn.Mish(), 'prelu': nn.PReLU(), 'relu': nn.ReLU(inplace=False), 'selu': nn.SELU(inplace=False), 'silu': nn.SiLU(inplace=False)}.get(name, nn.GELU())
+
+class ConvNormAct(nn.Module):
+    """Convolution-normalization-activation block with Kaiming defaults."""
+
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int=3, stride: int=1, groups: int=1, activation: str='relu', norm: str='batch') -> None:
+        super().__init__()
+        padding = kernel_size // 2
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, groups=groups, bias=False)
+        self.norm = nn.GroupNorm(min(8, out_channels), out_channels) if norm == 'group' else nn.BatchNorm2d(out_channels)
+        self.activation = _activation(activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Transform source image ``x:[B,Cin,H,W]`` into ``[B,Cout,H/s,W/s]``."""
+        y = self.conv(x)
+        y = self.norm(y)
+        return self.activation(y)
+
+class ConvNeXtBlock(nn.Module):
+    """ConvNeXt V1/V2 block; all learned matrices use PyTorch defaults."""
+
+    def __init__(self, channels: int, version: int=1, activation: str='gelu') -> None:
+        super().__init__()
+        self.depthwise = nn.Conv2d(channels, channels, 7, padding=3, groups=channels)
+        self.norm = nn.LayerNorm(channels)
+        self.expand = nn.Linear(channels, channels * 4)
+        self.contract = nn.Linear(channels * 4, channels)
+        self.activation = _activation(activation)
+        self.version = version
+        if version == 2:
+            self.gamma = nn.Parameter(torch.zeros(1, 1, 1, channels))
+            self.beta = nn.Parameter(torch.zeros(1, 1, 1, channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply a channel-preserving block to ``x:[B,C,H,W]``."""
+        residual = x
+        y = self.depthwise(x)
+        y = y.permute(0, 2, 3, 1)
+        y = self.contract(self.activation(self.expand(self.norm(y))))
+        if self.version == 2:
+            magnitude = torch.linalg.vector_norm(y, dim=(1, 2), keepdim=True)
+            normalized = magnitude / (magnitude.mean(dim=-1, keepdim=True) + 1e-06)
+            y = y + self.gamma * (y * normalized) + self.beta
+        y = y.permute(0, 3, 1, 2)
+        return residual + y
+
+class UpsampleBlock(nn.Module):
+    """One of ConvTranspose, interpolate+Conv, PixelShuffle, or ConvNeXt upsampling."""
+
+    def __init__(self, in_channels: int, out_channels: int, mode: str) -> None:
+        super().__init__()
+        self.mode = mode
+        if mode == 'convtranspose':
+            self.operation = nn.ConvTranspose2d(in_channels, out_channels, 2, stride=2)
+        elif mode == 'pixelshuffle':
+            self.operation = nn.Sequential(nn.Conv2d(in_channels, out_channels * 4, 3, padding=1), nn.PixelShuffle(2))
+        else:
+            layers: list[nn.Module] = [nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False), nn.Conv2d(in_channels, out_channels, 3, padding=1)]
+            if mode == 'convnext_v1':
+                layers.append(ConvNeXtBlock(out_channels, version=1))
+            elif mode == 'convnext_v2':
+                layers.append(ConvNeXtBlock(out_channels, version=2))
+            self.operation = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Upsample source ``x:[B,Cin,H,W]`` to ``[B,Cout,2H,2W]``."""
+        return self.operation(x)
+
+class DenseVisionModel(nn.Module):
+    """U-Net/pix2pix encoder-decoder with configurable upsampling."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        width = _integer(config, 'width', 16)
+        levels = min(max(_integer(config, 'depth', 4) // 2, 2), 4)
+        mode = str(config.get('base_module', 'convtranspose'))
+        norm = str(config.get('norm', 'group'))
+        channels = [width * 2 ** index for index in range(levels)]
+        self.stem = ConvNormAct(3, channels[0], norm=norm)
+        self.down = nn.ModuleList((ConvNormAct(channels[index], channels[index + 1], stride=2, norm=norm) for index in range(levels - 1)))
+        self.up = nn.ModuleList((UpsampleBlock(channels[index], channels[index - 1], mode) for index in range(levels - 1, 0, -1)))
+        self.merge = nn.ModuleList((ConvNormAct(channels[index - 1] * 2, channels[index - 1], norm=norm) for index in range(levels - 1, 0, -1)))
+        self.output = nn.Conv2d(channels[0], 3, 1)
+        self.family = str(config['family_id'])
+        if self.family == 'pix2pix':
+            discriminator_depth = _integer(config, 'discriminator_depth', 2)
+            discriminator: list[nn.Module] = [ConvNormAct(3, width, 4, stride=2, activation='elu')]
+            discriminator.extend((ConvNormAct(width, width, 4, stride=2, activation='elu') for _ in range(discriminator_depth - 1)))
+            self.discriminator = nn.Sequential(*discriminator, nn.AdaptiveAvgPool2d(1))
+            self.discriminator_head = nn.Linear(width, 1)
+
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        """Map ``image:[B,3,H,W]`` to reconstruction features ``[B,K]``."""
+        skips: list[torch.Tensor] = []
+        x = self.stem(image)
+        skips.append(x)
+        for down in self.down:
+            x = down(x)
+            skips.append(x)
+        for index, (up, merge) in enumerate(zip(self.up, self.merge, strict=True)):
+            x = up(x)
+            skip = skips[-index - 2]
+            if x.shape[-2:] != skip.shape[-2:]:
+                x = F.interpolate(x, size=skip.shape[-2:], mode='bilinear', align_corners=False)
+            x = merge(torch.cat((x, skip), dim=1))
+        generated = torch.tanh(self.output(x))
+        pooled = generated.mean(dim=(2, 3))
+        if self.family == 'pix2pix':
+            discriminator_features = self.discriminator(generated).flatten(1)
+            discriminator_logit = self.discriminator_head(discriminator_features)
+            pooled = torch.cat((pooled, discriminator_logit), dim=-1)
+        return pooled
+
+
+MODEL_ID = @MODEL_ID@
+PROFILE_POINT_ID = @PROFILE_POINT_ID@
+MODEL_CONFIG = @MODEL_CONFIG@
+BATCH_SIZE = @BATCH_SIZE@
+PRECISION_CONFIG = @PRECISION_CONFIG@
+PRECISION_DTYPE = torch.float16 if PRECISION_CONFIG == "fp16_amp" else torch.float32
+OPTIMIZER_NAME = @OPTIMIZER_NAME@
+INPUT_SPECS = @INPUT_SPECS@
+INPUT_SHAPE = tuple(INPUT_SPECS[0]["shape"])
+
+def precision_context(device_type: str = "cuda"):
+    if device_type != "cuda" or PRECISION_CONFIG == "fp32_ieee":
+        from contextlib import nullcontext
+        return nullcontext()
+    return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+
+def make_model() -> nn.Module:
+    return DenseVisionModel(MODEL_CONFIG)

@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "working_directory_outside_repository": true,
+  "PYTHONPATH_empty": true,
+  "only_packaged_code_specs_runtime_copied": true,
+  "generated_rows": 8,
+  "generation_stdout": "{\"mode\": \"transfer\", \"source_count\": 1, \"workload_count\": 8, \"all_base_modules_covered\": false}\n"
+}

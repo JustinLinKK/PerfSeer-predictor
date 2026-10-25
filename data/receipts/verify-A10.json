@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "hardware": "A10",
+  "train": 7494,
+  "validation": 512,
+  "holdout": 1640,
+  "missing": 698,
+  "train_configuration_groups": 4569,
+  "all_cached_labels_rederived": true,
+  "all_file_hashes_verified": true,
+  "no_group_leakage": true
+}

@@ -1,0 +1,146 @@
+{
+  "passed": true,
+  "hardware": {
+    "driver_version": "616.92",
+    "gpu_name": "NVIDIA GeForce RTX 5090",
+    "gpu_uuid": "GPU-b57f6a60-11ac-2436-63dd-48232ed0f103",
+    "hardware_id": "nvidia_geforce_rtx_5090_local",
+    "memory_total_bytes": 34190917632,
+    "nvml_index": 0
+  },
+  "records": 5,
+  "accepted_labels": 5,
+  "all_metrics_recomputed_from_observations": true,
+  "source_and_gpu_identity_verified": true,
+  "not_A10_A100_A10G_measurements": true,
+  "outcomes": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "labels": [
+    {
+      "id": "model_28_0023::bs32::fp16_amp::muon",
+      "family": "selu_mlp",
+      "optimizer": "muon",
+      "precision": "fp16_amp",
+      "targets": {
+        "raw_device_avg_vram_bytes": 7246209024.0,
+        "raw_device_peak_vram_bytes": 7246209024,
+        "torch_peak_allocated_bytes": 18395136,
+        "torch_peak_reserved_bytes": 23068672,
+        "train_avg_nvml_busy_percent": 20.597826086956523,
+        "train_avg_vram_bytes": 810381312.0,
+        "train_avg_vram_mib": 772.83984375,
+        "train_epoch_gpu_ms": 5.971857759687635,
+        "train_epoch_wall_ms": 6.030732555555556,
+        "train_peak_nvml_busy_percent": 27,
+        "train_peak_vram_bytes": 810381312,
+        "train_peak_vram_mib": 772.83984375,
+        "train_step_gpu_ms": 2.9859288798438177,
+        "train_step_wall_ms": 3.015366277777778
+      },
+      "nvml_samples": 92,
+      "record_sha256": "401d04209d65f736b9bc6f0b5febcbe2340dd82c2d00aac9a48d11ac2852d478"
+    },
+    {
+      "id": "model_28_0036::bs32::fp32_ieee::adam",
+      "family": "selu_mlp",
+      "optimizer": "adam",
+      "precision": "fp32_ieee",
+      "targets": {
+        "raw_device_avg_vram_bytes": 7247937179.826087,
+        "raw_device_peak_vram_bytes": 7250599936,
+        "torch_peak_allocated_bytes": 18445824,
+        "torch_peak_reserved_bytes": 23068672,
+        "train_avg_nvml_busy_percent": 14.184782608695652,
+        "train_avg_vram_bytes": 812961435.826087,
+        "train_avg_vram_mib": 775.300441576087,
+        "train_epoch_gpu_ms": 2.47943467564053,
+        "train_epoch_wall_ms": 2.526624777777778,
+        "train_peak_nvml_busy_percent": 20,
+        "train_peak_vram_bytes": 815624192,
+        "train_peak_vram_mib": 777.83984375,
+        "train_step_gpu_ms": 1.239717337820265,
+        "train_step_wall_ms": 1.263312388888889
+      },
+      "nvml_samples": 92,
+      "record_sha256": "7f6b4291fd02d1ce193259ad3b77b52e506bd4e4c57bd29b4ab4922772f9b896"
+    },
+    {
+      "id": "model_23_0023::bs1::fp32_ieee::adam",
+      "family": "fasttext_embeddingbag",
+      "optimizer": "adam",
+      "precision": "fp32_ieee",
+      "targets": {
+        "raw_device_avg_vram_bytes": 7268818944.0,
+        "raw_device_peak_vram_bytes": 7268818944,
+        "torch_peak_allocated_bytes": 28588032,
+        "torch_peak_reserved_bytes": 44040192,
+        "train_avg_nvml_busy_percent": 18.731182795698924,
+        "train_avg_vram_bytes": 833843200.0,
+        "train_avg_vram_mib": 795.21484375,
+        "train_epoch_gpu_ms": 1.754673785633511,
+        "train_epoch_wall_ms": 1.78936,
+        "train_peak_nvml_busy_percent": 23,
+        "train_peak_vram_bytes": 833843200,
+        "train_peak_vram_mib": 795.21484375,
+        "train_step_gpu_ms": 0.8773368928167555,
+        "train_step_wall_ms": 0.89468
+      },
+      "nvml_samples": 93,
+      "record_sha256": "1a72b61588f8b0d4bb5c9440caf90424b587255de5f92d8988d28a220bca38a6"
+    },
+    {
+      "id": "model_32_0089::bs2::fp16_amp::muon",
+      "family": "gcn_gat_graphsage",
+      "optimizer": "muon",
+      "precision": "fp16_amp",
+      "targets": {
+        "raw_device_avg_vram_bytes": 7248306176.0,
+        "raw_device_peak_vram_bytes": 7248306176,
+        "torch_peak_allocated_bytes": 18747392,
+        "torch_peak_reserved_bytes": 23068672,
+        "train_avg_nvml_busy_percent": 22.849462365591396,
+        "train_avg_vram_bytes": 814968832.0,
+        "train_avg_vram_mib": 777.21484375,
+        "train_epoch_gpu_ms": 10.95323371887207,
+        "train_epoch_wall_ms": 10.991051666666667,
+        "train_peak_nvml_busy_percent": 27,
+        "train_peak_vram_bytes": 814968832,
+        "train_peak_vram_mib": 777.21484375,
+        "train_step_gpu_ms": 5.476616859436035,
+        "train_step_wall_ms": 5.495525833333334
+      },
+      "nvml_samples": 93,
+      "record_sha256": "451344a972ebbb081ef9a6efba91300ad8873c33fd5e9d99c1019d1327f06e98"
+    },
+    {
+      "id": "model_27_0158::bs2::fp32_ieee::adam",
+      "family": "m5_waveform_cnn",
+      "optimizer": "adam",
+      "precision": "fp32_ieee",
+      "targets": {
+        "raw_device_avg_vram_bytes": 7261879879.569893,
+        "raw_device_peak_vram_bytes": 7268360192,
+        "torch_peak_allocated_bytes": 23726592,
+        "torch_peak_reserved_bytes": 29360128,
+        "train_avg_nvml_busy_percent": 44.40860215053763,
+        "train_avg_vram_bytes": 826904135.5698929,
+        "train_avg_vram_mib": 788.5972362231187,
+        "train_epoch_gpu_ms": 2.608867539299859,
+        "train_epoch_wall_ms": 2.6438596666666667,
+        "train_peak_nvml_busy_percent": 55,
+        "train_peak_vram_bytes": 833384448,
+        "train_peak_vram_mib": 794.77734375,
+        "train_step_gpu_ms": 1.3044337696499295,
+        "train_step_wall_ms": 1.3219298333333334
+      },
+      "nvml_samples": 93,
+      "record_sha256": "631f036b0e0ac829c5359e48ca967dec82e9b94258661f1190cf23f18a9a4a6a"
+    }
+  ],
+  "run_sha256": "49aa11c01859bce9786107ef87482570fd87bb0d6931b521f55245364d8e2570"
+}

@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "completed_records": 5,
+  "record_hashes_unchanged": true,
+  "worker_logs_unchanged": true,
+  "new_workers_started": false,
+  "record_sha256": {
+    "5fd9cbec1c803989511bc7253290c20c7fd358700acb5d267cbc549e1d51310a.json": "451344a972ebbb081ef9a6efba91300ad8873c33fd5e9d99c1019d1327f06e98",
+    "061364499bcdb6e313e680592c289f409be2c991c8f1deeee82986c126f446ea.json": "7f6b4291fd02d1ce193259ad3b77b52e506bd4e4c57bd29b4ab4922772f9b896",
+    "ef48d821f9a98b79d743faaf40b0063a3681872bb300a54412905511eeecbc37.json": "631f036b0e0ac829c5359e48ca967dec82e9b94258661f1190cf23f18a9a4a6a",
+    "313ab9718a910b212942874710947f89930ba940ca2ab0f6d19d6aadb369c4af.json": "1a72b61588f8b0d4bb5c9440caf90424b587255de5f92d8988d28a220bca38a6",
+    "01d7c78b8d2f5db86f8130bc7d7a7a207c49d7a35d4d4b3111a840951672d443.json": "401d04209d65f736b9bc6f0b5febcbe2340dd82c2d00aac9a48d11ac2852d478"
+  },
+  "stdout": "{\"hardware\":{\"driver_version\":\"616.92\",\"gpu_name\":\"NVIDIA GeForce RTX 5090\",\"gpu_uuid\":\"GPU-b57f6a60-11ac-2436-63dd-48232ed0f103\",\"hardware_id\":\"nvidia_geforce_rtx_5090_local\",\"memory_total_bytes\":34190917632,\"nvml_index\":0},\"passed\":true,\"records\":5,\"run_sha256\":\"49aa11c01859bce9786107ef87482570fd87bb0d6931b521f55245364d8e2570\",\"status_counts\":{\"ok\":5},\"zero_failed_records_promoted_to_labels\":true}\n"
+}

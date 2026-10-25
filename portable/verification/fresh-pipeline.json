@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "hardware": "nvidia_geforce_rtx_5090_local",
+  "accepted_rows": 5,
+  "dataset_rows": 5,
+  "split_counts": {
+    "0": 5
+  },
+  "missing_rows": 8187,
+  "ready_for_training": false,
+  "all_targets_recomputed_from_observations": true,
+  "all_generated_source_identities_verified": true,
+  "normalizer_refitted": false,
+  "cuda_used_for_feature_capture": false,
+  "input_only_inference_finite_and_physical": true,
+  "sample_ids_exact": true,
+  "epoch_contract_verified": true,
+  "prediction_device": "cpu",
+  "prediction_kind": "T7",
+  "prediction_sha256": "329560208c42b6f85d68537e0af396b26f8a44b3be720dd96aa498579977c71c",
+  "input_bundle_sha256": "e60afea383e04e77f7e6760a35eca4906d65f2ac2d388d59a9585404c1c74834",
+  "packer_sha256": "9bae65a2177546287982fd9c96ff2d7add89af39c4c1c157d3f76b6dc8e0c4e8",
+  "scope": "Five real local GPU observations; static packing/inference verification only, not model accuracy or a complete new GPU dataset"
+}

@@ -1,0 +1,73 @@
+"""Self-contained generated PyTorch architecture for @MODEL_ID_TEXT@."""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from typing import Any
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def _integer(config: Mapping[str, Any], key: str, default: int) -> int:
+    return int(config.get(key, default))
+
+class DenseGraphModel(nn.Module):
+    """Dense-batched CGCNN, GCN, GAT, or GraphSAGE approximation."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        feature_count = _integer(config, 'feature_count', 32)
+        width = _integer(config, 'width', 64)
+        depth = _integer(config, 'depth', 2)
+        self.base = str(config.get('base_module', 'gcn'))
+        self.input = nn.Linear(feature_count, width)
+        self.self_layers = nn.ModuleList((nn.Linear(width, width) for _ in range(depth)))
+        self.neighbor_layers = nn.ModuleList((nn.Linear(width, width) for _ in range(depth)))
+        self.gates = nn.ModuleList((nn.Linear(width * 2, width) for _ in range(depth)))
+        self.head = nn.Linear(width, 1)
+
+    def forward(self, nodes: torch.Tensor, adjacency: torch.Tensor) -> torch.Tensor:
+        """Process ``nodes:[B,N,F]`` and ``adjacency:[B,N,N]`` into ``[B,1]``."""
+        x = self.input(nodes)
+        eye = torch.eye(adjacency.shape[-1], device=adjacency.device, dtype=adjacency.dtype).unsqueeze(0)
+        graph = adjacency + eye
+        degree = graph.sum(dim=-1, keepdim=True).clamp_min(1.0)
+        normalized = graph / degree
+        for self_layer, neighbor_layer, gate_layer in zip(self.self_layers, self.neighbor_layers, self.gates, strict=True):
+            if self.base == 'gat':
+                scores = torch.matmul(x, x.transpose(1, 2)) / math.sqrt(x.shape[-1])
+                scores = scores.masked_fill(graph <= 0, torch.finfo(scores.dtype).min)
+                weights = torch.softmax(scores, dim=-1)
+                neighbors = torch.matmul(weights, x)
+            else:
+                neighbors = torch.matmul(normalized, x)
+            if self.base == 'graphsage':
+                x = F.relu(self_layer(x) + neighbor_layer(neighbors))
+            elif self.base == 'gated_cgcnn':
+                gate = torch.sigmoid(gate_layer(torch.cat((x, neighbors), dim=-1)))
+                x = F.softplus(self_layer(x) + gate * neighbor_layer(neighbors))
+            elif self.base == 'cgcnn':
+                x = F.softplus(self_layer(x) + neighbor_layer(neighbors))
+            else:
+                x = F.relu(neighbor_layer(neighbors))
+        return self.head(x.mean(dim=1))
+
+
+MODEL_ID = @MODEL_ID@
+PROFILE_POINT_ID = @PROFILE_POINT_ID@
+MODEL_CONFIG = @MODEL_CONFIG@
+BATCH_SIZE = @BATCH_SIZE@
+PRECISION_CONFIG = @PRECISION_CONFIG@
+PRECISION_DTYPE = torch.float16 if PRECISION_CONFIG == "fp16_amp" else torch.float32
+OPTIMIZER_NAME = @OPTIMIZER_NAME@
+INPUT_SPECS = @INPUT_SPECS@
+INPUT_SHAPE = tuple(INPUT_SPECS[0]["shape"])
+
+def precision_context(device_type: str = "cuda"):
+    if device_type != "cuda" or PRECISION_CONFIG == "fp32_ieee":
+        from contextlib import nullcontext
+        return nullcontext()
+    return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+
+def make_model() -> nn.Module:
+    return DenseGraphModel(MODEL_CONFIG)

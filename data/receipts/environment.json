@@ -1,0 +1,7 @@
+{
+  "python": "3.13.12 | packaged by Anaconda, Inc. | (main, Feb 24 2026, 16:13:31) [GCC 14.3.0]",
+  "torch": "2.11.0+cu130",
+  "cuda_runtime": "13.0",
+  "nvidia_ml_py": "13.595.45",
+  "numpy": "2.4.4"
+}

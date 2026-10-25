@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "workload_rows": 8192,
+  "model_count": 5397,
+  "configuration_groups": 4771,
+  "families": 32,
+  "modalities": {
+    "vision": 3390,
+    "nlp": 2755,
+    "audio": 713,
+    "tabular": 799,
+    "graph": 535
+  },
+  "precisions": {
+    "fp32_ieee": 4138,
+    "fp16_amp": 4054
+  },
+  "optimizers": {
+    "muon": 4129,
+    "adam": 4063
+  },
+  "all_sources_replay_exactly": true,
+  "historical_base_hashes_checked": true,
+  "historical_variant_hashes_checked": true,
+  "labels_read_for_generation": false,
+  "manifest_sha256": "274394776e1032769fd2eb9b666eb4b38aad6511e4d2ccb80411e37d2d7f592b"
+}

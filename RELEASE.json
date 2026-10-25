@@ -1,0 +1,23 @@
+{
+  "assets_manifest_sha256": "7428f43802f7c1fcc2f5e6082e31d2c650052c2b9ff75541b1e257c9184f40e7",
+  "complete_release": false,
+  "full_quality_gate_required_independently": true,
+  "milestone": "a100-student",
+  "models": {
+    "S_A100": {
+      "checkpoint_sha256": "136144e6aa269f7c17df947a2b1b9b7fa4ad82ef9982b250d8fa3c43f22e4762"
+    }
+  },
+  "pending": [
+    "P_A10",
+    "P_A100",
+    "P_A10G",
+    "S_A10",
+    "S_A10G",
+    "TS_A10_A100",
+    "T_A10_A100"
+  ],
+  "plan_sha256": "0868db58a8d80f77849402e41edbf96d4d919604c5a49840d74bd0d217a0d180",
+  "schema": "perfseer-paper-release-v1",
+  "source_commit": "aeeccaf4c1a32cd634661f3f337b243842a2e650"
+}

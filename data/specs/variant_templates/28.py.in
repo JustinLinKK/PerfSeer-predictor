@@ -1,0 +1,55 @@
+"""Self-contained generated PyTorch architecture for @MODEL_ID_TEXT@."""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from typing import Any
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def _integer(config: Mapping[str, Any], key: str, default: int) -> int:
+    return int(config.get(key, default))
+
+class SeluMLP(nn.Module):
+    """Self-normalizing tabular MLP with AlphaDropout."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        features = _integer(config, 'feature_count', 32)
+        width = _integer(config, 'width', 64)
+        depth = _integer(config, 'depth', 2)
+        dropout = float(config.get('dropout', 0.1))
+        self.input = nn.Linear(features, width)
+        self.layers = nn.ModuleList((nn.Linear(width, width) for _ in range(depth)))
+        self.dropout = nn.AlphaDropout(dropout)
+        self.residual = str(config.get('base_module')) == 'residual_selu'
+        self.head = nn.Linear(width, 2)
+
+    def forward(self, features: torch.Tensor) -> torch.Tensor:
+        """Map tabular ``features:[B,F]`` to logits ``[B,2]``."""
+        x = F.selu(self.input(features))
+        for layer in self.layers:
+            update = self.dropout(F.selu(layer(x)))
+            x = x + update if self.residual else update
+        return self.head(x)
+
+
+MODEL_ID = @MODEL_ID@
+PROFILE_POINT_ID = @PROFILE_POINT_ID@
+MODEL_CONFIG = @MODEL_CONFIG@
+BATCH_SIZE = @BATCH_SIZE@
+PRECISION_CONFIG = @PRECISION_CONFIG@
+PRECISION_DTYPE = torch.float16 if PRECISION_CONFIG == "fp16_amp" else torch.float32
+OPTIMIZER_NAME = @OPTIMIZER_NAME@
+INPUT_SPECS = @INPUT_SPECS@
+INPUT_SHAPE = tuple(INPUT_SPECS[0]["shape"])
+
+def precision_context(device_type: str = "cuda"):
+    if device_type != "cuda" or PRECISION_CONFIG == "fp32_ieee":
+        from contextlib import nullcontext
+        return nullcontext()
+    return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+
+def make_model() -> nn.Module:
+    return SeluMLP(MODEL_CONFIG)

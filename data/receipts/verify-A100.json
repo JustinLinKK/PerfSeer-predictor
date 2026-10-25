@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "hardware": "A100",
+  "train": 8080,
+  "validation": 2296,
+  "holdout": 0,
+  "missing": 112,
+  "train_configuration_groups": 4698,
+  "all_cached_labels_rederived": true,
+  "all_file_hashes_verified": true,
+  "no_group_leakage": true
+}

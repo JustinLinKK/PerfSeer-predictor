@@ -1,0 +1,315 @@
+"""Self-contained generated PyTorch architecture for @MODEL_ID_TEXT@."""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from typing import Any
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def _integer(config: Mapping[str, Any], key: str, default: int) -> int:
+    return int(config.get(key, default))
+
+def _head_count(width: int, requested: int) -> int:
+    for heads in range(min(width, max(requested, 1)), 0, -1):
+        if width % heads == 0:
+            return heads
+    return 1
+
+def _activation(name: str) -> nn.Module:
+    return {'elu': nn.ELU(), 'gelu': nn.GELU(), 'hardswish': nn.Hardswish(), 'mish': nn.Mish(), 'prelu': nn.PReLU(), 'relu': nn.ReLU(inplace=False), 'selu': nn.SELU(inplace=False), 'silu': nn.SiLU(inplace=False)}.get(name, nn.GELU())
+
+class ConvNeXtBlock(nn.Module):
+    """ConvNeXt V1/V2 block; all learned matrices use PyTorch defaults."""
+
+    def __init__(self, channels: int, version: int=1, activation: str='gelu') -> None:
+        super().__init__()
+        self.depthwise = nn.Conv2d(channels, channels, 7, padding=3, groups=channels)
+        self.norm = nn.LayerNorm(channels)
+        self.expand = nn.Linear(channels, channels * 4)
+        self.contract = nn.Linear(channels * 4, channels)
+        self.activation = _activation(activation)
+        self.version = version
+        if version == 2:
+            self.gamma = nn.Parameter(torch.zeros(1, 1, 1, channels))
+            self.beta = nn.Parameter(torch.zeros(1, 1, 1, channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply a channel-preserving block to ``x:[B,C,H,W]``."""
+        residual = x
+        y = self.depthwise(x)
+        y = y.permute(0, 2, 3, 1)
+        y = self.contract(self.activation(self.expand(self.norm(y))))
+        if self.version == 2:
+            magnitude = torch.linalg.vector_norm(y, dim=(1, 2), keepdim=True)
+            normalized = magnitude / (magnitude.mean(dim=-1, keepdim=True) + 1e-06)
+            y = y + self.gamma * (y * normalized) + self.beta
+        y = y.permute(0, 3, 1, 2)
+        return residual + y
+
+class AttentionBlock(nn.Module):
+    """MHA, GQA, MLA, or linear attention over ``[B,T,C]`` tokens."""
+
+    def __init__(self, width: int, heads: int, mode: str, latent_ratio: float=0.5) -> None:
+        super().__init__()
+        self.width = width
+        self.heads = _head_count(width, heads)
+        self.head_dim = width // self.heads
+        self.mode = mode
+        self.q_proj = nn.Linear(width, width, bias=False)
+        if mode == 'gqa':
+            self.kv_heads = max(1, self.heads // 2)
+            self.k_proj = nn.Linear(width, self.kv_heads * self.head_dim, bias=False)
+            self.v_proj = nn.Linear(width, self.kv_heads * self.head_dim, bias=False)
+            self.kv_down = None
+            self.k_up = None
+            self.v_up = None
+        elif mode == 'mla':
+            latent = max(self.head_dim, int(width * latent_ratio))
+            self.kv_heads = self.heads
+            self.kv_down = nn.Linear(width, latent, bias=False)
+            self.k_up = nn.Linear(latent, width, bias=False)
+            self.v_up = nn.Linear(latent, width, bias=False)
+            self.k_proj = None
+            self.v_proj = None
+        else:
+            self.kv_heads = self.heads
+            self.k_proj = nn.Linear(width, width, bias=False)
+            self.v_proj = nn.Linear(width, width, bias=False)
+            self.kv_down = None
+            self.k_up = None
+            self.v_up = None
+        self.output = nn.Linear(width, width, bias=False)
+
+    def _split(self, x: torch.Tensor, heads: int) -> torch.Tensor:
+        """Reshape projected ``x:[B,T,heads*D]`` into ``[B,heads,T,D]``."""
+        batch, tokens, _channels = x.shape
+        return x.view(batch, tokens, heads, self.head_dim).transpose(1, 2)
+
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None=None, causal: bool=False) -> torch.Tensor:
+        """Attend from ``x:[B,Tq,C]`` to optional ``context:[B,Tk,C]``; return ``[B,Tq,C]``."""
+        source = x if context is None else context
+        query = self._split(self.q_proj(x), self.heads)
+        if self.mode == 'mla':
+            assert self.kv_down is not None and self.k_up is not None and (self.v_up is not None)
+            latent = self.kv_down(source)
+            key = self._split(self.k_up(latent), self.heads)
+            value = self._split(self.v_up(latent), self.heads)
+        else:
+            assert self.k_proj is not None and self.v_proj is not None
+            key = self._split(self.k_proj(source), self.kv_heads)
+            value = self._split(self.v_proj(source), self.kv_heads)
+            if self.kv_heads != self.heads:
+                repeats = self.heads // self.kv_heads
+                key = key.repeat_interleave(repeats, dim=1)
+                value = value.repeat_interleave(repeats, dim=1)
+        if self.mode == 'delta_linear':
+            query_features = F.normalize(F.elu(query) + 1.0, dim=-1)
+            key_features = F.normalize(F.elu(key) + 1.0, dim=-1)
+            state = torch.zeros(query.shape[0], query.shape[1], query.shape[-1], value.shape[-1], dtype=query.dtype, device=query.device)
+            outputs: list[torch.Tensor] = []
+            for token_index in range(query.shape[2]):
+                q_t = query_features[:, :, token_index]
+                k_t = key_features[:, :, token_index]
+                v_t = value[:, :, token_index]
+                prediction = torch.einsum('bhd,bhde->bhe', k_t, state)
+                beta = torch.sigmoid((q_t * k_t).sum(dim=-1, keepdim=True) / math.sqrt(self.head_dim))
+                delta = (v_t - prediction) * beta
+                state = state + torch.einsum('bhd,bhe->bhde', k_t, delta)
+                outputs.append(torch.einsum('bhd,bhde->bhe', q_t, state))
+            attended = torch.stack(outputs, dim=2)
+        elif self.mode == 'transposed_attention':
+            channel_scores = torch.matmul(query.transpose(-2, -1), key) / math.sqrt(max(query.shape[2], 1))
+            channel_weights = torch.softmax(channel_scores, dim=-1)
+            attended = torch.matmul(value, channel_weights.transpose(-2, -1))
+        elif self.mode in {'linear_attention', 'linear'}:
+            query_features = F.elu(query) + 1.0
+            key_features = F.elu(key) + 1.0
+            kv_state = torch.einsum('bhtd,bhte->bhde', key_features, value)
+            normalizer = torch.einsum('bhtd,bhd->bht', query_features, key_features.sum(dim=2)).clamp_min(1e-06)
+            attended = torch.einsum('bhtd,bhde->bhte', query_features, kv_state) / normalizer.unsqueeze(-1)
+        else:
+            attended = F.scaled_dot_product_attention(query, key, value, is_causal=causal and context is None)
+        batch, _heads, tokens, _dim = attended.shape
+        merged = attended.transpose(1, 2).reshape(batch, tokens, self.width)
+        return self.output(merged)
+
+def _attention_mode(base_module: str) -> str:
+    lowered = base_module.lower()
+    if 'transposed' in lowered:
+        return 'transposed_attention'
+    if 'mla' in lowered or 'latent' in lowered:
+        return 'mla'
+    if 'gqa' in lowered:
+        return 'gqa'
+    if 'linear' in lowered or 'delta' in lowered:
+        return 'delta_linear' if 'delta' in lowered else 'linear_attention'
+    return 'mha'
+
+class FeedForward(nn.Module):
+    """GELU or SwiGLU feed-forward network over ``[B,T,C]`` tokens."""
+
+    def __init__(self, width: int, swiglu: bool=False, gate_kind: str | None=None) -> None:
+        super().__init__()
+        self.gate_kind = gate_kind or ('silu' if swiglu else 'none')
+        hidden = width * 4
+        self.up = nn.Linear(width, hidden * (2 if self.gate_kind != 'none' else 1))
+        self.down = nn.Linear(hidden, width)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Map source tokens ``x:[B,T,C]`` through an MLP and return ``[B,T,C]``."""
+        hidden = self.up(x)
+        if self.gate_kind != 'none':
+            value, gate = hidden.chunk(2, dim=-1)
+            gate = torch.sigmoid(gate) if self.gate_kind == 'sigmoid' else F.silu(gate)
+            hidden = value * gate
+        else:
+            hidden = F.gelu(hidden)
+        return self.down(hidden)
+
+class SwiGLU(nn.Module):
+    """SwiGLU feed-forward network with separate gate, up, and down projections."""
+
+    def __init__(self, hidden_size: int, intermediate_size: int | None=None) -> None:
+        super().__init__()
+        intermediate_size = intermediate_size or hidden_size * 4
+        self.gate_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
+        self.up_proj = nn.Linear(hidden_size, intermediate_size, bias=False)
+        self.down_proj = nn.Linear(intermediate_size, hidden_size, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Map ``x:[B,T,C]`` through SwiGLU and return ``[B,T,C]``."""
+        gate = F.silu(self.gate_proj(x))
+        value = self.up_proj(x)
+        return self.down_proj(gate * value)
+
+class SituAndMul(nn.Module):
+    """Kimi SiTU gate followed by multiplication with the value branch."""
+
+    def __init__(self, beta: float=1.0, linear_beta: float | None=None) -> None:
+        super().__init__()
+        if beta <= 0.0:
+            raise ValueError('beta must be positive')
+        if linear_beta is not None and linear_beta <= 0.0:
+            raise ValueError('linear_beta must be positive when provided')
+        self.beta = float(beta)
+        self.linear_beta = None if linear_beta is None else float(linear_beta)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Gate concatenated ``x:[...,2I]`` and return ``[...,I]``."""
+        if x.shape[-1] % 2:
+            raise ValueError('SituAndMul requires an even final dimension')
+        gate, value = x.chunk(2, dim=-1)
+        output_dtype = x.dtype
+        gate = gate.float()
+        value = value.float()
+        gate = self.beta * torch.tanh(gate / self.beta) * torch.sigmoid(gate)
+        if self.linear_beta is not None:
+            value = self.linear_beta * torch.tanh(value / self.linear_beta)
+        return (gate * value).to(output_dtype)
+
+class KimiMLP(nn.Module):
+    """Kimi feed-forward network supporting SiLU and SiTU gating."""
+
+    def __init__(self, config: Mapping[str, Any] | Any, hidden_size: int | None=None, intermediate_size: int | None=None) -> None:
+        super().__init__()
+        self.config = config
+
+        def config_value(key: str, default: Any) -> Any:
+            return config.get(key, default) if isinstance(config, Mapping) else getattr(config, key, default)
+        if hidden_size is None:
+            hidden_size = int(config_value('hidden_size', config_value('width', 128)))
+        if intermediate_size is None:
+            intermediate_size = int(config_value('intermediate_size', hidden_size * 4))
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.hidden_act = str(config_value('hidden_act', 'silu'))
+        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False)
+        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False)
+        if self.hidden_act == 'situ':
+            beta = float(config_value('activation_situ_beta', 1.0) or 1.0)
+            linear_beta = config_value('activation_situ_linear_beta', None)
+            self.act_fn: nn.Module = SituAndMul(beta=beta, linear_beta=linear_beta)
+        else:
+            self.act_fn = _activation(self.hidden_act)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Map ``x:[B,T,C]`` through the selected Kimi MLP and return ``[B,T,C]``."""
+        if self.hidden_act == 'situ':
+            gate_up = torch.cat((self.gate_proj(x), self.up_proj(x)), dim=-1)
+            hidden = self.act_fn(gate_up)
+        else:
+            gate = self.act_fn(self.gate_proj(x))
+            hidden = gate * self.up_proj(x)
+        return self.down_proj(hidden)
+
+class TransformerLayer(nn.Module):
+    """Pre-normalized attention and feed-forward residual layer."""
+
+    def __init__(self, width: int, heads: int, mode: str, swiglu: bool, rms_norm: bool=False, kimi_config: Mapping[str, Any] | None=None) -> None:
+        super().__init__()
+        norm = nn.RMSNorm if rms_norm else nn.LayerNorm
+        self.norm1 = norm(width)
+        self.attention = AttentionBlock(width, heads, mode)
+        self.norm2 = norm(width)
+        if kimi_config is not None:
+            self.feed_forward: nn.Module = KimiMLP(kimi_config, hidden_size=width)
+        elif swiglu:
+            self.feed_forward = SwiGLU(width)
+        else:
+            self.feed_forward = FeedForward(width)
+
+    def forward(self, x: torch.Tensor, context: torch.Tensor | None=None, causal: bool=False) -> torch.Tensor:
+        """Update tokens ``x:[B,T,C]`` with optional ``context:[B,S,C]``; return ``[B,T,C]``."""
+        attended = self.attention(self.norm1(x), context=context, causal=causal)
+        x = x + attended
+        return x + self.feed_forward(self.norm2(x))
+
+class RestormerModel(nn.Module):
+    """Memory-bounded image restoration blocks with pooled attention."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        width = _integer(config, 'width', 32)
+        depth = _integer(config, 'depth', 4)
+        heads = _head_count(width, _integer(config, 'heads', 4))
+        mode = _attention_mode(str(config.get('base_module', 'transposed_attention')))
+        self.stem = nn.Conv2d(3, width, 3, padding=1)
+        self.local = nn.ModuleList((ConvNeXtBlock(width, version=2) for _ in range(depth)))
+        self.attention = nn.ModuleList((TransformerLayer(width, heads, mode, swiglu=True) for _ in range(depth)))
+        self.output = nn.Conv2d(width, 3, 3, padding=1)
+
+    def forward(self, image: torch.Tensor) -> torch.Tensor:
+        """Restore ``image:[B,3,H,W]`` and return pooled RGB ``[B,3]``."""
+        features = self.stem(image)
+        for local, attention in zip(self.local, self.attention, strict=True):
+            features = local(features)
+            pooled = F.adaptive_avg_pool2d(features, (8, 8))
+            tokens = pooled.flatten(2).transpose(1, 2)
+            tokens = attention(tokens)
+            context = tokens.transpose(1, 2).reshape(features.shape[0], features.shape[1], 8, 8)
+            features = features + F.interpolate(context, size=features.shape[-2:], mode='bilinear', align_corners=False)
+        restored = self.output(features) + image
+        return restored.mean(dim=(2, 3))
+
+
+MODEL_ID = @MODEL_ID@
+PROFILE_POINT_ID = @PROFILE_POINT_ID@
+MODEL_CONFIG = @MODEL_CONFIG@
+BATCH_SIZE = @BATCH_SIZE@
+PRECISION_CONFIG = @PRECISION_CONFIG@
+PRECISION_DTYPE = torch.float16 if PRECISION_CONFIG == "fp16_amp" else torch.float32
+OPTIMIZER_NAME = @OPTIMIZER_NAME@
+INPUT_SPECS = @INPUT_SPECS@
+INPUT_SHAPE = tuple(INPUT_SPECS[0]["shape"])
+
+def precision_context(device_type: str = "cuda"):
+    if device_type != "cuda" or PRECISION_CONFIG == "fp32_ieee":
+        from contextlib import nullcontext
+        return nullcontext()
+    return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+
+def make_model() -> nn.Module:
+    return RestormerModel(MODEL_CONFIG)

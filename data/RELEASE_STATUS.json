@@ -1,0 +1,84 @@
+{
+  "passed": true,
+  "schema": "perfseer-paper-data-release-v1",
+  "generation": {
+    "pretrain_rows": 48000,
+    "transfer_requested_train": 8192,
+    "transfer_model_count": 5397,
+    "transfer_configuration_groups": 4771,
+    "seed": 42,
+    "reads_parent_bundles_for_generation": false
+  },
+  "historical_transfer": {
+    "A10": {
+      "train": 7494,
+      "validation": 512,
+      "holdout": 1640,
+      "missing": 698,
+      "train_configuration_groups": 4569,
+      "all_cached_labels_rederived": true,
+      "all_file_hashes_verified": true,
+      "no_group_leakage": true
+    },
+    "A100": {
+      "train": 8080,
+      "validation": 2296,
+      "holdout": 0,
+      "missing": 112,
+      "train_configuration_groups": 4698,
+      "all_cached_labels_rederived": true,
+      "all_file_hashes_verified": true,
+      "no_group_leakage": true
+    },
+    "A10G": {
+      "train": 8192,
+      "validation": 2352,
+      "holdout": 0,
+      "missing": 0,
+      "train_configuration_groups": 4771,
+      "all_cached_labels_rederived": true,
+      "all_file_hashes_verified": true,
+      "no_group_leakage": true
+    }
+  },
+  "local_smoke": {
+    "hardware": "NVIDIA GeForce RTX 5090",
+    "accepted_measurements": 5,
+    "epoch_steps": 2,
+    "optimizers": [
+      "adam",
+      "muon"
+    ],
+    "precisions": [
+      "fp32_ieee",
+      "fp16_amp"
+    ],
+    "historical_labels_replaced": false,
+    "durable_resume_passed": true
+  },
+  "all_receipt_hashes": {
+    "verify-generated-pretrain.json": "f228232657d1fe1c2e8fea65c374afc3d73055f7fe65cfdd48e0594d95f3e90e",
+    "verify-generated-transfer.json": "c0c96a1a77d7bc75ced139f921d91f1ac07edb3aefa1fdf7de35823337c5bd49",
+    "verify-A10.json": "d7b536957a5758a4ade08f0b85c68605756d524fef1bf2a28dd3c08e25402bf8",
+    "verify-A100.json": "52f7affa01a510f4d73153215fa8aae7123d541947f78dfb622c21db43996858",
+    "verify-A10G.json": "3e37f4297ed27a3f99dd2cb5b418308f821b0a48b5308a92ce54c3e770751c6b",
+    "local-label-independent-verification.json": "f6779768c0b8aa514c6cf5e4a8af997c59441b3bf70ccc9f19964ba00fcbfda5",
+    "label-resume.json": "f86d6a89fec21391a2d518b08afc71dbfc3c76a0f3262a59928702847470318e",
+    "standalone-generation.json": "088548b218f574a455564c5f7e1c5b31e9385dcb6da9e07ffedcdaf201a9d9de",
+    "variant_templates.json": "1556b26573ec074fac26b83397ac2ecfe1259adcf9335f05ae0a434909961268"
+  },
+  "code_sha256": {
+    "join_cached.py": "fa9da9045564b444f0941f3cadfd1d21eb55722d4e57a22952d0cb2db8dce101",
+    "capture_templates.py": "d38c787351934fe146edb83adadb42139b04a5b474e6665eb3aaf7a59d21abcb",
+    "verify_local.py": "60cd09025eabbfd35f4a57a395e1f4839ca135c7c837461314d0d25cb816d2b3",
+    "label.py": "8912e91f64421ff6cf3a3d71af815689dafb5fb456f8adc7637ea5c25d11af9d",
+    "verify.py": "4f5c71dc1f8b24256bd57869319372f98c423273294722dc6d026a7bab890d04",
+    "generate.py": "ea7972e9ebcc6e6ee3ee4910daf0ca06b0612795e40d2e0a449feb2436231dd4"
+  },
+  "documentation_sha256": "dacdab686bf55547150246649c1048f910c5b6b11b38b4a8914a49b08f9d84f2",
+  "notes": [
+    "A10G original shared runtime and A10/A100 standalone variant source are distinct lineages.",
+    "Unavailable or ambiguous historical labels are explicitly missing; no replacement.",
+    "Compact archives may omit exactly reconstructable per-workload sources."
+  ]
+}

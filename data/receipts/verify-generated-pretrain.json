@@ -1,0 +1,27 @@
+{
+  "passed": true,
+  "workload_rows": 48000,
+  "model_count": 6000,
+  "configuration_groups": 5295,
+  "families": 32,
+  "modalities": {
+    "vision": 20000,
+    "nlp": 16000,
+    "audio": 4000,
+    "tabular": 4800,
+    "graph": 3200
+  },
+  "precisions": {
+    "fp32_ieee": 24000,
+    "fp16_amp": 24000
+  },
+  "optimizers": {
+    "adam": 24000,
+    "muon": 24000
+  },
+  "all_sources_replay_exactly": true,
+  "historical_base_hashes_checked": true,
+  "historical_variant_hashes_checked": true,
+  "labels_read_for_generation": false,
+  "manifest_sha256": "cf2e83d1e8eefd2387bcbb282c0eec0b1848ed1a2f5e568d3c6cf7f7ae9fd79e"
+}

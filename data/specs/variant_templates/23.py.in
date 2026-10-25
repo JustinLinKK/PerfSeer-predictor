@@ -1,0 +1,56 @@
+"""Self-contained generated PyTorch architecture for @MODEL_ID_TEXT@."""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from typing import Any
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def _integer(config: Mapping[str, Any], key: str, default: int) -> int:
+    return int(config.get(key, default))
+
+class FastTextModel(nn.Module):
+    """EmbeddingBag classifier with configurable reduction."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        width = _integer(config, 'width', 64)
+        depth = _integer(config, 'depth', 1)
+        vocab_size = _integer(config, 'vocab_size', 4096)
+        mode = 'sum' if str(config.get('base_module')) == 'embeddingbag_sum' else 'mean'
+        self.embedding = nn.EmbeddingBag(vocab_size, width, mode=mode)
+        layers: list[nn.Module] = []
+        for _ in range(max(depth - 1, 0)):
+            layers.extend((nn.Linear(width, width), nn.ReLU()))
+        self.layers = nn.Sequential(*layers)
+        self.head = nn.Linear(width, 8)
+
+    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        """Reduce integer ``token_ids:[B,T]`` into class logits ``[B,8]``."""
+        batch, tokens = token_ids.shape
+        flat = token_ids.reshape(-1)
+        offsets = torch.arange(0, batch * tokens, tokens, device=token_ids.device)
+        pooled = self.embedding(flat, offsets)
+        return self.head(self.layers(pooled))
+
+
+MODEL_ID = @MODEL_ID@
+PROFILE_POINT_ID = @PROFILE_POINT_ID@
+MODEL_CONFIG = @MODEL_CONFIG@
+BATCH_SIZE = @BATCH_SIZE@
+PRECISION_CONFIG = @PRECISION_CONFIG@
+PRECISION_DTYPE = torch.float16 if PRECISION_CONFIG == "fp16_amp" else torch.float32
+OPTIMIZER_NAME = @OPTIMIZER_NAME@
+INPUT_SPECS = @INPUT_SPECS@
+INPUT_SHAPE = tuple(INPUT_SPECS[0]["shape"])
+
+def precision_context(device_type: str = "cuda"):
+    if device_type != "cuda" or PRECISION_CONFIG == "fp32_ieee":
+        from contextlib import nullcontext
+        return nullcontext()
+    return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+
+def make_model() -> nn.Module:
+    return FastTextModel(MODEL_CONFIG)

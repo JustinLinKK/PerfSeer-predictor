@@ -1,0 +1,269 @@
+{
+  "builder_sha256": "0050f9d2cb187276f67c49cdfbbb7813a1c7f76a7b0920416f8da4d2f960df62",
+  "defaults": {
+    "adadelta": [
+      {
+        "capturable": false,
+        "differentiable": false,
+        "eps": 0.000001,
+        "foreach": null,
+        "lr": 0.001,
+        "maximize": false,
+        "rho": 0.9,
+        "weight_decay": 0
+      }
+    ],
+    "adafactor": [
+      {
+        "beta2_decay": -0.8,
+        "d": 1,
+        "eps": [
+          null,
+          0.001
+        ],
+        "foreach": null,
+        "lr": 0.001,
+        "maximize": false,
+        "weight_decay": 0
+      }
+    ],
+    "adagrad": [
+      {
+        "differentiable": false,
+        "eps": 1e-10,
+        "foreach": null,
+        "fused": null,
+        "initial_accumulator_value": 0,
+        "lr": 0.001,
+        "lr_decay": 0,
+        "maximize": false,
+        "weight_decay": 0
+      }
+    ],
+    "adam": [
+      {
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "capturable": false,
+        "decoupled_weight_decay": false,
+        "differentiable": false,
+        "eps": 1e-8,
+        "foreach": null,
+        "fused": null,
+        "lr": 0.001,
+        "maximize": false,
+        "weight_decay": 0
+      }
+    ],
+    "adamax": [
+      {
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "capturable": false,
+        "differentiable": false,
+        "eps": 1e-8,
+        "foreach": null,
+        "lr": 0.001,
+        "maximize": false,
+        "weight_decay": 0
+      }
+    ],
+    "adamw": [
+      {
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "capturable": false,
+        "decoupled_weight_decay": true,
+        "differentiable": false,
+        "eps": 1e-8,
+        "foreach": null,
+        "fused": null,
+        "lr": 0.001,
+        "maximize": false,
+        "weight_decay": 0
+      }
+    ],
+    "asgd": [
+      {
+        "alpha": 0.75,
+        "capturable": false,
+        "differentiable": false,
+        "foreach": null,
+        "lambd": 0.0001,
+        "lr": 0.001,
+        "maximize": false,
+        "t0": 1000000,
+        "weight_decay": 0
+      }
+    ],
+    "lamb": [
+      {
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-8,
+        "lr": 0.001,
+        "weight_decay": 0
+      }
+    ],
+    "lars": [
+      {
+        "lr": 0.001,
+        "momentum": 0.9,
+        "trust": 0.001,
+        "weight_decay": 0
+      }
+    ],
+    "lbfgs": [
+      {
+        "history_size": 4,
+        "line_search_fn": null,
+        "lr": 0.001,
+        "max_eval": 2,
+        "max_iter": 2,
+        "tolerance_change": 1e-9,
+        "tolerance_grad": 1e-7
+      }
+    ],
+    "lion": [
+      {
+        "betas": [
+          0.9,
+          0.99
+        ],
+        "lr": 0.001,
+        "weight_decay": 0
+      }
+    ],
+    "muon": [
+      {
+        "adjust_lr_fn": null,
+        "eps": 1e-7,
+        "lr": 0.001,
+        "momentum": 0.95,
+        "nesterov": true,
+        "ns_coefficients": [
+          3.4445,
+          -4.775,
+          2.0315
+        ],
+        "ns_steps": 5,
+        "weight_decay": 0
+      },
+      {
+        "amsgrad": false,
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "capturable": false,
+        "decoupled_weight_decay": true,
+        "differentiable": false,
+        "eps": 1e-8,
+        "foreach": null,
+        "fused": null,
+        "lr": 0.001,
+        "maximize": false,
+        "weight_decay": 0
+      }
+    ],
+    "nadam": [
+      {
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "capturable": false,
+        "decoupled_weight_decay": false,
+        "differentiable": false,
+        "eps": 1e-8,
+        "foreach": null,
+        "lr": 0.001,
+        "maximize": false,
+        "momentum_decay": 0.004,
+        "weight_decay": 0
+      }
+    ],
+    "radam": [
+      {
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "capturable": false,
+        "decoupled_weight_decay": false,
+        "differentiable": false,
+        "eps": 1e-8,
+        "foreach": null,
+        "lr": 0.001,
+        "maximize": false,
+        "weight_decay": 0
+      }
+    ],
+    "rmsprop": [
+      {
+        "alpha": 0.99,
+        "capturable": false,
+        "centered": false,
+        "differentiable": false,
+        "eps": 1e-8,
+        "foreach": null,
+        "lr": 0.001,
+        "maximize": false,
+        "momentum": 0.9,
+        "weight_decay": 0
+      }
+    ],
+    "rprop": [
+      {
+        "capturable": false,
+        "differentiable": false,
+        "etas": [
+          0.5,
+          1.2
+        ],
+        "foreach": null,
+        "lr": 0.001,
+        "maximize": false,
+        "step_sizes": [
+          0.000001,
+          50
+        ]
+      }
+    ],
+    "sgd": [
+      {
+        "dampening": 0,
+        "differentiable": false,
+        "foreach": null,
+        "fused": null,
+        "lr": 0.001,
+        "maximize": false,
+        "momentum": 0.9,
+        "nesterov": false,
+        "weight_decay": 0
+      }
+    ],
+    "sparse_adam": [
+      {
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-8,
+        "lr": 0.001,
+        "maximize": false
+      }
+    ]
+  },
+  "torch": "2.10.0+cu128"
+}

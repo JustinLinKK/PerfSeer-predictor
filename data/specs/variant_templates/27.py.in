@@ -1,0 +1,150 @@
+"""Self-contained generated PyTorch architecture for @MODEL_ID_TEXT@."""
+from __future__ import annotations
+
+import math
+from collections.abc import Mapping
+from typing import Any
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def _integer(config: Mapping[str, Any], key: str, default: int) -> int:
+    return int(config.get(key, default))
+
+def _activation(name: str) -> nn.Module:
+    return {'elu': nn.ELU(), 'gelu': nn.GELU(), 'hardswish': nn.Hardswish(), 'mish': nn.Mish(), 'prelu': nn.PReLU(), 'relu': nn.ReLU(inplace=False), 'selu': nn.SELU(inplace=False), 'silu': nn.SiLU(inplace=False)}.get(name, nn.GELU())
+
+class ConvNormAct(nn.Module):
+    """Convolution-normalization-activation block with Kaiming defaults."""
+
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int=3, stride: int=1, groups: int=1, activation: str='relu', norm: str='batch') -> None:
+        super().__init__()
+        padding = kernel_size // 2
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, groups=groups, bias=False)
+        self.norm = nn.GroupNorm(min(8, out_channels), out_channels) if norm == 'group' else nn.BatchNorm2d(out_channels)
+        self.activation = _activation(activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Transform source image ``x:[B,Cin,H,W]`` into ``[B,Cout,H/s,W/s]``."""
+        y = self.conv(x)
+        y = self.norm(y)
+        return self.activation(y)
+
+class ConvNeXtBlock(nn.Module):
+    """ConvNeXt V1/V2 block; all learned matrices use PyTorch defaults."""
+
+    def __init__(self, channels: int, version: int=1, activation: str='gelu') -> None:
+        super().__init__()
+        self.depthwise = nn.Conv2d(channels, channels, 7, padding=3, groups=channels)
+        self.norm = nn.LayerNorm(channels)
+        self.expand = nn.Linear(channels, channels * 4)
+        self.contract = nn.Linear(channels * 4, channels)
+        self.activation = _activation(activation)
+        self.version = version
+        if version == 2:
+            self.gamma = nn.Parameter(torch.zeros(1, 1, 1, channels))
+            self.beta = nn.Parameter(torch.zeros(1, 1, 1, channels))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply a channel-preserving block to ``x:[B,C,H,W]``."""
+        residual = x
+        y = self.depthwise(x)
+        y = y.permute(0, 2, 3, 1)
+        y = self.contract(self.activation(self.expand(self.norm(y))))
+        if self.version == 2:
+            magnitude = torch.linalg.vector_norm(y, dim=(1, 2), keepdim=True)
+            normalized = magnitude / (magnitude.mean(dim=-1, keepdim=True) + 1e-06)
+            y = y + self.gamma * (y * normalized) + self.beta
+        y = y.permute(0, 3, 1, 2)
+        return residual + y
+
+class ResidualConvBlock(nn.Module):
+    """Two-convolution residual block with optional ConvNeXt substitution."""
+
+    def __init__(self, channels: int, base_module: str, activation: str='relu', kernel_size: int=3) -> None:
+        super().__init__()
+        self.convnext: nn.Module | None = None
+        if 'convnext_v2' in base_module:
+            self.convnext = ConvNeXtBlock(channels, version=2, activation=activation)
+        elif 'convnext_v1' in base_module:
+            self.convnext = ConvNeXtBlock(channels, version=1, activation=activation)
+        self.first = ConvNormAct(channels, channels, kernel_size, activation=activation)
+        self.second = nn.Sequential(nn.Conv2d(channels, channels, kernel_size, padding=kernel_size // 2, bias=False), nn.BatchNorm2d(channels))
+        self.activation = _activation(activation)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Update source feature map ``x:[B,C,H,W]`` and preserve its shape."""
+        if self.convnext is not None:
+            return self.convnext(x)
+        y = self.second(self.first(x))
+        return self.activation(x + y)
+
+class AudioConvModel(nn.Module):
+    """PANNs-style 2D audio classifier or M5/TCN 1D waveform classifier."""
+
+    def __init__(self, config: Mapping[str, Any]) -> None:
+        super().__init__()
+        self.family = str(config['family_id'])
+        width = _integer(config, 'width', 32)
+        depth = _integer(config, 'depth', 4)
+        base = str(config.get('base_module', 'tcn'))
+        if self.family == 'panns_cnn14':
+            blocks: list[nn.Module] = [ConvNormAct(1, width, 3)]
+            blocks.extend((ResidualConvBlock(width, 'baseline') if base == 'residual_cnn' else ConvNormAct(width, width, 3) for _ in range(depth - 1)))
+            self.network = nn.Sequential(*blocks)
+        else:
+            kernel = _integer(config, 'kernel_size', 3)
+            layers: list[nn.Module] = []
+            in_channels = 1
+            for index in range(depth):
+                dilation = 2 ** (index % _integer(config, 'dilation_cycle', 4)) if self.family == 'temporal_convolutional_network' else 1
+                stride = _integer(config, 'stride', 8) if self.family == 'm5_waveform_cnn' and index == 0 else 1
+                groups = in_channels if base == 'depthwise_tcn' and in_channels == width else 1
+                padding = dilation * (kernel // 2)
+                layers.extend((nn.Conv1d(in_channels, width, kernel, stride=stride, padding=padding, dilation=dilation, groups=groups, bias=False), nn.BatchNorm1d(width), nn.ReLU()))
+                if base == 'm5_se':
+                    layers.append(ChannelGate1D(width))
+                in_channels = width
+            self.network = nn.Sequential(*layers)
+        self.head = nn.Linear(width, 8)
+
+    def forward(self, audio: torch.Tensor) -> torch.Tensor:
+        """Classify spectrogram ``[B,1,M,T]`` or waveform ``[B,1,T]`` into ``[B,8]``."""
+        features = self.network(audio)
+        spatial_dims = tuple(range(2, features.ndim))
+        pooled = features.mean(dim=spatial_dims)
+        return self.head(pooled)
+
+class ChannelGate1D(nn.Module):
+    """Squeeze-excitation gate for ``[B,C,T]`` waveforms."""
+
+    def __init__(self, channels: int) -> None:
+        super().__init__()
+        hidden = max(4, channels // 4)
+        self.reduce = nn.Conv1d(channels, hidden, 1)
+        self.expand = nn.Conv1d(hidden, channels, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Gate source ``x:[B,C,T]`` and preserve ``[B,C,T]``."""
+        gate = torch.sigmoid(self.expand(F.relu(self.reduce(x.mean(dim=-1, keepdim=True)))))
+        return x * gate
+
+
+MODEL_ID = @MODEL_ID@
+PROFILE_POINT_ID = @PROFILE_POINT_ID@
+MODEL_CONFIG = @MODEL_CONFIG@
+BATCH_SIZE = @BATCH_SIZE@
+PRECISION_CONFIG = @PRECISION_CONFIG@
+PRECISION_DTYPE = torch.float16 if PRECISION_CONFIG == "fp16_amp" else torch.float32
+OPTIMIZER_NAME = @OPTIMIZER_NAME@
+INPUT_SPECS = @INPUT_SPECS@
+INPUT_SHAPE = tuple(INPUT_SPECS[0]["shape"])
+
+def precision_context(device_type: str = "cuda"):
+    if device_type != "cuda" or PRECISION_CONFIG == "fp32_ieee":
+        from contextlib import nullcontext
+        return nullcontext()
+    return torch.amp.autocast(device_type="cuda", dtype=torch.float16)
+
+def make_model() -> nn.Module:
+    return AudioConvModel(MODEL_CONFIG)
