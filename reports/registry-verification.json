@@ -6,15 +6,21 @@
     "declared source/teacher lineage",
     "replay/export and TS selection evidence"
   ],
-  "expected_model_count": 2,
+  "expected_model_count": 8,
   "findings": [],
-  "model_count": 2,
+  "model_count": 8,
   "models_present": [
     "P_A10",
-    "S_A10"
+    "P_A100",
+    "P_A10G",
+    "S_A10",
+    "S_A100",
+    "S_A10G",
+    "TS_A10_A100",
+    "T_A10_A100"
   ],
   "no_weight_deserialization": true,
   "passed": true,
   "schema": "perfseer-release-v1-registry-verification",
-  "scope": "a10-first"
+  "scope": "complete"
 }

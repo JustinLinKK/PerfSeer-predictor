@@ -1,9 +1,5 @@
-import sys
-from pathlib import Path
-sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 #!/usr/bin/env python3
-"""Full-data D3 pretraining with validation-only checkpoint selection."""
+"""Generic full-data D3 pretraining and the published A100->A10 transfer recipe."""
 import argparse
 import copy
 import json
@@ -19,8 +15,8 @@ from support import (read_config, provenance, load_data, split_rows, validation_
                      create_student, packed, predict, report, signature, code_hash, sha, atomic_save,
                      write_json, random_state, restore_random, legacy)
 from cache import cache_binding, load_cache
-from design import PRETRAIN
-from losses import loss
+from design import SELECTED, PRETRAIN
+from losses import loss, task_reliability
 from export import export_verified
 from preflight_contract import verify_receipt
 
@@ -35,7 +31,7 @@ def main():
     args = parser.parse_args()
     config = read_config(args.config)
     candidate = config["candidate"]
-    design = PRETRAIN
+    design = PRETRAIN if candidate == "PRETRAIN" else SELECTED
     torch.set_num_threads(int(config.get("cpu_threads", 4)))
     random.seed(0)
     np.random.seed(0)
@@ -65,7 +61,7 @@ def main():
     model = create_student(metadata, design, config.get("initial_student"), prov["normalization_sha256"]).to(args.device)
     ema = copy.deepcopy(model).eval().requires_grad_(False)
     targets = torch.as_tensor(data["targets"]).float()
-    reliability = None
+    reliability = task_reliability(cache["prediction"], targets[train]) if design["objective"] == "task_pair" else None
     epochs = 2 if args.smoke else int(config.get("epochs", 40))
     decay = float(config.get("ema_decay", .999))
     lr = float(config.get("lr", design["lr"]))

@@ -1,6 +1,6 @@
 {
   "architecture_sha256": "f273a6fd53464ab03c81b4492a494e48b55c6d659e68bca3efcabc6360c0053d",
-  "complete_release": false,
+  "complete_release": true,
   "models": {
     "P_A10": {
       "architecture_byte_identity": true,
@@ -18,6 +18,46 @@
       "source_hashes": {
         "checkpoint": "8533be3508885d91fc94780f989c14421e2f68b3478d406bd1667178cf4ae705",
         "probe": "de67f356644e3bf8f3f000488a1e548e19013ae08e239c8aad54d952fd068c83"
+      },
+      "strict_state_load": true,
+      "train_rows": 2
+    },
+    "P_A100": {
+      "architecture_byte_identity": true,
+      "batch_independence": true,
+      "cuda_uninitialized": true,
+      "dataset_sha256": "c3cdb67c73f6add6784c0a727a2be653dcf3572c2994a4918017805dacdd81ce",
+      "hardware": "A100",
+      "kind": "P1",
+      "network_blocked": true,
+      "no_historical_code_imported": true,
+      "normalization_sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0",
+      "parameters": 253644481,
+      "physical_outputs": true,
+      "prediction_sha256": "8a41e1204ad2016896114a209271248e975e5e5bf56f53873ec9484025f601e8",
+      "source_hashes": {
+        "checkpoint": "1275628a067fe2f746ec8450eeae5aeff6213f5b46ebef410549d09535a1bbea",
+        "probe": "8877f50d1030e6541634a38806efeb164569690c49ecceb841d934e388175fe9"
+      },
+      "strict_state_load": true,
+      "train_rows": 2
+    },
+    "P_A10G": {
+      "architecture_byte_identity": true,
+      "batch_independence": true,
+      "cuda_uninitialized": true,
+      "dataset_sha256": "73cb023b72370ff310f278e7e70fb9131603cf1fe9e4d9bfc1d0c6e46921caef",
+      "hardware": "A10G",
+      "kind": "Adapted",
+      "network_blocked": true,
+      "no_historical_code_imported": true,
+      "normalization_sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0",
+      "parameters": 253644481,
+      "physical_outputs": true,
+      "prediction_sha256": "efd780d221483124fd21a9ade365f6f94d03a300fa5eb2c5c502b1bbeb57bde3",
+      "source_hashes": {
+        "checkpoint": "472376596c53ad51dd31a6c368649124ddc3655fa9539b2615db1b7475ed689d",
+        "probe": "c1de32168d0fe7002d86ef88489365ccc9dda4a01cf97582807e8606cf008675"
       },
       "strict_state_load": true,
       "train_rows": 2
@@ -87,11 +127,53 @@
       },
       "strict_state_load": true,
       "train_rows": 2
+    },
+    "TS_A10_A100": {
+      "batch_independence": true,
+      "conservative_memory_upper": true,
+      "cuda_uninitialized": true,
+      "dataset_sha256": "ee926cd10a6b05ffa374a649f293a040d13e1e118214c3a277301b7257cdc89b",
+      "eager_torchscript_all_outputs": true,
+      "hardware": "A10",
+      "kind": "student",
+      "network_blocked": true,
+      "no_historical_code_imported": true,
+      "normalization_sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0",
+      "parameters": 1643470,
+      "physical_outputs": true,
+      "prediction_sha256": "e2a293d54f464d876ee449811174cb789e6418a879ef4ad4c87cbd860b0e6b8d",
+      "source_hashes": {
+        "checkpoint": "dec4d06fd2fff6863effc3e2ab4cb5b2ad958abb73b85683231693c6ef087bea",
+        "probe": "de67f356644e3bf8f3f000488a1e548e19013ae08e239c8aad54d952fd068c83",
+        "script": "07ce4fa52b695f2a8e1ea111eec870ebe38dbe35939b6dd411cb5f026e5f0ade"
+      },
+      "strict_state_load": true,
+      "train_rows": 2
+    },
+    "T_A10_A100": {
+      "architecture_byte_identity": true,
+      "batch_independence": true,
+      "cuda_uninitialized": true,
+      "dataset_sha256": "ee926cd10a6b05ffa374a649f293a040d13e1e118214c3a277301b7257cdc89b",
+      "hardware": "A10",
+      "kind": "T7",
+      "network_blocked": true,
+      "no_historical_code_imported": true,
+      "normalization_sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0",
+      "parameters": 255692483,
+      "physical_outputs": true,
+      "prediction_sha256": "28b2ede96177370987da538130719bbe435257e2fda3ad4271b8dd3ba6552201",
+      "source_hashes": {
+        "checkpoint": "488e60bdf2904822b793fe08e646918a33b285573a7afa8ee4db873646662ce8",
+        "probe": "de67f356644e3bf8f3f000488a1e548e19013ae08e239c8aad54d952fd068c83"
+      },
+      "strict_state_load": true,
+      "train_rows": 2
     }
   },
   "passed": true,
   "probe_manifest_sha256": "60de36b5b428abb7db2f58dd1d5c818aedbed8b7b52ad254b87e45bddc319da5",
-  "registry_sha256": "b6d99be41d2bc884a7ed56c9309991fa8f557429b5092a674900a3c726c6d3b3",
+  "registry_sha256": "8a02e7b15e88e8cb01e994022a209b3f7994d3154979ae04a09d88dcda7b0d8c",
   "scope": "tiny TRAIN-only offline inference; no validation, heldout or test metrics",
   "source_unchanged": true,
   "tree_python_files": {
@@ -390,20 +472,20 @@
     "portable/verification/freeze_sources.py": "c352c21a7c7921c8c315b2555679c8b79bc15fcec805ff0bdd15bc2bbf0a224e",
     "portable/verification/prepare_probe.py": "b9d1f02c12fcd4429a7a233624ab1e215fc3711b5bf5c425705ac41f7b12f822",
     "portable/verification/reference_worker.py": "201874e5eb3d8982a922825bf0a4d98ce23d321dc858974a62c28ce5173c721f",
-    "student_training/cache.py": "502eb2b6a97a457bb549aee47d1fc68b89218ee65f6003722f8322f6326b4d7c",
-    "student_training/design.py": "fa0cc7f5fd02e4974b098ca2c5a8b7f8e579c4c14c1ef4f3997a10a633cd327e",
-    "student_training/export.py": "da7494bd88d1808de8e3dc5f3e8d9d0a739ff74d7e4a8f8aee55d043e07f3f5a",
-    "student_training/finalize.py": "be479dc808693e411da9207d54f11c03c7338d2f9b3ae61b0e0fc73bba7d7b39",
-    "student_training/losses.py": "f371add835bc92229d61cbb6390bc7ff90f3d241354105860ff1d454a2a63e24",
-    "student_training/make_config.py": "c81c19477b71e26773eb74fb67200e9ae13ba5e073b5d93060b90353131a7e1b",
-    "student_training/preflight_contract.py": "59721eb2d78f5f908939d55e3b32b98d1cf003cd7d7cdb7570945295088b559b",
-    "student_training/preflight_cuda.py": "80e96ac36e83e7198b0d2a29a8eb2d8fc0d178f6de5c44355c09ee8fa27b77a9",
+    "student_training/cache.py": "9cdaa83ca82077d154217ec863a1fc72cfd06bfdfa6d83ed8c1ae42a20fd49da",
+    "student_training/design.py": "b166dddd65c5e35787b1ffd67fe8639a9612f4425e8c845929e3238108c4a912",
+    "student_training/export.py": "de0c6356a2fdb107a926c09bec00302af264c10195aa2f2dad292022e169b185",
+    "student_training/finalize.py": "b7036b9e19e3aff804134412211c349727a50db33fc42f75fd5d8fee595e79c5",
+    "student_training/losses.py": "228af5cf028ab7dcdc82ae3caa60f5a2dbaec1afc673c8fd7c78d16858cc6836",
+    "student_training/make_config.py": "b99f022917a6a255c40488fe426bd6fcb61822dab239d17e7cfc431b48e4ca19",
+    "student_training/preflight_contract.py": "31dc9f280b9a2814f8b8ad7ef947bf1216e3f6483f815ce87157791505993884",
+    "student_training/preflight_cuda.py": "572f22041460fb4db3b70cfcf9aa383b027d8ac10876a0123c4a7dc08fa996e9",
     "student_training/pretrain_objective.py": "7caabe40954486109a018a867db3dcc2ebe3be00963100732ce69d89a2825402",
     "student_training/runtime/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "student_training/runtime/student.py": "7e6b991ffe816fbddd45b28e790f61c173101fd4f5a9825f651bb67c45733e3e",
-    "student_training/support.py": "3e0c98e7e543391e6605143503d1c0220c358b6f62c0beeb91b90111f065aede",
-    "student_training/teacher.py": "c312a255df90aece47fde48bc0f999eaa35713a12ebbef3781d61f74f865f2f8",
-    "student_training/train.py": "3a2277e8e1367be338463e69c54df2b48d999e1017a4af881ba3ecfb74c6f96d",
+    "student_training/support.py": "b178be24ce4e6ae937e58908687f4ed31bd8c978ef4af5f0a85d78aaaaae7feb",
+    "student_training/teacher.py": "7a12a16a008a732b5eb4faf96fdc5d3175d1c87723bcba60c21e8c479ee1d2b4",
+    "student_training/train.py": "1ddca41e0aab8a13fdbb76701a9cf398bf7be31edd2a0a55fdcd41ad14c31361",
     "tools/extract_assets.py": "22e788114c0824c501d6ea013aa196f6b42640f750c5e4eaf176b241afbb229a",
     "tools/predict_student.py": "af4d2686d04cfbf57d96c95e98976537cc8b21deed3fe3678dba01317c4d6279"
   },

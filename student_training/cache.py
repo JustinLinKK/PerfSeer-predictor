@@ -1,7 +1,3 @@
-import sys
-from pathlib import Path
-sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 """Create verified TRAIN-only teacher shards; never read heldout/test keys."""
 import argparse
 import json

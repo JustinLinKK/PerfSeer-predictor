@@ -1,12 +1,17 @@
 {
+  "winner": "TS2",
   "pretrain": {
     "initialization": "scratch",
     "model": "d3",
     "objective": "d3",
     "lr": 0.001
   },
-  "only_published_recipes": [
-    "PRETRAIN"
-  ],
-  "selection_policy": "maximum validation v5 composite; ties earlier epoch; no test used for selection"
+  "selected_transfer": {
+    "initialization": "source_student",
+    "model": "d3",
+    "objective": "d3",
+    "lr": 0.0002
+  },
+  "selection_sha256": "c5e0f1166974e678f4470b05b50b54ba05d6183c5205341407071fa7c99faccf",
+  "selection_policy": "recipe fixed by external validation-only research; each run selects checkpoint on validation only"
 }

@@ -13,6 +13,8 @@ def load_teacher(config, device="cpu"):
         "hardware_identity_override", 190 if spec["kind"] != "P1" else spec["identity_override"]))
     if identity != spec["identity_override"]:
         raise ValueError("Checkpoint hardware identity differs from requested override")
+    if spec["kind"] == "transfer_T7":
+        spec["kind"] = "T7"
     del saved
     return portable_load_teacher(spec, config["architecture"], device)
 

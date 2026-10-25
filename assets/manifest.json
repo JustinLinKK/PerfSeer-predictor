@@ -239,6 +239,80 @@
       "sha256": "18d87f030eaa26d8f52ad49a78855a09ff1f57e141142cfcc469fdc7a1eefc06"
     },
     {
+      "bytes": 940217447,
+      "members": [
+        {
+          "bytes": 36517,
+          "path": "PerfSeer-release-v1/checkpoints/P_A100/architecture.pt",
+          "sha256": "f273a6fd53464ab03c81b4492a494e48b55c6d659e68bca3efcabc6360c0053d"
+        },
+        {
+          "bytes": 1014764881,
+          "path": "PerfSeer-release-v1/checkpoints/P_A100/best_model.pt",
+          "sha256": "1275628a067fe2f746ec8450eeae5aeff6213f5b46ebef410549d09535a1bbea"
+        },
+        {
+          "bytes": 212,
+          "path": "PerfSeer-release-v1/checkpoints/P_A100/full_forward_verification.json",
+          "sha256": "b3d0aebdecf433cd45034f15144b0341750496ea63e65d4dfca00a4201f5f9b8"
+        },
+        {
+          "bytes": 8017,
+          "path": "PerfSeer-release-v1/checkpoints/P_A100/normalization.pt",
+          "sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0"
+        },
+        {
+          "bytes": 551,
+          "path": "PerfSeer-release-v1/checkpoints/P_A100/provenance.json",
+          "sha256": "e7a6f801b984280d82d5d6db497a853a1b80b120581d33c826ff553ad2993c9f"
+        },
+        {
+          "bytes": 121,
+          "path": "PerfSeer-release-v1/checkpoints/P_A100/replay_verification.json",
+          "sha256": "a1d0e4978501e9c9a4b19ee78be82fb1c481d92f526633b89f1ea9c79429958f"
+        },
+        {
+          "bytes": 2071,
+          "path": "PerfSeer-release-v1/checkpoints/P_A100/result.json",
+          "sha256": "5575f7123e70d8663cb20c5d6e4fdc8d12cb02ea704e1aac845e9bb1a89fd50e"
+        }
+      ],
+      "path": "assets/perfseer-v1-p_a100.tar.gz",
+      "sha256": "64eb940573f2b2ba75be1d7c5b916df272b0df194d840a8b0ab13a46ef09df95"
+    },
+    {
+      "bytes": 940240327,
+      "members": [
+        {
+          "bytes": 36517,
+          "path": "PerfSeer-release-v1/checkpoints/P_A10G/architecture.pt",
+          "sha256": "f273a6fd53464ab03c81b4492a494e48b55c6d659e68bca3efcabc6360c0053d"
+        },
+        {
+          "bytes": 1014808419,
+          "path": "PerfSeer-release-v1/checkpoints/P_A10G/best_model.pt",
+          "sha256": "472376596c53ad51dd31a6c368649124ddc3655fa9539b2615db1b7475ed689d"
+        },
+        {
+          "bytes": 8017,
+          "path": "PerfSeer-release-v1/checkpoints/P_A10G/normalization.pt",
+          "sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0"
+        },
+        {
+          "bytes": 41765,
+          "path": "PerfSeer-release-v1/checkpoints/P_A10G/result.json",
+          "sha256": "a688d0f9deae5ca15e0573b0f18bc23b5d4d4e704bdd57261b217bd1e6abdee3"
+        },
+        {
+          "bytes": 887,
+          "path": "PerfSeer-release-v1/checkpoints/P_A10G/teacher_verification.json",
+          "sha256": "5055216da73c7145ee0309d1966f5247bed6b5e2b8d5b3c8bcb40e992dda3f36"
+        }
+      ],
+      "path": "assets/perfseer-v1-p_a10g.tar.gz",
+      "sha256": "05ab5ddfe798341d4d1556065ae5796c805b9e2d246fc991abe2dc9645867fbf"
+    },
+    {
       "bytes": 12347601,
       "members": [
         {
@@ -393,6 +467,547 @@
       ],
       "path": "assets/perfseer-v1-s_a10g.tar.gz",
       "sha256": "78121c76e4f60408b23bd6d194e75bb9a91ecaf01668f9698498d194dd91e944"
+    },
+    {
+      "bytes": 947976230,
+      "members": [
+        {
+          "bytes": 2712,
+          "path": "PerfSeer-release-v1/checkpoints/T_A10_A100/a10_dataset_receipt.json",
+          "sha256": "2c70e79db3621091c4b6020fed9c09b96e28b532a8e2e9cc15d6022def6b11cb"
+        },
+        {
+          "bytes": 36517,
+          "path": "PerfSeer-release-v1/checkpoints/T_A10_A100/architecture.pt",
+          "sha256": "f273a6fd53464ab03c81b4492a494e48b55c6d659e68bca3efcabc6360c0053d"
+        },
+        {
+          "bytes": 1023051527,
+          "path": "PerfSeer-release-v1/checkpoints/T_A10_A100/best_model.pt",
+          "sha256": "488e60bdf2904822b793fe08e646918a33b285573a7afa8ee4db873646662ce8"
+        },
+        {
+          "bytes": 8017,
+          "path": "PerfSeer-release-v1/checkpoints/T_A10_A100/normalization.pt",
+          "sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0"
+        },
+        {
+          "bytes": 42223,
+          "path": "PerfSeer-release-v1/checkpoints/T_A10_A100/result.json",
+          "sha256": "669a116d312e61bdc56ed42b1af6b1c9ffd82d38f9b6919f4ca68b48ac30181d"
+        },
+        {
+          "bytes": 822,
+          "path": "PerfSeer-release-v1/checkpoints/T_A10_A100/subset_join_receipt.json",
+          "sha256": "ed200082af07395fcdfc83124f28e43beb606dccc81bab963a24a89d3eb0af03"
+        },
+        {
+          "bytes": 480117,
+          "path": "PerfSeer-release-v1/checkpoints/T_A10_A100/subset_selection.json",
+          "sha256": "d2856b5123ef18913b2dc09faf51bbdb02dfc24599b96fdff8d5c92f300c9074"
+        }
+      ],
+      "path": "assets/perfseer-v1-t_a10_a100.tar.gz",
+      "sha256": "385dbd78d8999c12ec1bdf7960f473946e058849dde7e5f43219f1fc9873590a"
+    },
+    {
+      "bytes": 319465841,
+      "members": [
+        {
+          "bytes": 10234,
+          "path": "PerfSeer-release-v1/generator/README.md",
+          "sha256": "dacdab686bf55547150246649c1048f910c5b6b11b38b4a8914a49b08f9d84f2"
+        },
+        {
+          "bytes": 2736,
+          "path": "PerfSeer-release-v1/generator/capture_templates.py",
+          "sha256": "d38c787351934fe146edb83adadb42139b04a5b474e6665eb3aaf7a59d21abcb"
+        },
+        {
+          "bytes": 11524,
+          "path": "PerfSeer-release-v1/generator/generate.py",
+          "sha256": "ea7972e9ebcc6e6ee3ee4910daf0ca06b0612795e40d2e0a449feb2436231dd4"
+        },
+        {
+          "bytes": 2331260,
+          "path": "PerfSeer-release-v1/generator/generated_transfer_final/configurations.jsonl",
+          "sha256": "c6dd0fb3086d5aa38c427c1c523dd481d2c2be872302ecb8d43ec7392d5a1321"
+        },
+        {
+          "bytes": 12382,
+          "path": "PerfSeer-release-v1/generator/generated_transfer_final/generation.json",
+          "sha256": "b65c4ac40bab54c58b060e5232dfc47800012b3d0250f4df97f293c87e22d2b8"
+        },
+        {
+          "bytes": 9892779,
+          "path": "PerfSeer-release-v1/generator/generated_transfer_final/workloads.jsonl",
+          "sha256": "274394776e1032769fd2eb9b666eb4b38aad6511e4d2ccb80411e37d2d7f592b"
+        },
+        {
+          "bytes": 11776,
+          "path": "PerfSeer-release-v1/generator/join_cached.py",
+          "sha256": "fa9da9045564b444f0941f3cadfd1d21eb55722d4e57a22952d0cb2db8dce101"
+        },
+        {
+          "bytes": 20577,
+          "path": "PerfSeer-release-v1/generator/label.py",
+          "sha256": "8912e91f64421ff6cf3a3d71af815689dafb5fb456f8adc7637ea5c25d11af9d"
+        },
+        {
+          "bytes": 11755,
+          "path": "PerfSeer-release-v1/generator/runtime/_model_catalog.py",
+          "sha256": "025249b364ce98584efd2645960f98f83db9149fa7f46de0a646d2a12def6b72"
+        },
+        {
+          "bytes": 53932,
+          "path": "PerfSeer-release-v1/generator/runtime/_model_runtime.py",
+          "sha256": "6b11d41974cfdc31a58c41fd9b642f9ac4b30bc0ecb8ff5e1b3dc1ebc6f5ad97"
+        },
+        {
+          "bytes": 7575,
+          "path": "PerfSeer-release-v1/generator/runtime/muon.py",
+          "sha256": "2779d34e4cf13510679a9f65b536ed6795872d8fc29f4c85699d357301dd42bc"
+        },
+        {
+          "bytes": 397128,
+          "path": "PerfSeer-release-v1/generator/specs/frozen_group_splits.json",
+          "sha256": "a8f7f9047eee42672a07a93808f12986e01b750aeab104ea2dac6d76eeaf11a3"
+        },
+        {
+          "bytes": 9857,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/01.py.in",
+          "sha256": "a0889b154a827e94e5b4e788ac2fbc38c5b0258a8c270e0f9d8e9bd8eed51fda"
+        },
+        {
+          "bytes": 9857,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/02.py.in",
+          "sha256": "a0889b154a827e94e5b4e788ac2fbc38c5b0258a8c270e0f9d8e9bd8eed51fda"
+        },
+        {
+          "bytes": 9857,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/03.py.in",
+          "sha256": "a0889b154a827e94e5b4e788ac2fbc38c5b0258a8c270e0f9d8e9bd8eed51fda"
+        },
+        {
+          "bytes": 9857,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/04.py.in",
+          "sha256": "a0889b154a827e94e5b4e788ac2fbc38c5b0258a8c270e0f9d8e9bd8eed51fda"
+        },
+        {
+          "bytes": 16403,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/05.py.in",
+          "sha256": "e8e961d12ac09a12b55260c6553478a63cf755890289d289524adb4f1cb5f607"
+        },
+        {
+          "bytes": 16403,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/06.py.in",
+          "sha256": "e8e961d12ac09a12b55260c6553478a63cf755890289d289524adb4f1cb5f607"
+        },
+        {
+          "bytes": 16403,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/07.py.in",
+          "sha256": "e8e961d12ac09a12b55260c6553478a63cf755890289d289524adb4f1cb5f607"
+        },
+        {
+          "bytes": 11161,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/08.py.in",
+          "sha256": "afa7993ea28f1d05552ad1f7c97cb4d0f11c76e72e6894083fa0b5aed93fb32b"
+        },
+        {
+          "bytes": 9857,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/09.py.in",
+          "sha256": "a0889b154a827e94e5b4e788ac2fbc38c5b0258a8c270e0f9d8e9bd8eed51fda"
+        },
+        {
+          "bytes": 9857,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/10.py.in",
+          "sha256": "a0889b154a827e94e5b4e788ac2fbc38c5b0258a8c270e0f9d8e9bd8eed51fda"
+        },
+        {
+          "bytes": 7197,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/11.py.in",
+          "sha256": "5ad575ca50ea75672fd039be720ba38e1ea27a24fb28427ca2993b3e61c82f88"
+        },
+        {
+          "bytes": 7197,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/12.py.in",
+          "sha256": "5ad575ca50ea75672fd039be720ba38e1ea27a24fb28427ca2993b3e61c82f88"
+        },
+        {
+          "bytes": 15342,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/13.py.in",
+          "sha256": "a5342eb1c6b8f57f64d33c13e9283baaa0f36d745b2bcda6a93e2435f768dc1d"
+        },
+        {
+          "bytes": 14656,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/14.py.in",
+          "sha256": "6bf0b6fdde7e6feff8413e79b0ef163db66e811bf86fff1f3bdb9bd77f267529"
+        },
+        {
+          "bytes": 14656,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/15.py.in",
+          "sha256": "6bf0b6fdde7e6feff8413e79b0ef163db66e811bf86fff1f3bdb9bd77f267529"
+        },
+        {
+          "bytes": 13791,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/16.py.in",
+          "sha256": "0e6dfbf1fe04c4933fb1e72f75e2c7896f4ae7aac0c1e88a70774bc7dd37fc11"
+        },
+        {
+          "bytes": 14656,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/17.py.in",
+          "sha256": "6bf0b6fdde7e6feff8413e79b0ef163db66e811bf86fff1f3bdb9bd77f267529"
+        },
+        {
+          "bytes": 14656,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/18.py.in",
+          "sha256": "6bf0b6fdde7e6feff8413e79b0ef163db66e811bf86fff1f3bdb9bd77f267529"
+        },
+        {
+          "bytes": 14656,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/19.py.in",
+          "sha256": "6bf0b6fdde7e6feff8413e79b0ef163db66e811bf86fff1f3bdb9bd77f267529"
+        },
+        {
+          "bytes": 14220,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/20.py.in",
+          "sha256": "fa3fb551c5bc3fb4ddca2950a2cd6e879e63506b9939011a84c894fcd504fa18"
+        },
+        {
+          "bytes": 2715,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/21.py.in",
+          "sha256": "43c0c7935629e690324c0a0561cdc6885596b52252a416eea8cf08f4e730aa0c"
+        },
+        {
+          "bytes": 2715,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/22.py.in",
+          "sha256": "43c0c7935629e690324c0a0561cdc6885596b52252a416eea8cf08f4e730aa0c"
+        },
+        {
+          "bytes": 2156,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/23.py.in",
+          "sha256": "c6db2cc9b38f0216ddbea4388ef386b027d35d72245408d04889b5d99cb1bb09"
+        },
+        {
+          "bytes": 14656,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/24.py.in",
+          "sha256": "6bf0b6fdde7e6feff8413e79b0ef163db66e811bf86fff1f3bdb9bd77f267529"
+        },
+        {
+          "bytes": 7156,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/25.py.in",
+          "sha256": "8bd0930baeebe463b6f2ac1a68e9835d4cc5b1f64f8d52c15d00efb761f5ded8"
+        },
+        {
+          "bytes": 7156,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/26.py.in",
+          "sha256": "8bd0930baeebe463b6f2ac1a68e9835d4cc5b1f64f8d52c15d00efb761f5ded8"
+        },
+        {
+          "bytes": 7156,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/27.py.in",
+          "sha256": "8bd0930baeebe463b6f2ac1a68e9835d4cc5b1f64f8d52c15d00efb761f5ded8"
+        },
+        {
+          "bytes": 2041,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/28.py.in",
+          "sha256": "11a03cce137409a8ee96958d51ec70d30dd8971d867facc5a04e4660c0663a99"
+        },
+        {
+          "bytes": 14237,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/29.py.in",
+          "sha256": "9dae424c1b83e505bbdd050935a9d286d4729f7d76fdc686d1a2f1489f5d87dc"
+        },
+        {
+          "bytes": 2309,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/30.py.in",
+          "sha256": "e483b24c39671bde27faefad632c41c0afb61a1a04b7abab37e603eedf5a3dda"
+        },
+        {
+          "bytes": 3304,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/31.py.in",
+          "sha256": "7ce8e03b1bef5d97de50a9eeb89013bce2451ed66fb1da40dc4c22d2fb0e6345"
+        },
+        {
+          "bytes": 3304,
+          "path": "PerfSeer-release-v1/generator/specs/variant_templates/32.py.in",
+          "sha256": "7ce8e03b1bef5d97de50a9eeb89013bce2451ed66fb1da40dc4c22d2fb0e6345"
+        },
+        {
+          "bytes": 5350,
+          "path": "PerfSeer-release-v1/generator/tests/test_data_release.py",
+          "sha256": "68cfd1b607882f974d71497a928f1dc4b5f88fb2c563dd5b09a178d045521387"
+        },
+        {
+          "bytes": 7245,
+          "path": "PerfSeer-release-v1/generator/verify.py",
+          "sha256": "4f5c71dc1f8b24256bd57869319372f98c423273294722dc6d026a7bab890d04"
+        },
+        {
+          "bytes": 204,
+          "path": "PerfSeer-release-v1/identity-receipts/environment.json",
+          "sha256": "6e312c98c7714b4d7edb397cdd7da2d0d5f84b661c0f061d83569a5e8324e76a"
+        },
+        {
+          "bytes": 913,
+          "path": "PerfSeer-release-v1/identity-receipts/join-A10.log",
+          "sha256": "29e6298168ec2273df98aea9515cd7ecb6fc5b5e6970bf175ba2a553a811728e"
+        },
+        {
+          "bytes": 911,
+          "path": "PerfSeer-release-v1/identity-receipts/join-A100.log",
+          "sha256": "f36297c95b3046e730ad8ed34eb3186807a98132bc1595e0ff5bc379509b2281"
+        },
+        {
+          "bytes": 866,
+          "path": "PerfSeer-release-v1/identity-receipts/join-A10G.log",
+          "sha256": "58e5187ff1d90a3574dea4cfd6643becec46f6f1abc007e03531bee9a26383f7"
+        },
+        {
+          "bytes": 5525,
+          "path": "PerfSeer-release-v1/identity-receipts/original_corpus_summary.json",
+          "sha256": "3f50cdae6687ddf639db9aeb19bebe945f50c28277691e5f690984f76594b416"
+        },
+        {
+          "bytes": 22787,
+          "path": "PerfSeer-release-v1/identity-receipts/prototype-cleanup.json",
+          "sha256": "90d9229ee6398e734bbdbe0fcf411a35690d59c79091923b8996c6816eaab5de"
+        },
+        {
+          "bytes": 305,
+          "path": "PerfSeer-release-v1/identity-receipts/standalone-generation.json",
+          "sha256": "088548b218f574a455564c5f7e1c5b31e9385dcb6da9e07ffedcdaf201a9d9de"
+        },
+        {
+          "bytes": 2054,
+          "path": "PerfSeer-release-v1/identity-receipts/unit-tests.log",
+          "sha256": "d359c338489b67040c5a54aa06398b8fb3b281532b39a72eaae491ba4be7a51c"
+        },
+        {
+          "bytes": 3559,
+          "path": "PerfSeer-release-v1/identity-receipts/variant_templates.json",
+          "sha256": "1556b26573ec074fac26b83397ac2ecfe1259adcf9335f05ae0a434909961268"
+        },
+        {
+          "bytes": 258,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-A10.json",
+          "sha256": "d7b536957a5758a4ade08f0b85c68605756d524fef1bf2a28dd3c08e25402bf8"
+        },
+        {
+          "bytes": 236,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-A10.log",
+          "sha256": "e15d4a6747cc48df9fbd2e828ea8c3c178c76cc35d791d425bf0f69102c85189"
+        },
+        {
+          "bytes": 257,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-A100.json",
+          "sha256": "52f7affa01a510f4d73153215fa8aae7123d541947f78dfb622c21db43996858"
+        },
+        {
+          "bytes": 235,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-A100.log",
+          "sha256": "00b0cf5ba7a01d22503589c12f0849dbc0379671cfc514618b51bc50c07c48bf"
+        },
+        {
+          "bytes": 255,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-A10G.json",
+          "sha256": "3e37f4297ed27a3f99dd2cb5b418308f821b0a48b5308a92ce54c3e770751c6b"
+        },
+        {
+          "bytes": 233,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-A10G.log",
+          "sha256": "756cb055508ae04b8bdeb44689b6ee0e862835e8c1822826d1b62632f2b386da"
+        },
+        {
+          "bytes": 622,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-generated-pretrain.json",
+          "sha256": "f228232657d1fe1c2e8fea65c374afc3d73055f7fe65cfdd48e0594d95f3e90e"
+        },
+        {
+          "bytes": 546,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-generated-pretrain.log",
+          "sha256": "94f6cd3486b93988b67ad3340d7c1bc55ef0933262348ca07166edcd043caef2"
+        },
+        {
+          "bytes": 612,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-generated-transfer.json",
+          "sha256": "c0c96a1a77d7bc75ced139f921d91f1ac07edb3aefa1fdf7de35823337c5bd49"
+        },
+        {
+          "bytes": 536,
+          "path": "PerfSeer-release-v1/identity-receipts/verify-generated-transfer.log",
+          "sha256": "958156fcfb31ba072bde1ae92166ce9437412a1238b123556851176bc4e6612e"
+        },
+        {
+          "bytes": 3300,
+          "path": "PerfSeer-release-v1/status/RELEASE_STATUS.json",
+          "sha256": "37b75eaf0d3704637b00c1d1a4664b219fb362039541d1d680efc7647ce4c19e"
+        },
+        {
+          "bytes": 971998164,
+          "path": "PerfSeer-release-v1/transfer/A10/dataset.pt",
+          "sha256": "3826b324dc9cb83ee413a303e9feeb0b84ab2780a9f694d92c0a6fb5a026ec1f"
+        },
+        {
+          "bytes": 822,
+          "path": "PerfSeer-release-v1/transfer/A10/join_receipt.json",
+          "sha256": "ed200082af07395fcdfc83124f28e43beb606dccc81bab963a24a89d3eb0af03"
+        },
+        {
+          "bytes": 12748621,
+          "path": "PerfSeer-release-v1/transfer/A10/labels_historical.jsonl",
+          "sha256": "0fa52cb7a6a4da18c28ae205eec553c23459450b2407c5c8525c9eadb4fb876e"
+        },
+        {
+          "bytes": 91176,
+          "path": "PerfSeer-release-v1/transfer/A10/missing.jsonl",
+          "sha256": "05f87daeff92640148f4693028a6b97f999938d4bb362133ff0ef32153618f3b"
+        },
+        {
+          "bytes": 8017,
+          "path": "PerfSeer-release-v1/transfer/A10/normalization.pt",
+          "sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0"
+        },
+        {
+          "bytes": 480117,
+          "path": "PerfSeer-release-v1/transfer/A10/selection.json",
+          "sha256": "d2856b5123ef18913b2dc09faf51bbdb02dfc24599b96fdff8d5c92f300c9074"
+        },
+        {
+          "bytes": 1023613605,
+          "path": "PerfSeer-release-v1/transfer/A100/dataset.pt",
+          "sha256": "e8bfac325666a7e3199df7de6a8f477200d5bf588756ea7173c5ac0038212978"
+        },
+        {
+          "bytes": 821,
+          "path": "PerfSeer-release-v1/transfer/A100/join_receipt.json",
+          "sha256": "9bd11366b203d6cc675d250173116beee47530bae7a415edc605466b760660d3"
+        },
+        {
+          "bytes": 13750648,
+          "path": "PerfSeer-release-v1/transfer/A100/labels_historical.jsonl",
+          "sha256": "b0bbbe4d9036724e001cfaf6bfc6093951faac8a449c4f3a615187d3efdb1f4b"
+        },
+        {
+          "bytes": 14691,
+          "path": "PerfSeer-release-v1/transfer/A100/missing.jsonl",
+          "sha256": "65518873c11ae320237b8192c3a89ff3d3f6519250e68e6736344a26522ccff5"
+        },
+        {
+          "bytes": 8017,
+          "path": "PerfSeer-release-v1/transfer/A100/normalization.pt",
+          "sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0"
+        },
+        {
+          "bytes": 516845,
+          "path": "PerfSeer-release-v1/transfer/A100/selection.json",
+          "sha256": "4fa1f5ca586135ab8d5b3cce22fc3a0abf128914b5e33fc79cd3fddb0db4ed1f"
+        },
+        {
+          "bytes": 1027829208,
+          "path": "PerfSeer-release-v1/transfer/A10G/dataset.pt",
+          "sha256": "c7cf47eeca875ec4549d586977c6fb5fa9e36f5159bcb7b40415125130f54394"
+        },
+        {
+          "bytes": 768,
+          "path": "PerfSeer-release-v1/transfer/A10G/join_receipt.json",
+          "sha256": "d91d40ff8205c7ff90ccec1c8d8c1fb3cdc2f3aa0cf78c82510ec1aa27eb6435"
+        },
+        {
+          "bytes": 14393989,
+          "path": "PerfSeer-release-v1/transfer/A10G/labels_historical.jsonl",
+          "sha256": "b64aab3525f21a7611d28669ce11546b5fe01ab78b6f1d022bbd03610b01ce07"
+        },
+        {
+          "bytes": 0,
+          "path": "PerfSeer-release-v1/transfer/A10G/missing.jsonl",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "bytes": 8017,
+          "path": "PerfSeer-release-v1/transfer/A10G/normalization.pt",
+          "sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0"
+        },
+        {
+          "bytes": 525013,
+          "path": "PerfSeer-release-v1/transfer/A10G/selection.json",
+          "sha256": "7cfa99d6ede8a3faf94c37f263a10164ebf2299c9935bec353395c85c6681f0e"
+        },
+        {
+          "bytes": 2489,
+          "path": "PerfSeer-release-v1/provenance/transfer-identity-summary.json",
+          "sha256": "f8006f4641dba5b06ed09ef30b687c5617de34b1a72724b62c772e2394104b28"
+        }
+      ],
+      "path": "assets/perfseer-v1-transfer-subsets.tar.gz",
+      "sha256": "48c2fe11cd0bb6c91c98bb774eb8c6b085ac4d8b5ec196aa8dffadf0dc07fecf"
+    },
+    {
+      "bytes": 12366824,
+      "members": [
+        {
+          "bytes": 36517,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/architecture.pt",
+          "sha256": "f273a6fd53464ab03c81b4492a494e48b55c6d659e68bca3efcabc6360c0053d"
+        },
+        {
+          "bytes": 6636475,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/best_model.pt",
+          "sha256": "dec4d06fd2fff6863effc3e2ab4cb5b2ad958abb73b85683231693c6ef087bea"
+        },
+        {
+          "bytes": 21192,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/final_evaluation.json",
+          "sha256": "3a7d1e32d9ff7d6eb39d3b7212519791b26d851b4e9c4863aa844b85f6c49104"
+        },
+        {
+          "bytes": 217,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/inference.py",
+          "sha256": "54551f4ebeaee4371c583f2826c354d833f8c933c4b6775daa65bb9a0eab6418"
+        },
+        {
+          "bytes": 987,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/manifest.json",
+          "sha256": "e5bd3e57f9d2e30ba1f47c2df47778aeac5e36c8e06b600844d2416084013666"
+        },
+        {
+          "bytes": 8017,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/normalization.pt",
+          "sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0"
+        },
+        {
+          "bytes": 4907,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/objective.py",
+          "sha256": "d75e6b9c3cb7662fb7744c9503343138a012fe4f3c708012232a43796d5c8b9a"
+        },
+        {
+          "bytes": 24649,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/result.json",
+          "sha256": "d5176fda0dd257df750ef46857116d1181785226138209d1c367d2ff96b29d99"
+        },
+        {
+          "bytes": 93533,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/selection.json",
+          "sha256": "c5e0f1166974e678f4470b05b50b54ba05d6183c5205341407071fa7c99faccf"
+        },
+        {
+          "bytes": 11232,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/student.py",
+          "sha256": "7e6b991ffe816fbddd45b28e790f61c173101fd4f5a9825f651bb67c45733e3e"
+        },
+        {
+          "bytes": 6659726,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/student.ts",
+          "sha256": "07ce4fa52b695f2a8e1ea111eec870ebe38dbe35939b6dd411cb5f026e5f0ade"
+        },
+        {
+          "bytes": 2525,
+          "path": "PerfSeer-release-v1/checkpoints/TS_A10_A100/training_design.json",
+          "sha256": "c3f32d680fe937e5c83d2941e4e5b6ece9bcad23bda0996b752a283b8150cc70"
+        }
+      ],
+      "path": "assets/perfseer-v1-ts_a10_a100.tar.gz",
+      "sha256": "0ad7a2d03c78377fc28ef0eb76c0b5e9f35d26fc08061d46b9f9f7d27e34659a"
     }
   ],
   "schema": "perfseer-paper-release-assets-v1"

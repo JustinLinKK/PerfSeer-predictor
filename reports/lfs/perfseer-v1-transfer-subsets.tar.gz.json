@@ -1,0 +1,10 @@
+{
+  "asset": "perfseer-v1-transfer-subsets.tar.gz",
+  "bytes": 319465841,
+  "path": "paper-release/release_v1/assets/perfseer-v1-transfer-subsets.tar.gz",
+  "remote_hash_verified": true,
+  "remote_reachable": true,
+  "schema": "perfseer-release-v1-lfs-publish-receipt",
+  "sha256": "48c2fe11cd0bb6c91c98bb774eb8c6b085ac4d8b5ec196aa8dffadf0dc07fecf",
+  "upload_succeeded": true
+}

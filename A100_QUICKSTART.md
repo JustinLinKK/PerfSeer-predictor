@@ -23,7 +23,7 @@ python tools/predict_student.py \
 
 The six physical outputs are wall-step ms, GPU-step ms, wall-epoch ms, NVML busy
 percent, average VRAM MiB and peak VRAM MiB. Busy percent is not SM occupancy.
-Read `reports/comparison.json` for accuracy and quality-gate results.
+Read `reports/comparison.json` for measured time-ordering, busy-ordering and VRAM accuracy, with evaluation splits labeled separately.
 
 The scheduler proposals `oct_proposed` and `oct_proposed_v2` in
 [localml_scheduler](https://github.com/JustinLinKK/Impact-Aware-Single-GPU-Scheduling) support this

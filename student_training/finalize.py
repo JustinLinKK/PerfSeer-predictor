@@ -1,7 +1,3 @@
-import sys
-from pathlib import Path
-sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 """Final evaluation of one preselected recipe after validation checkpoint selection."""
 import argparse
 import json
@@ -11,6 +7,7 @@ import numpy as np
 import torch
 from support import (provenance, load_data, split_rows, validation_key, predict, report,
                      restore_student, sha, atomic_save, write_json, signature)
+from design import WINNER_ID
 
 def final_evaluation(config, directory, selected_hash, selection_hash, device='cpu'):
     directory = Path(directory)
@@ -69,7 +66,7 @@ def main():
     args = parser.parse_args()
     directory, output = Path(args.run), Path(args.output)
     result = json.loads((directory / "result.json").read_text())
-    if result["config"]["smoke"] or result["candidate"] not in ("PRETRAIN",):
+    if result["config"]["smoke"] or result["candidate"] not in ("PRETRAIN", WINNER_ID):
         raise ValueError("Finalization requires a full run of a published recipe")
     if signature(result["config"]) != result["config_hash"]:
         raise ValueError("Training configuration changed")

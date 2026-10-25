@@ -1,11 +1,15 @@
 {
-  "assets_manifest_sha256": "d13dd542ee1871b36c8ddb62eddd0a2ac8ed1ee84c3da2eadcfa21f376760b36",
-  "complete_release": false,
+  "assets_manifest_sha256": "ae9bffb560e0c83d94728ff61bd941c670359b002b40bb1dde22649dfa0b633d",
   "full_quality_gate_required_independently": true,
-  "milestone": "a10g-student",
   "models": {
     "P_A10": {
       "checkpoint_sha256": "8533be3508885d91fc94780f989c14421e2f68b3478d406bd1667178cf4ae705"
+    },
+    "P_A100": {
+      "checkpoint_sha256": "1275628a067fe2f746ec8450eeae5aeff6213f5b46ebef410549d09535a1bbea"
+    },
+    "P_A10G": {
+      "checkpoint_sha256": "472376596c53ad51dd31a6c368649124ddc3655fa9539b2615db1b7475ed689d"
     },
     "S_A10": {
       "checkpoint_sha256": "faa6957c02573db3459b79dabe07eca5a183e1e06dae7c552a4b03a03399cffe"
@@ -15,16 +19,19 @@
     },
     "S_A10G": {
       "checkpoint_sha256": "344114ea07ffc641bc3432813986c17c304c1346e8b84f806265910b890efa69"
+    },
+    "TS_A10_A100": {
+      "checkpoint_sha256": "dec4d06fd2fff6863effc3e2ab4cb5b2ad958abb73b85683231693c6ef087bea"
+    },
+    "T_A10_A100": {
+      "checkpoint_sha256": "488e60bdf2904822b793fe08e646918a33b285573a7afa8ee4db873646662ce8"
     }
   },
-  "pending": [
-    "P_A100",
-    "P_A10G",
-    "TS_A10_A100",
-    "T_A10_A100"
-  ],
-  "plan_sha256": "0868db58a8d80f77849402e41edbf96d4d919604c5a49840d74bd0d217a0d180",
-  "previous_milestone_commit": "bedd8e53480f3382d5fa6516d43b8db6faccb78c",
+  "plan_sha256": "9f8c6bfce7b9a8870e05b8bda72eb8b13c695e4b013db82c83bcd839b9c09648",
+  "previous_milestone_commit": "5f92ea1c1ee14c901d93965ce6e0c45c56d05ea7",
+  "route": "A10_A100",
   "schema": "perfseer-paper-release-v1",
-  "source_commit": "aeeccaf4c1a32cd634661f3f337b243842a2e650"
+  "selection_sha256": "c5e0f1166974e678f4470b05b50b54ba05d6183c5205341407071fa7c99faccf",
+  "source_commit": "aeeccaf4c1a32cd634661f3f337b243842a2e650",
+  "transfer_student_winner": "TS2"
 }

@@ -1,39 +1,42 @@
 {
+  "winner": "TS2",
+  "selection_sha256": "c5e0f1166974e678f4470b05b50b54ba05d6183c5205341407071fa7c99faccf",
+  "generator_inputs": {
+    "export_training.py": "e5625c6579a58922fb06f9797c1fa38a1fc26ffd6f561cb75881a1a8cfa3e7f8",
+    "portable/v5_objectives.py": "a8415f44c1727a52faf3250af1ea4a3a8e16b20fcef42461859a0313b17beae1",
+    "students/support.py": "8cc06b23bf536fbb91d52ca4d22271bffbbf8024ada1bef4cedc14261f3445d5",
+    "students/teacher.py": "a5ac0816306658df0df72d4e79335580b865f8e2fb8794d039a8c3de8ea3481c",
+    "students/cache.py": "9cdaa83ca82077d154217ec863a1fc72cfd06bfdfa6d83ed8c1ae42a20fd49da",
+    "students/train.py": "c98042f36de845c2aa2c7173095afaf0df08c8e3d2f27586ab090743ebd27e96",
+    "students/export.py": "de0c6356a2fdb107a926c09bec00302af264c10195aa2f2dad292022e169b185",
+    "students/finalize.py": "b5d3507b7dd1d433dcfba33a304e679da510d3b82e5d7b0d616b28cc2445ddab",
+    "students/preflight_cuda.py": "7edd786560b2db22d0ac04fb0d65f1e7f5b400cdce6378bf580bdb3d304a1b3b",
+    "students/preflight_contract.py": "3f745e08ba3a677573670358ded5fe5aa072fe2c8bb43f2d7f4f4e831232b75b",
+    "students/runtime/student.py": "7e6b991ffe816fbddd45b28e790f61c173101fd4f5a9825f651bb67c45733e3e",
+    "students/runtime/adapter.py": "0cc206f6b9cc3d8d527eafe17b95d6ac8db0b47546eb38afdf670f4b73eb62ac",
+    "students/research/d3_loss.py": "0a69ec1944d740f8b0a0c9ba66d8c5bb37eb3dac651231509dc95e108f291245",
+    "students/research/losses.py": "1e708268b2ac642d747ca45e0808c2eee2a7598d2dd22819faf1d6c944ca2206"
+  },
+  "only_published_recipes": [
+    "PRETRAIN",
+    "TS2"
+  ],
   "files": {
-    "README.md": "0550b3eaaab481a75ae1846086bef0e56cc229b9299d4570db82a99b7fcfa16f",
-    "cache.py": "502eb2b6a97a457bb549aee47d1fc68b89218ee65f6003722f8322f6326b4d7c",
-    "design.py": "fa0cc7f5fd02e4974b098ca2c5a8b7f8e579c4c14c1ef4f3997a10a633cd327e",
-    "export.py": "da7494bd88d1808de8e3dc5f3e8d9d0a739ff74d7e4a8f8aee55d043e07f3f5a",
-    "finalize.py": "be479dc808693e411da9207d54f11c03c7338d2f9b3ae61b0e0fc73bba7d7b39",
-    "losses.py": "f371add835bc92229d61cbb6390bc7ff90f3d241354105860ff1d454a2a63e24",
-    "make_config.py": "c81c19477b71e26773eb74fb67200e9ae13ba5e073b5d93060b90353131a7e1b",
-    "preflight_contract.py": "59721eb2d78f5f908939d55e3b32b98d1cf003cd7d7cdb7570945295088b559b",
-    "preflight_cuda.py": "80e96ac36e83e7198b0d2a29a8eb2d8fc0d178f6de5c44355c09ee8fa27b77a9",
+    "README.md": "cebcd06c5191f6f6e9760588947733161eb49dce2be23ca808cfa0ff0dfc3604",
+    "cache.py": "9cdaa83ca82077d154217ec863a1fc72cfd06bfdfa6d83ed8c1ae42a20fd49da",
+    "design.py": "b166dddd65c5e35787b1ffd67fe8639a9612f4425e8c845929e3238108c4a912",
+    "export.py": "de0c6356a2fdb107a926c09bec00302af264c10195aa2f2dad292022e169b185",
+    "finalize.py": "b7036b9e19e3aff804134412211c349727a50db33fc42f75fd5d8fee595e79c5",
+    "losses.py": "228af5cf028ab7dcdc82ae3caa60f5a2dbaec1afc673c8fd7c78d16858cc6836",
+    "make_config.py": "b99f022917a6a255c40488fe426bd6fcb61822dab239d17e7cfc431b48e4ca19",
+    "preflight_contract.py": "31dc9f280b9a2814f8b8ad7ef947bf1216e3f6483f815ce87157791505993884",
+    "preflight_cuda.py": "572f22041460fb4db3b70cfcf9aa383b027d8ac10876a0123c4a7dc08fa996e9",
     "pretrain_objective.py": "7caabe40954486109a018a867db3dcc2ebe3be00963100732ce69d89a2825402",
     "runtime/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "runtime/student.py": "7e6b991ffe816fbddd45b28e790f61c173101fd4f5a9825f651bb67c45733e3e",
-    "support.py": "3e0c98e7e543391e6605143503d1c0220c358b6f62c0beeb91b90111f065aede",
-    "teacher.py": "c312a255df90aece47fde48bc0f999eaa35713a12ebbef3781d61f74f865f2f8",
-    "train.py": "3a2277e8e1367be338463e69c54df2b48d999e1017a4af881ba3ecfb74c6f96d",
-    "training_design.json": "e6ce77896fc99cce1a835bbab0921eb5be3b50bd395c85e4495c88edd6d5421b"
-  },
-  "generator_inputs": {
-    "export_a10_student.py": "f7e26e3b917d03b97b9a81c209b4af74791c6f66eb273e994a8700e98336f89c",
-    "export_training.py": "e5625c6579a58922fb06f9797c1fa38a1fc26ffd6f561cb75881a1a8cfa3e7f8",
-    "portable/v5_objectives.py": "a8415f44c1727a52faf3250af1ea4a3a8e16b20fcef42461859a0313b17beae1",
-    "students/cache.py": "9cdaa83ca82077d154217ec863a1fc72cfd06bfdfa6d83ed8c1ae42a20fd49da",
-    "students/export.py": "de0c6356a2fdb107a926c09bec00302af264c10195aa2f2dad292022e169b185",
-    "students/finalize.py": "b5d3507b7dd1d433dcfba33a304e679da510d3b82e5d7b0d616b28cc2445ddab",
-    "students/preflight_contract.py": "3f745e08ba3a677573670358ded5fe5aa072fe2c8bb43f2d7f4f4e831232b75b",
-    "students/preflight_cuda.py": "7edd786560b2db22d0ac04fb0d65f1e7f5b400cdce6378bf580bdb3d304a1b3b",
-    "students/research/d3_loss.py": "0a69ec1944d740f8b0a0c9ba66d8c5bb37eb3dac651231509dc95e108f291245",
-    "students/runtime/student.py": "7e6b991ffe816fbddd45b28e790f61c173101fd4f5a9825f651bb67c45733e3e",
-    "students/support.py": "8cc06b23bf536fbb91d52ca4d22271bffbbf8024ada1bef4cedc14261f3445d5",
-    "students/teacher.py": "a5ac0816306658df0df72d4e79335580b865f8e2fb8794d039a8c3de8ea3481c",
-    "students/train.py": "c98042f36de845c2aa2c7173095afaf0df08c8e3d2f27586ab090743ebd27e96"
-  },
-  "only_published_recipes": [
-    "PRETRAIN"
-  ],
-  "scope": "a10-first"
+    "support.py": "b178be24ce4e6ae937e58908687f4ed31bd8c978ef4af5f0a85d78aaaaae7feb",
+    "teacher.py": "7a12a16a008a732b5eb4faf96fdc5d3175d1c87723bcba60c21e8c479ee1d2b4",
+    "train.py": "1ddca41e0aab8a13fdbb76701a9cf398bf7be31edd2a0a55fdcd41ad14c31361",
+    "training_design.json": "6b19193e3e8d0a8f0661722afbea37e91e5e1014ad3d8cfb8e8a382732e18344"
+  }
 }

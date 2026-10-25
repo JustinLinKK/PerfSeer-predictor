@@ -1,5 +1,7 @@
-from pretrain_objective import loss as pretrain_loss
+from pretrain_objective import loss as selected_loss
 def loss(student, teacher, labels, objective, reliability=None):
     if objective != "d3":
-        raise ValueError("Only the D3 objective is supported")
-    return pretrain_loss(student, teacher, labels)
+        raise ValueError("Unknown published objective")
+    return selected_loss(student, teacher, labels)
+def task_reliability(*args):
+    raise ValueError("This recipe does not use task reliability")
