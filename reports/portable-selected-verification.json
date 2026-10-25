@@ -2,6 +2,48 @@
   "architecture_sha256": "f273a6fd53464ab03c81b4492a494e48b55c6d659e68bca3efcabc6360c0053d",
   "complete_release": false,
   "models": {
+    "P_A10": {
+      "architecture_byte_identity": true,
+      "batch_independence": true,
+      "cuda_uninitialized": true,
+      "dataset_sha256": "ee926cd10a6b05ffa374a649f293a040d13e1e118214c3a277301b7257cdc89b",
+      "hardware": "A10",
+      "kind": "Adapted",
+      "network_blocked": true,
+      "no_historical_code_imported": true,
+      "normalization_sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0",
+      "parameters": 253644481,
+      "physical_outputs": true,
+      "prediction_sha256": "e5383d92a30bcc2341f11ab5166857318f8706ad48030f2629f555bcd91d0cbc",
+      "source_hashes": {
+        "checkpoint": "8533be3508885d91fc94780f989c14421e2f68b3478d406bd1667178cf4ae705",
+        "probe": "de67f356644e3bf8f3f000488a1e548e19013ae08e239c8aad54d952fd068c83"
+      },
+      "strict_state_load": true,
+      "train_rows": 2
+    },
+    "S_A10": {
+      "batch_independence": true,
+      "conservative_memory_upper": true,
+      "cuda_uninitialized": true,
+      "dataset_sha256": "ee926cd10a6b05ffa374a649f293a040d13e1e118214c3a277301b7257cdc89b",
+      "eager_torchscript_all_outputs": true,
+      "hardware": "A10",
+      "kind": "student",
+      "network_blocked": true,
+      "no_historical_code_imported": true,
+      "normalization_sha256": "2f3bba49352fc8eae69cb3615d925a99739e10b3ff15048d4f922696cbf2eae0",
+      "parameters": 1643470,
+      "physical_outputs": true,
+      "prediction_sha256": "cc93dd2a4b866e5c362ac9e55f3bec1ce230a8da873f465907b73e6273eaf56e",
+      "source_hashes": {
+        "checkpoint": "faa6957c02573db3459b79dabe07eca5a183e1e06dae7c552a4b03a03399cffe",
+        "probe": "de67f356644e3bf8f3f000488a1e548e19013ae08e239c8aad54d952fd068c83",
+        "script": "96d31d84d8d809c1ed9a4154f84389a3cb3b673d75445deb650cee4297398e03"
+      },
+      "strict_state_load": true,
+      "train_rows": 2
+    },
     "S_A100": {
       "batch_independence": true,
       "conservative_memory_upper": true,
@@ -27,7 +69,7 @@
   },
   "passed": true,
   "probe_manifest_sha256": "60de36b5b428abb7db2f58dd1d5c818aedbed8b7b52ad254b87e45bddc319da5",
-  "registry_sha256": "85cce52d0082efdac029afe192fad351cbadbf7c8447d6dd7f6d66bbb0c5de7b",
+  "registry_sha256": "92748830b6a2bf4892e90dcdc8da113c2057d63da712cf84337a006f2c68530e",
   "scope": "tiny TRAIN-only offline inference; no validation, heldout or test metrics",
   "source_unchanged": true,
   "tree_python_files": {

@@ -1,24 +1,35 @@
-# PerfSeer: A100 student release
+# PerfSeer: A10 testing release
 
-**S_A100** is the verified D3 student distilled from A1001 (P_A100). Its 40-epoch
-training, selected checkpoint and CPU TorchScript export are complete. The model
-and full labeled A100 dataset are distributed through Git LFS.
+This release adds **P_A10**, the full-data A10 teacher, and **S_A10**,
+its D3 student with a verified CPU TorchScript export. Both finished their full
+training budgets (30 and 40 epochs respectively). The A10 dataset is included
+through Git LFS. The remaining hardware and transfer models will arrive in a
+later commit on this same `paper-release` branch. The previously published
+**S_A100** student and full A100 dataset remain available; see
+[A100_QUICKSTART.md](A100_QUICKSTART.md).
 
-Start with [A100_QUICKSTART.md](A100_QUICKSTART.md) for selective download,
-checksum-verified extraction and CPU inference. The predictor targets A100
-workloads; inference itself runs on CPU.
+Start with [A10_QUICKSTART.md](A10_QUICKSTART.md). It explains selective downloads,
+checksum-verified extraction, and CPU inference with the teacher or student.
+Predictions target A10 workloads even though inference runs on CPU.
 
-`reports/comparison.json` separates validation and sealed-test results. Selection
-used validation only. A selected checkpoint is not a claim that all time, busy
-ordering and VRAM quality thresholds pass. A1001 has A10 ancestry, which limits
-claims about unseen-hardware transfer.
+`reports/comparison.json` contains the validation results. A10 has no independent
+sealed test. Selection used validation only; the best checkpoint is not a claim
+that every timing, busy-ordering and VRAM quality threshold passed.
 
-`portable/` contains the frozen feature runtime and teacher code, `data/` the
-workload generator and GPU labeler, and `student_training/` the pretrained D3
-recipe. No unselected transfer-student design is included. Follow
-`portable/FRESH_DATA.md` for new workloads and labels on the actual target GPU.
+P_A10 uses the SM0/P1 architecture, initialized from the immutable A1001 source.
+That source already has A10 ancestry. This is full-data target adaptation, not
+scratch-only pretraining or unseen-hardware transfer. S_A10 distills that exact
+P_A10 checkpoint with the established D3 recipe.
 
-`assets/manifest.json` binds every archive/member hash. `reports/lfs/` contains
-remote-byte verification. This is a partial release: the A10 teacher/student,
-A10G student and remaining teacher/transfer assets will be added in subsequent
-commits on this same `paper-release` branch.
+`portable/` contains the teacher implementation, training recipes and frozen
+feature runtime. `student_training/` contains only the pretrained D3 student
+design at this milestone. No unselected transfer-student design is published.
+`data/` contains the direct workload generator and new GPU labeler; follow
+`portable/FRESH_DATA.md` for fresh data capture and feature packing. Historical
+datasets and new local measurements have different protocols and retain their
+own provenance.
+
+`assets/manifest.json` lists archive and member hashes. `reports/lfs/` records
+successful upload and remote hash checks. `RELEASE.json` identifies this as the
+A10 addition milestone and lists pending release components. The later complete
+release will retain this commit in its history.
